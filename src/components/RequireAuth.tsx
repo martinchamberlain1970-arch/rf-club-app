@@ -31,9 +31,8 @@ export default function RequireAuth({ children }: RequireAuthProps) {
       const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
       return `${pathname}${query ? `?${query}` : ""}`;
     };
-    const redirectToSignIn = async () => {
+    const redirectToSignIn = () => {
       const next = buildNextPath();
-      await client.auth.signOut();
       if (!active) return;
       router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
       setAllowed(false);
@@ -43,7 +42,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
       timeoutId = setTimeout(() => {
         if (!active) return;
         setTimedOut(true);
-        void redirectToSignIn();
+        redirectToSignIn();
       }, SESSION_TIMEOUT_MS);
     };
     const clearTimeoutGuard = () => {
@@ -69,7 +68,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
             .maybeSingle();
           if (!active) return;
           if (error || !appUser) {
-            await redirectToSignIn();
+            redirectToSignIn();
             return;
           }
           const sessionEmail = data.session.user?.email?.trim().toLowerCase() ?? "";
@@ -89,7 +88,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
         return;
       }
 
-      await redirectToSignIn();
+      redirectToSignIn();
     };
 
     check();
@@ -102,7 +101,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
         setAllowed(true);
         setReady(true);
       } else {
-        void redirectToSignIn();
+        redirectToSignIn();
       }
     });
 
