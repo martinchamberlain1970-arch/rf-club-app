@@ -2153,7 +2153,7 @@ export default function MatchPage() {
             setInfoModal(null);
             if (redirectAfterInfo) {
               setRedirectAfterInfo(false);
-              router.push("/");
+              router.push("/dashboard");
             }
           }}
         />

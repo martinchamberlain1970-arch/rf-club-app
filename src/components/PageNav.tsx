@@ -28,7 +28,7 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
   );
   const performNavigation = (target: "back" | "home") => {
     if (target === "back") router.back();
-    else router.push("/");
+    else router.push("/dashboard");
   };
 
   const requestNavigation = (target: "back" | "home") => {

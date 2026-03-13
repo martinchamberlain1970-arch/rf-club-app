@@ -10,9 +10,9 @@ import MessageModal from "@/components/MessageModal";
 import rackAndFramePhoto from "@/photo/rackandframe.png";
 
 function readNextPath(): string {
-  if (typeof window === "undefined") return "/";
+  if (typeof window === "undefined") return "/dashboard";
   const raw = new URLSearchParams(window.location.search).get("next");
-  return raw || "/";
+  return raw || "/dashboard";
 }
 
 function readSignupState(): string | null {
