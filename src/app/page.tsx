@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import RequireAuth from "@/components/RequireAuth";
 import PageNav from "@/components/PageNav";
 import useAdminStatus from "@/components/useAdminStatus";
+import usePremiumStatus from "@/components/usePremiumStatus";
 import { supabase } from "@/lib/supabase";
 import ConfirmModal from "@/components/ConfirmModal";
 
@@ -43,6 +44,7 @@ const systemToolLinks = [
 export default function HomePage() {
   const router = useRouter();
   const admin = useAdminStatus();
+  const premium = usePremiumStatus();
   const [completionMessage] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
@@ -101,6 +103,51 @@ export default function HomePage() {
   const pillPrimaryClass = `${pillBaseClass} border-teal-700 bg-teal-700 text-white hover:bg-teal-800`;
   const pillWarningClass = `${pillBaseClass} border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100`;
   const actionLinkClass = "mt-2 inline-flex items-center rounded-full border border-teal-700 bg-teal-700 px-3 py-1 text-sm font-medium text-white transition hover:bg-teal-800";
+  const accessSnapshot = admin.isSuper
+    ? {
+        label: "Super User",
+        tone: pillWarningClass,
+        description: "Full player, club admin, and system access.",
+        items: [
+          { label: "Quick Match", allowed: true, note: "Included" },
+          { label: "Create Competition", allowed: true, note: "Included" },
+          { label: "Doubles", allowed: true, note: "Included" },
+          { label: "Stats", allowed: true, note: "Included" },
+          { label: "Live Overview", allowed: true, note: "Included" },
+          { label: "Auto Breaker", allowed: true, note: "Included" },
+        ],
+      }
+    : admin.isAdmin
+      ? {
+          label: premium.unlocked ? "Premium Club Admin" : "Free Club Admin",
+          tone: premium.unlocked ? pillPrimaryClass : pillSecondaryClass,
+          description: premium.unlocked
+            ? "Club operations plus advanced Premium extras."
+            : "Club operations are included. Premium adds the advanced extras.",
+          items: [
+            { label: "Quick Match", allowed: true, note: "Included" },
+            { label: "Create Competition", allowed: true, note: "Included" },
+            { label: "Doubles", allowed: premium.unlocked, note: premium.unlocked ? "Included" : "Premium" },
+            { label: "Stats", allowed: premium.unlocked, note: premium.unlocked ? "Included" : "Premium" },
+            { label: "Live Overview", allowed: premium.unlocked, note: premium.unlocked ? "Included" : "Premium" },
+            { label: "Auto Breaker", allowed: premium.unlocked, note: premium.unlocked ? "Included" : "Premium" },
+          ],
+        }
+      : {
+          label: premium.unlocked ? "Premium Player" : "Free Player",
+          tone: premium.unlocked ? pillPrimaryClass : pillSecondaryClass,
+          description: premium.unlocked
+            ? "Quick Match plus advanced Premium extras."
+            : "Quick Match and core club viewing are included. Premium adds the advanced extras.",
+          items: [
+            { label: "Quick Match", allowed: true, note: "Included" },
+            { label: "Create Competition", allowed: false, note: "Club Admin" },
+            { label: "Doubles", allowed: premium.unlocked, note: premium.unlocked ? "Included" : "Premium" },
+            { label: "Stats", allowed: premium.unlocked, note: premium.unlocked ? "Included" : "Premium" },
+            { label: "Live Overview", allowed: false, note: "Club Admin + Premium" },
+            { label: "Auto Breaker", allowed: premium.unlocked, note: premium.unlocked ? "Included" : "Premium" },
+          ],
+        };
 
   const primaryCardClass = (href: string) => {
     if (admin.isSuper) {
@@ -491,7 +538,7 @@ export default function HomePage() {
                   {admin.isSuper
                     ? userName || "Super User account"
                     : admin.isAdmin
-                      ? userName || "Administrator account"
+                      ? userName || "Club Admin account"
                       : userName
                         ? `Logged in as ${userName}`
                         : "No player profile linked"}
@@ -501,7 +548,7 @@ export default function HomePage() {
                   {admin.isSuper
                     ? userName || "Super User account"
                     : admin.isAdmin
-                      ? userName || "Administrator account"
+                      ? userName || "Club Admin account"
                       : userName
                         ? `Logged in as ${userName}`
                         : "No player profile linked"}
@@ -516,7 +563,7 @@ export default function HomePage() {
                       : "bg-slate-100 text-slate-600"
                 }`}
               >
-                {admin.isSuper ? "Super User" : admin.isAdmin ? "Administrator" : "User"}
+                {admin.isSuper ? "Super User" : admin.isAdmin ? "Club Admin" : "User"}
               </span>
             </div>
             {userEmail ? <p className="text-sm text-slate-600">Logged in: {userEmail}</p> : null}
@@ -587,6 +634,39 @@ export default function HomePage() {
               </div>
             ) : null}
             {profileMessage ? <p className="mt-2 text-sm text-slate-700">{profileMessage}</p> : null}
+          </section>
+          <section className={subtleCardClass}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm text-slate-600">Access Snapshot</p>
+                <p className="mt-1 text-sm text-slate-700">{accessSnapshot.description}</p>
+              </div>
+              <span className={accessSnapshot.tone}>{accessSnapshot.label}</span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {accessSnapshot.items.map((item) => (
+                <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-slate-900">{item.label}</p>
+                    <span
+                      className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-bold ${
+                        item.allowed ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                      }`}
+                    >
+                      {item.allowed ? "✓" : "✕"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-600">{item.note}</p>
+                </div>
+              ))}
+            </div>
+            {!admin.isSuper ? (
+              <div className="mt-3">
+                <Link href="/premium" className={actionLinkClass}>
+                  View premium access options
+                </Link>
+              </div>
+            ) : null}
           </section>
 
           <section className="space-y-3">
