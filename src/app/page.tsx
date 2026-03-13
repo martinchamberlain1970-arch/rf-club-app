@@ -169,15 +169,9 @@ export default function HomePage() {
       if (!client) return;
       const { data } = await client.auth.getUser();
       const userId = data.user?.id;
-      setUserEmail(data.user?.email ?? null);
+      const authEmail = data.user?.email ?? null;
+      setUserEmail(authEmail);
       if (!userId) return;
-      if (admin.isSuper) {
-        setUserName(null);
-        setUserPlayerId(null);
-        setPendingClaim(null);
-        setPendingAdminRequest(null);
-        return;
-      }
       const linkRes = await client.from("app_users").select("linked_player_id").eq("id", userId).maybeSingle();
       const linkedPlayerId = linkRes.data?.linked_player_id ?? null;
       const { data: player } = linkedPlayerId
@@ -191,9 +185,21 @@ export default function HomePage() {
             .select("id,display_name,full_name,location_id")
             .eq("claimed_by", userId)
             .maybeSingle();
-      const name = player?.full_name?.trim() ? player.full_name : player?.display_name ?? null;
+      const emailName =
+        authEmail
+          ?.split("@")[0]
+          ?.split(/[._-]+/)
+          .filter(Boolean)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(" ") ?? null;
+      const name = player?.full_name?.trim() ? player.full_name : player?.display_name ?? emailName;
       setUserName(name);
       setUserPlayerId(player?.id ?? null);
+      if (admin.isSuper) {
+        setPendingClaim(null);
+        setPendingAdminRequest(null);
+        return;
+      }
       const { data: pending } = await client
         .from("player_claim_requests")
         .select("id,requested_full_name,player_id,status")
@@ -486,9 +492,9 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-lg font-semibold text-slate-900">
                 {admin.isSuper
-                  ? "Super User Account"
+                  ? userName || "Super User account"
                   : admin.isAdmin
-                    ? "Administrator account"
+                    ? userName || "Administrator account"
                     : userName
                       ? `Logged in as ${userName}`
                       : "No player profile linked"}

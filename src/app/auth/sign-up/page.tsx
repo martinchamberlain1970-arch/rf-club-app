@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { logAudit } from "@/lib/audit";
-import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
 
@@ -108,14 +107,6 @@ export default function SignUpPage() {
   const [acceptPrivacy, setAcceptPrivacy] = useState(() => draft?.acceptPrivacy === true);
   const [acceptTerms, setAcceptTerms] = useState(() => draft?.acceptTerms === true);
   const [infoModal, setInfoModal] = useState<{ title: string; body: string; closeLabel?: string; redirectTo?: string } | null>(null);
-  const [confirmState, setConfirmState] = useState<{
-    open: boolean;
-    title: string;
-    description: string;
-    confirmLabel?: string;
-    cancelLabel?: string;
-    resolve?: (value: boolean) => void;
-  }>({ open: false, title: "", description: "" });
   const privacyPolicyUrl = process.env.NEXT_PUBLIC_PRIVACY_POLICY_URL?.trim() || "/privacy";
   const termsUrl = process.env.NEXT_PUBLIC_TERMS_URL?.trim() || "/terms";
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -145,17 +136,6 @@ export default function SignUpPage() {
     };
     window.sessionStorage.setItem(SIGNUP_DRAFT_KEY, JSON.stringify(draft));
   }, [step, email, password, firstName, secondName, locationId, requestedLocationName, acceptPrivacy, acceptTerms]);
-
-  const askConfirm = (title: string, description: string, confirmLabel = "Yes", cancelLabel = "No") =>
-    new Promise<boolean>((resolve) => {
-      setConfirmState({ open: true, title, description, confirmLabel, cancelLabel, resolve });
-    });
-
-  const closeConfirm = (result: boolean) => {
-    const resolver = confirmState.resolve;
-    setConfirmState({ open: false, title: "", description: "" });
-    resolver?.(result);
-  };
 
   useEffect(() => {
     fetch("/api/public/locations")
@@ -321,74 +301,28 @@ export default function SignUpPage() {
     let pendingClaimPayload: PendingClaimPayload | null = null;
 
     if (candidate && !candidate.claimed_by) {
-      const ok = await askConfirm(
-        candidate.is_archived ? "Archived profile found" : "Existing profile found",
-        candidate.is_archived
-          ? `An archived profile exists for "${fullName}". Do you want to request restore and claim it after you sign in?`
-          : `A profile already exists for "${fullName}". Would you like to claim it after you sign in?`,
-        candidate.is_archived ? "Restore & claim" : "Claim profile",
-        "Cancel"
-      );
-      if (ok) {
-        if (!candidate.location_id && selectedLocation) {
-          pendingClaimPayload = {
-            type: "existing",
-            playerId: candidate.id,
-            fullName,
-            locationId: selectedLocation,
-            requestedLocationName: pendingRequestedLocationName,
-            autoRequestAdmin,
-            restoreArchived: Boolean(candidate.is_archived),
-          };
-        } else {
-          pendingClaimPayload = {
-            type: "existing",
-            playerId: candidate.id,
-            fullName,
-            requestedLocationName: pendingRequestedLocationName,
-            autoRequestAdmin,
-            restoreArchived: Boolean(candidate.is_archived),
-          };
-        }
-      } else {
-        const createOk = await askConfirm(
-          "Create a new profile?",
-          "No claim selected. Would you like to create a new profile after you sign in?",
-          "Create profile",
-          "Cancel"
-        );
-        if (createOk) {
-          pendingClaimPayload = {
-            type: "create",
-            firstName: first,
-            secondName: second,
-            locationId: selectedLocation,
-            requestedLocationName: pendingRequestedLocationName,
-            autoRequestAdmin,
-          };
-        }
-      }
+      pendingClaimPayload = {
+        type: "existing",
+        playerId: candidate.id,
+        fullName,
+        locationId: !candidate.location_id && selectedLocation ? selectedLocation : undefined,
+        requestedLocationName: pendingRequestedLocationName,
+        autoRequestAdmin,
+        restoreArchived: Boolean(candidate.is_archived),
+      };
     } else if ((data ?? []).some((p) => p.claimed_by)) {
       setBusy(false);
       setMessage("An existing account/profile already appears to be linked for this name. Sign in with your existing account or contact support.");
       return;
     } else {
-      const createOk = await askConfirm(
-        "No matching profile found",
-        "Would you like to create a new profile after you sign in? (If a previous profile was permanently deleted, a new profile will be created.)",
-        "Create profile",
-        "Cancel"
-      );
-      if (createOk) {
-        pendingClaimPayload = {
-          type: "create",
-          firstName: first,
-          secondName: second,
-          locationId: selectedLocation,
-          requestedLocationName: pendingRequestedLocationName,
-          autoRequestAdmin,
-        };
-      }
+      pendingClaimPayload = {
+        type: "create",
+        firstName: first,
+        secondName: second,
+        locationId: selectedLocation,
+        requestedLocationName: pendingRequestedLocationName,
+        autoRequestAdmin,
+      };
     }
 
     if (!pendingClaimPayload) {
@@ -428,60 +362,18 @@ export default function SignUpPage() {
     const createdUserId = signUpData.user?.id ?? null;
     if (createdUserId) {
       try {
-        if (pendingClaimPayload.type === "existing") {
-          await client.from("player_claim_requests").insert({
-            player_id: pendingClaimPayload.playerId,
-            requester_user_id: createdUserId,
-            requested_full_name: pendingClaimPayload.fullName,
-            status: "pending",
-          });
-          if (pendingClaimPayload.locationId) {
-            await client.from("player_update_requests").insert({
-              player_id: pendingClaimPayload.playerId,
-              requester_user_id: createdUserId,
-              requested_full_name: null,
-              requested_location_id: pendingClaimPayload.locationId,
-              status: "pending",
-            });
-          }
-        } else {
-          const effectiveAgeBand = pendingClaimPayload.ageBand ?? "18_plus";
-          const createdFullName =
-            effectiveAgeBand === "18_plus"
-              ? `${pendingClaimPayload.firstName} ${pendingClaimPayload.secondName ?? ""}`.trim()
-              : pendingClaimPayload.firstName;
-          const createdPlayer = await client
-            .from("players")
-            .insert({
-              display_name: pendingClaimPayload.firstName,
-              first_name: pendingClaimPayload.firstName,
-              nickname: null,
-              full_name: createdFullName,
-              is_archived: false,
-              claimed_by: null,
-              location_id: effectiveAgeBand === "18_plus" ? pendingClaimPayload.locationId ?? null : null,
-              age_band: effectiveAgeBand,
-              guardian_consent: effectiveAgeBand === "18_plus" ? false : Boolean(pendingClaimPayload.guardianConsent),
-              guardian_consent_at:
-                effectiveAgeBand === "18_plus"
-                  ? null
-                  : Boolean(pendingClaimPayload.guardianConsent)
-                    ? new Date().toISOString()
-                    : null,
-              guardian_name: pendingClaimPayload.guardianName ?? null,
-              guardian_email: pendingClaimPayload.guardianEmail ?? null,
-              guardian_user_id: pendingClaimPayload.guardianUserId ?? null,
-            })
-            .select("id")
-            .single();
-          if (!createdPlayer.error && createdPlayer.data?.id) {
-            await client.from("player_claim_requests").insert({
-              player_id: createdPlayer.data.id,
-              requester_user_id: createdUserId,
-              requested_full_name: createdFullName,
-              status: "pending",
-            });
-          }
+        const finalizeResp = await fetch("/api/auth/finalize-signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            createdUserId,
+            email,
+            payload: pendingClaimPayload,
+          }),
+        });
+        const finalizeJson = await finalizeResp.json().catch(() => ({}));
+        if (!finalizeResp.ok) {
+          throw new Error(finalizeJson?.error ?? "Signup finalization failed.");
         }
         if (typeof window !== "undefined") {
           window.localStorage.removeItem("pending_claim");
@@ -497,9 +389,14 @@ export default function SignUpPage() {
     await logAudit("auth_sign_up", { entityType: "auth", summary: "User account created." });
     setInfoModal({
       title: "Account created",
-      body: pendingRequestedLocationName
-        ? "Your account was created successfully. Check your email if verification is enabled, then sign in. Your new location request is pending Super User review."
-        : "Your account was created successfully. If email verification is enabled, verify your email first. Then sign in to complete your profile linking and continue.",
+      body:
+        pendingClaimPayload.type === "existing"
+          ? pendingRequestedLocationName
+            ? "Your account was created successfully. A matching player profile already exists, so a claim request was sent for Super User review. Your new location request is also pending review."
+            : "Your account was created successfully. A matching player profile already exists, so a claim request was sent for Super User review."
+          : pendingRequestedLocationName
+            ? "Your account and player profile were created successfully. Check your email if verification is enabled, then sign in. Your new location request is pending Super User review."
+            : "Your account and player profile were created successfully. If email verification is enabled, verify your email first and then sign in.",
       closeLabel: "Go to sign in",
       redirectTo: "/auth/sign-in?signup=created",
     });
@@ -656,15 +553,6 @@ export default function SignUpPage() {
           <MessageModal message={message} onClose={() => setMessage(null)} />
         </section>
       </div>
-      <ConfirmModal
-        open={confirmState.open}
-        title={confirmState.title}
-        description={confirmState.description}
-        confirmLabel={confirmState.confirmLabel}
-        cancelLabel={confirmState.cancelLabel}
-        onConfirm={() => closeConfirm(true)}
-        onCancel={() => closeConfirm(false)}
-      />
       <InfoModal
         open={Boolean(infoModal)}
         title={infoModal?.title ?? ""}
