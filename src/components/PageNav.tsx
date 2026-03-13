@@ -41,6 +41,9 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
 
   const onSignOut = async () => {
     const client = supabase;
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("rf_signing_out", "1");
+    }
     if (client) {
       try {
         await client.auth.signOut();

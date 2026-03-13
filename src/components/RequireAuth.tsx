@@ -32,9 +32,14 @@ export default function RequireAuth({ children }: RequireAuthProps) {
       return `${pathname}${query ? `?${query}` : ""}`;
     };
     const redirectToSignIn = () => {
-      const next = buildNextPath();
       if (!active) return;
-      router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
+      if (typeof window !== "undefined" && window.sessionStorage.getItem("rf_signing_out") === "1") {
+        window.sessionStorage.removeItem("rf_signing_out");
+        router.replace("/auth/sign-in?signed_out=1");
+      } else {
+        const next = buildNextPath();
+        router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
+      }
       setAllowed(false);
       setReady(true);
     };

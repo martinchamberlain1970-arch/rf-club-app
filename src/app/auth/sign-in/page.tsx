@@ -11,7 +11,9 @@ import rackAndFramePhoto from "@/photo/rackandframe.png";
 
 function readNextPath(): string {
   if (typeof window === "undefined") return "/dashboard";
-  const raw = new URLSearchParams(window.location.search).get("next");
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("signed_out") === "1") return "/dashboard";
+  const raw = params.get("next");
   return raw || "/dashboard";
 }
 
