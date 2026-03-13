@@ -7,15 +7,15 @@ import rackAndFramePhoto from "@/photo/rackandframe.png";
 const featureCards = [
   {
     title: "Quick Match",
-    description: "Run local practice and social matches with fast score entry.",
+    description: "Fast scoring for practice and social matches.",
   },
   {
     title: "Club Competitions",
-    description: "Create, publish, and manage knockout events for your club.",
+    description: "Knockout events for your club nights.",
   },
   {
     title: "Player Profiles",
-    description: "Track players, results, notifications, and access requests in one place.",
+    description: "Profiles, results, notifications, and access.",
   },
 ] as const;
 
@@ -27,24 +27,24 @@ export default function LandingPage() {
       <div className="mx-auto max-w-6xl space-y-4">
         <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
           <section className={`${cardClass} overflow-hidden`}>
-            <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-              <div className="space-y-4">
+            <div className="grid gap-5 lg:grid-cols-[0.76fr_1.24fr] lg:items-center">
+              <div className="space-y-4 lg:max-w-sm">
                 <div className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-teal-700">
                   Rack &amp; Frame Club
                 </div>
                 <div className="space-y-3">
-                  <h1 className="max-w-lg text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
+                  <h1 className="max-w-md text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
                     Quick matches, local competitions, and player results in one club app.
                   </h1>
-                  <p className="max-w-md text-base leading-7 text-slate-600 sm:text-lg">
+                  <p className="max-w-sm text-base leading-7 text-slate-600 sm:text-lg">
                     Rack &amp; Frame is built for social clubs running cue-sports nights, competitions, and player activity without the admin clutter.
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
                   {featureCards.map((card) => (
                     <div key={card.title} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                       <p className="text-sm font-semibold uppercase tracking-wide text-slate-700">{card.title}</p>
-                      <p className="mt-2 text-sm leading-6 text-slate-600">{card.description}</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">{card.description}</p>
                     </div>
                   ))}
                 </div>
@@ -58,7 +58,7 @@ export default function LandingPage() {
                   <Image
                     src={rackAndFramePhoto}
                     alt="Rack and Frame club"
-                    className="h-[320px] w-full object-contain bg-slate-100 object-center sm:h-[500px]"
+                    className="h-[360px] w-full object-contain bg-slate-100 object-center sm:h-[560px]"
                     priority
                   />
                   <div className="border-t border-slate-200 bg-white px-4 py-4">
@@ -72,7 +72,7 @@ export default function LandingPage() {
             </div>
           </section>
 
-          <section className={`${cardClass} space-y-4 lg:max-w-md lg:justify-self-end`}>
+          <section className={`${cardClass} space-y-4 lg:max-w-sm lg:justify-self-end`}>
             <div className="space-y-2">
               <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Get Started</p>
               <h2 className="text-2xl font-bold text-slate-900 sm:text-3xl">Welcome to Rack &amp; Frame</h2>

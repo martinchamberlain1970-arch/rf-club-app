@@ -43,12 +43,24 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
     const client = supabase;
     if (client) {
       try {
-        await client.auth.signOut({ scope: "local" });
+        await client.auth.signOut();
       } catch {
         // Fall through to local storage cleanup and redirect.
       }
     }
     if (typeof window !== "undefined") {
+      const localKeys = Object.keys(window.localStorage);
+      for (const key of localKeys) {
+        if (key.startsWith("sb-") && key.includes("-auth-token")) {
+          window.localStorage.removeItem(key);
+        }
+      }
+      const sessionKeys = Object.keys(window.sessionStorage);
+      for (const key of sessionKeys) {
+        if (key.startsWith("sb-") && key.includes("-auth-token")) {
+          window.sessionStorage.removeItem(key);
+        }
+      }
       window.localStorage.removeItem(storageKey);
       window.localStorage.removeItem(dismissedKey);
       window.localStorage.removeItem("pending_claim");
