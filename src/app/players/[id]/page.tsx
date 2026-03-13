@@ -1460,11 +1460,13 @@ export default function PlayerProfilePage() {
                       </button>
                     </div>
                     <div className="mt-3 border-t border-slate-200 pt-3">
-                      <p className="text-sm font-semibold text-slate-900">Request administrator access</p>
-                      <p className="text-xs text-slate-600">Requests are reviewed by the Super User.</p>
+                      <p className="text-sm font-semibold text-slate-900">Request club admin access</p>
+                      <p className="text-xs text-slate-600">
+                        Club admins run competitions, review results, and manage player activity for their club. Requests are reviewed by the Super User.
+                      </p>
                       {pendingAdminRequest ? (
                         <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                          User profile change requested: admin access request pending since{" "}
+                          Club admin request pending since{" "}
                           {new Date(pendingAdminRequest.created_at).toLocaleString()}.
                         </p>
                       ) : null}
@@ -1474,7 +1476,7 @@ export default function PlayerProfilePage() {
                         disabled={Boolean(pendingAdminRequest) || adminRequesting}
                         className="mt-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {pendingAdminRequest ? "Request pending" : adminRequesting ? "Submitting..." : "Request admin access"}
+                        {pendingAdminRequest ? "Request pending" : adminRequesting ? "Submitting..." : "Request club admin access"}
                       </button>
                     </div>
                   </div>

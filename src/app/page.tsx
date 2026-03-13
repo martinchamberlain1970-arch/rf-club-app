@@ -569,14 +569,20 @@ export default function HomePage() {
                 ) : null}
                 {pendingAdminRequest ? (
                   <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    User profile change requested: admin access request pending since{" "}
+                    Club admin request pending since{" "}
                     {new Date(pendingAdminRequest.createdAt).toLocaleString()}.
                   </p>
                 ) : null}
                 {!pendingAdminRequest && userPlayerId ? (
-                  <Link href={`/players/${userPlayerId}`} className={actionLinkClass}>
-                    Go to my profile to request admin access
-                  </Link>
+                  <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-700">
+                    <p className="font-semibold text-slate-900">Club admin is for organisers, not every player.</p>
+                    <p className="mt-1">
+                      Request this only if you help run competitions, review results, and manage player activity for your club.
+                    </p>
+                    <Link href={`/players/${userPlayerId}`} className={`${actionLinkClass} mt-3`}>
+                      Go to my profile to request club admin access
+                    </Link>
+                  </div>
                 ) : null}
               </div>
             ) : null}
