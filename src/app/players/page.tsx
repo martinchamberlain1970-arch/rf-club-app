@@ -101,8 +101,6 @@ type AppUser = {
   created_at: string;
   role?: string | null;
   premium_unlocked?: boolean | null;
-  quick_match_enabled?: boolean | null;
-  competition_create_enabled?: boolean | null;
 };
 type Location = { id: string; name: string };
 
@@ -320,7 +318,7 @@ export default function PlayersPage() {
     if (!client) return;
     const withRole = await client
       .from("app_users")
-      .select("id,email,linked_player_id,created_at,role,premium_unlocked,quick_match_enabled,competition_create_enabled")
+      .select("id,email,linked_player_id,created_at,role,premium_unlocked")
       .order("created_at", { ascending: false });
     if (!withRole.error && withRole.data) {
       setAppUsers(withRole.data as AppUser[]);
@@ -1074,36 +1072,6 @@ export default function PlayersPage() {
     await loadUsers();
   };
 
-  const onSetFeatureAccess = async (
-    targetUserId: string,
-    feature: "quick_match" | "competition_create",
-    enabled: boolean
-  ) => {
-    const client = supabase;
-    if (!client) return;
-    const { data: sessionRes } = await client.auth.getSession();
-    const token = sessionRes.session?.access_token;
-    if (!token) {
-      setMessage("You must be signed in.");
-      return;
-    }
-    const resp = await fetch("/api/admin/feature-access", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ userId: targetUserId, feature, enabled }),
-    });
-    if (!resp.ok) {
-      const data = await resp.json().catch(() => ({}));
-      setMessage(data?.error ?? "Failed to update feature access.");
-      return;
-    }
-    setMessage(`${feature === "quick_match" ? "Quick Match" : "Create Competition"} ${enabled ? "enabled" : "disabled"}.`);
-    await loadUsers();
-  };
-
   const onDeleteUser = async (targetUserId: string) => {
     const result = await deleteLinkedUserAccount(targetUserId);
     if (!result.ok) {
@@ -1413,7 +1381,7 @@ export default function PlayersPage() {
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-semibold text-slate-900">Account access ({filteredRoleUsers.length} users)</p>
-                  <p className="mt-1 text-sm text-slate-600">Manage roles, premium access, and admin tools.</p>
+                  <p className="mt-1 text-sm text-slate-600">Manage roles and premium access for user and club admin accounts.</p>
                   <div className="mt-3 space-y-3">
               <div className="flex flex-wrap gap-2">
                 <button
@@ -1474,16 +1442,6 @@ export default function PlayersPage() {
                         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${u.premium_unlocked ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                           {u.premium_unlocked ? "Premium" : "Free"}
                         </span>
-                        {!isRowSuperUser && u.role === "admin" ? (
-                          <>
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${u.quick_match_enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                              Quick Match: {u.quick_match_enabled ? "On" : "Off"}
-                            </span>
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${u.competition_create_enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                              Create Competition: {u.competition_create_enabled ? "On" : "Off"}
-                            </span>
-                          </>
-                        ) : null}
                       </div>
                       <div className="flex gap-2">
                         {isRowSuperUser ? (
@@ -1512,22 +1470,6 @@ export default function PlayersPage() {
                               className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700"
                             >
                               {u.premium_unlocked ? "Disable premium" : "Enable premium"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onSetFeatureAccess(u.id, "quick_match", !u.quick_match_enabled)}
-                              disabled={u.role !== "admin"}
-                              className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {u.quick_match_enabled ? "Disable quick match" : "Enable quick match"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onSetFeatureAccess(u.id, "competition_create", !u.competition_create_enabled)}
-                              disabled={u.role !== "admin"}
-                              className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {u.competition_create_enabled ? "Disable create comp" : "Enable create comp"}
                             </button>
                             <button
                               type="button"

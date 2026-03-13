@@ -51,25 +51,31 @@ export default function PremiumPage() {
   const buttonSuccessClass = "rounded-lg bg-emerald-700 px-3 py-1 text-xs text-white hover:bg-emerald-800 disabled:opacity-60";
   const buttonSecondaryClass = "rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50";
   const premiumHighlights = [
+    "Doubles support for quick matches and competitions",
     "Full stats suite: Table, Head-to-Head, and Predictor",
-    "Live Overview for active events",
-    "Doubles support in quick match and competitions",
-    "League competitions and larger knockout draws",
-    "Round-specific best-of lengths",
-    "Auto-Select Opening Breaker",
+    "Live Overview for active competitions",
+    "Round-specific match lengths",
+    "Auto-select opening breaker",
     "Break & Run / Run Out tracking",
-    "All future Premium upgrades",
+    "Any future Premium club-play upgrades",
   ];
-  const comparisonRows: { feature: string; free: string; premium: string }[] = [
-    { feature: "Quick Match (singles)", free: "Included", premium: "Included" },
-    { feature: "Create knockout competitions", free: "Up to 4 players", premium: "Large draws + BYE support" },
-    { feature: "Doubles (2v2)", free: "Not included", premium: "Included" },
-    { feature: "League competitions", free: "Not included", premium: "Included" },
-    { feature: "Stats screen", free: "Not included", premium: "Full access" },
-    { feature: "Live Overview", free: "Not included", premium: "Included" },
-    { feature: "Auto-Select Opening Breaker", free: "Not included", premium: "Included" },
-    { feature: "Round-specific best-of lengths", free: "Not included", premium: "Included" },
-    { feature: "Break & Run / Run Out tracking", free: "Not included", premium: "Included" },
+  const comparisonRows: {
+    feature: string;
+    freePlayer: string;
+    premiumPlayer: string;
+    freeAdmin: string;
+    premiumAdmin: string;
+  }[] = [
+    { feature: "Quick Match", freePlayer: "Included", premiumPlayer: "Included", freeAdmin: "Included", premiumAdmin: "Included" },
+    { feature: "View events, results, rules, and notifications", freePlayer: "Included", premiumPlayer: "Included", freeAdmin: "Included", premiumAdmin: "Included" },
+    { feature: "Create competitions", freePlayer: "Not included", premiumPlayer: "Not included", freeAdmin: "Included", premiumAdmin: "Included" },
+    { feature: "Run club admin workflows", freePlayer: "Not included", premiumPlayer: "Not included", freeAdmin: "Included", premiumAdmin: "Included" },
+    { feature: "Doubles", freePlayer: "Not included", premiumPlayer: "Included", freeAdmin: "Not included", premiumAdmin: "Included" },
+    { feature: "Stats screen", freePlayer: "Not included", premiumPlayer: "Included", freeAdmin: "Not included", premiumAdmin: "Included" },
+    { feature: "Live Overview", freePlayer: "Not included", premiumPlayer: "Included", freeAdmin: "Not included", premiumAdmin: "Included" },
+    { feature: "Auto-select opening breaker", freePlayer: "Not included", premiumPlayer: "Included", freeAdmin: "Not included", premiumAdmin: "Included" },
+    { feature: "Round-specific match lengths", freePlayer: "Not included", premiumPlayer: "Not included", freeAdmin: "Not included", premiumAdmin: "Included" },
+    { feature: "Break & Run / Run Out tracking", freePlayer: "Not included", premiumPlayer: "Included", freeAdmin: "Not included", premiumAdmin: "Included" },
   ];
   const isIncluded = (value: string) => !value.toLowerCase().includes("not included");
   const planCell = (value: string, highlight = false) => {
@@ -205,7 +211,7 @@ export default function PremiumPage() {
           <ScreenHeader
             title="Premium"
             eyebrow="Premium"
-            subtitle={isSuperAdmin ? "Manage premium approvals and access." : "Unlock the full Rack & Frame experience."}
+            subtitle={isSuperAdmin ? "Manage premium approvals and access." : "Premium unlocks the advanced extras on top of the standard club roles."}
           />
 
           <section className={`${cardBaseClass} space-y-2`}>
@@ -278,8 +284,18 @@ export default function PremiumPage() {
                   <p className="mt-1 text-2xl font-bold text-slate-900">One-off £9.99</p>
                   <p className="text-sm text-slate-600">Usually £12.99 · no subscription</p>
                   <p className="mt-2 text-slate-700">
-                    Upgrade once and run your club with the full professional toolkit.
+                    Premium does not replace roles. Player, Club Admin, and Super User stay the same. Premium adds the advanced extras to Player or Club Admin accounts.
                   </p>
+                </section>
+
+                <section className="rounded-xl border border-slate-200 bg-white p-4">
+                  <p className="font-semibold text-slate-900">How access works</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                    <li>Player accounts can use Quick Match and normal club viewing features on the free plan.</li>
+                    <li>Club Admin accounts can create competitions and run their club on the free plan.</li>
+                    <li>Premium adds advanced extras like doubles, stats, live overview, and enhanced match tools.</li>
+                    <li>Super User always keeps full access and is not governed by Premium status.</li>
+                  </ul>
                 </section>
 
                 <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -292,22 +308,26 @@ export default function PremiumPage() {
                 </section>
 
                 <section className="rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="font-semibold text-slate-900">Free vs Premium</p>
+                  <p className="font-semibold text-slate-900">Free and Premium feature matrix</p>
                   <div className="mt-3 overflow-x-auto">
                     <table className="min-w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-slate-200 text-slate-700">
                           <th className="py-2 pr-4 font-semibold">Feature</th>
-                          <th className="py-2 pr-4 font-semibold">Free</th>
-                          <th className="py-2 font-semibold text-teal-700">Premium</th>
+                          <th className="py-2 pr-4 font-semibold">Free Player</th>
+                          <th className="py-2 pr-4 font-semibold text-teal-700">Premium Player</th>
+                          <th className="py-2 pr-4 font-semibold">Free Club Admin</th>
+                          <th className="py-2 font-semibold text-teal-700">Premium Club Admin</th>
                         </tr>
                       </thead>
                       <tbody>
                         {comparisonRows.map((row) => (
                           <tr key={row.feature} className="border-b border-slate-100 text-slate-700">
                             <td className="py-2 pr-4 font-medium text-slate-900">{row.feature}</td>
-                            <td className="py-2 pr-4">{planCell(row.free)}</td>
-                            <td className="py-2">{planCell(row.premium, true)}</td>
+                            <td className="py-2 pr-4">{planCell(row.freePlayer)}</td>
+                            <td className="py-2 pr-4">{planCell(row.premiumPlayer, true)}</td>
+                            <td className="py-2 pr-4">{planCell(row.freeAdmin)}</td>
+                            <td className="py-2">{planCell(row.premiumAdmin, true)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -325,7 +345,7 @@ export default function PremiumPage() {
                     >
                       {requestStatus === "pending" ? "Premium request pending" : "Request Premium"}
                     </button>
-                    <span className="text-sm text-slate-600">Requests are reviewed by the super user.</span>
+                    <span className="text-sm text-slate-600">Premium can be turned on or off by the Super User for standard users and Club Admin accounts.</span>
                   </div>
                 ) : !premium.loading && premium.unlocked ? (
                   <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
