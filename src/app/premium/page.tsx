@@ -36,6 +36,8 @@ export default function PremiumPage() {
   const admin = useAdminStatus();
   const [requestStatus, setRequestStatus] = useState<"none" | "pending" | "requested">("none");
   const [message, setMessage] = useState<string | null>(null);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [redeemingVoucher, setRedeemingVoucher] = useState(false);
   const [isMinor, setIsMinor] = useState(false);
   const [guardianConsent, setGuardianConsent] = useState(false);
   const [superRequests, setSuperRequests] = useState<PremiumRequest[]>([]);
@@ -281,8 +283,8 @@ export default function PremiumPage() {
                 ) : null}
                 <section className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Premium Unlock</p>
-                  <p className="mt-1 text-2xl font-bold text-slate-900">One-off £9.99</p>
-                  <p className="text-sm text-slate-600">Usually £12.99 · no subscription</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">One-off £12.99</p>
+                  <p className="text-sm text-slate-600">No subscription · one account upgrade</p>
                   <p className="mt-2 text-slate-700">
                     Premium does not replace roles. Player, Club Admin, and Super User stay the same. Premium adds the advanced extras to Player or Club Admin accounts.
                   </p>
@@ -336,16 +338,78 @@ export default function PremiumPage() {
                 </section>
 
                 {!premium.loading && !premium.unlocked ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={onRequestPremium}
-                      disabled={requestStatus === "pending"}
-                      className={buttonPrimaryClass}
-                    >
-                      {requestStatus === "pending" ? "Premium request pending" : "Request Premium"}
-                    </button>
-                    <span className="text-sm text-slate-600">Premium can be turned on or off by the Super User for standard users and Club Admin accounts.</span>
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="font-semibold text-slate-900">Request Premium</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Request a Premium upgrade for this account at £12.99. Requests are reviewed by the Super User.
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={onRequestPremium}
+                          disabled={requestStatus === "pending"}
+                          className={buttonPrimaryClass}
+                        >
+                          {requestStatus === "pending" ? "Premium request pending" : "Request Premium (£12.99)"}
+                        </button>
+                        <span className="text-sm text-slate-600">Premium can be turned on or off by the Super User for standard users and Club Admin accounts.</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <p className="font-semibold text-slate-900">Have a voucher code?</p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        If you have a Rack &amp; Frame voucher code, enter it here to unlock Premium for free.
+                      </p>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <input
+                          value={voucherCode}
+                          onChange={(e) => setVoucherCode(e.target.value.toUpperCase())}
+                          placeholder="Enter voucher code"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 sm:flex-1"
+                        />
+                        <button
+                          type="button"
+                          disabled={redeemingVoucher || !voucherCode.trim()}
+                          onClick={async () => {
+                            const client = supabase;
+                            if (!client) {
+                              setMessage("Supabase is not configured.");
+                              return;
+                            }
+                            const { data } = await client.auth.getSession();
+                            const token = data.session?.access_token;
+                            if (!token) {
+                              setMessage("You must be signed in.");
+                              return;
+                            }
+                            setRedeemingVoucher(true);
+                            const resp = await fetch("/api/premium/redeem-voucher", {
+                              method: "POST",
+                              headers: {
+                                "Content-Type": "application/json",
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: JSON.stringify({ voucherCode }),
+                            });
+                            const json = await resp.json().catch(() => ({}));
+                            setRedeemingVoucher(false);
+                            if (!resp.ok) {
+                              setMessage(json?.error ?? "Failed to redeem voucher code.");
+                              return;
+                            }
+                            setVoucherCode("");
+                            setRequestStatus("none");
+                            setMessage("Voucher accepted. Premium is now active on your account.");
+                            window.location.reload();
+                          }}
+                          className={buttonPrimaryClass}
+                        >
+                          {redeemingVoucher ? "Checking..." : "Apply Voucher"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ) : !premium.loading && premium.unlocked ? (
                   <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
