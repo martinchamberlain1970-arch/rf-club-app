@@ -165,7 +165,19 @@ export default function PlayersPage() {
   const buttonDangerOutlineSmClass = "rounded-lg border border-rose-300 bg-white px-3 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50";
 
   const activePlayers = useMemo(() => players.filter((p) => !p.is_archived), [players]);
-  const archivedPlayers = useMemo(() => players.filter((p) => p.is_archived), [players]);
+  const pendingChildRequestPlayerIds = useMemo(
+    () =>
+      new Set(
+        updateRequests
+          .filter((r) => r.status === "pending" && (r.requested_age_band ?? "") !== "18_plus")
+          .map((r) => r.player_id)
+      ),
+    [updateRequests]
+  );
+  const archivedPlayers = useMemo(
+    () => players.filter((p) => p.is_archived && !pendingChildRequestPlayerIds.has(p.id)),
+    [players, pendingChildRequestPlayerIds]
+  );
   const unclaimedPlayers = useMemo(() => activePlayers.filter((p) => !p.claimed_by), [activePlayers]);
   const unclaimedAdultPlayers = useMemo(
     () => unclaimedPlayers.filter((p) => (p.age_band ?? "18_plus") === "18_plus"),

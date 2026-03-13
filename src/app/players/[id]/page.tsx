@@ -761,8 +761,8 @@ export default function PlayerProfilePage() {
     const first = childFirstName.trim();
     if (!first) {
       setInfoModal({
-        title: "Missing first name",
-        description: "Enter the child first name or nickname.",
+        title: "Missing child name",
+        description: "Enter the child full name or preferred playing name.",
       });
       return;
     }
@@ -842,7 +842,7 @@ export default function PlayerProfilePage() {
     setInfoModal({
       title: "Child profile request submitted",
       description:
-        "The under-18 profile has been submitted for approval. A club admin can approve it for this location, or the Super User can approve it if no club admin is in place yet.",
+        "The under-18 profile has been submitted to the approval queue. A club admin can approve it for this location, or the Super User can approve it if no club admin is in place yet. The request stores the child name, location, and linked parent or guardian details only.",
     });
     const reload = await client
       .from("players")
@@ -1197,7 +1197,7 @@ export default function PlayerProfilePage() {
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <input
                       className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                      placeholder="Child first name or nickname"
+                      placeholder="Child full name or preferred playing name"
                       value={childFirstName}
                       onChange={(e) => setChildFirstName(e.target.value)}
                       disabled={!canCreateChildProfile || creatingChild}
@@ -1217,6 +1217,7 @@ export default function PlayerProfilePage() {
                     </select>
                   </div>
                   <p className="mt-2 text-xs text-slate-500">Age band: Under 18s</p>
+                  <p className="mt-1 text-xs text-slate-500">After submission, this request appears in the profile update approval queue rather than the live player list.</p>
                   <div className="mt-3">
                     <button
                       type="button"
