@@ -841,9 +841,20 @@ export default function PlayersPage() {
   const onReviewUpdateRequest = async (req: PlayerUpdateRequest, approve: boolean) => {
     const client = supabase;
     if (!client || !userId) return;
-    if (!isSuperAdmin) {
-      setMessage("Only the Super User can review profile update requests.");
+    if (!isSuperAdmin && !admin.isAdmin) {
+      setMessage("Only club admins or the Super User can review profile update requests.");
       return;
+    }
+    if (!isSuperAdmin) {
+      if (!adminLocationId) {
+        setMessage("Admin location is not set.");
+        return;
+      }
+      const requesterLocation = requesterLocationByUser.get(req.requester_user_id) ?? null;
+      if (requesterLocation !== adminLocationId) {
+        setMessage("You can only review profile update requests for users at your location.");
+        return;
+      }
     }
     if (approve) {
       const updatePayload: Record<string, string | boolean | null> = {};
@@ -869,6 +880,7 @@ export default function PlayersPage() {
       if (req.requested_avatar_url && (req.requested_age_band ?? "18_plus") === "18_plus") {
         updatePayload.avatar_url = req.requested_avatar_url;
       }
+      updatePayload.is_archived = false;
       if (Object.keys(updatePayload).length) {
         const { error } = await client.from("players").update(updatePayload).eq("id", req.player_id);
         if (error) {
@@ -2171,6 +2183,8 @@ export default function PlayersPage() {
                             Requested age band:{" "}
                             {r.requested_age_band === "under_13"
                               ? "Under 13"
+                              : r.requested_age_band === "under_18"
+                                ? "Under 18s"
                               : r.requested_age_band === "13_15"
                                 ? "13–15"
                                 : r.requested_age_band === "16_17"

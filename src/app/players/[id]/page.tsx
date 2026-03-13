@@ -111,7 +111,7 @@ export default function PlayerProfilePage() {
   const [editGuardianEmail, setEditGuardianEmail] = useState("");
   const [editGuardianUserId, setEditGuardianUserId] = useState("");
   const [childFirstName, setChildFirstName] = useState("");
-  const [childAgeBand, setChildAgeBand] = useState<"under_13" | "13_15" | "16_17">("under_13");
+  const [childAgeBand, setChildAgeBand] = useState<"under_18">("under_18");
   const [childLocationId, setChildLocationId] = useState("");
   const [creatingChild, setCreatingChild] = useState(false);
   const [infoModal, setInfoModal] = useState<{ title: string; description: string } | null>(null);
@@ -129,7 +129,7 @@ export default function PlayerProfilePage() {
   const profileRef = useRef<HTMLDivElement | null>(null);
   const admin = useAdminStatus();
   const hasAdminPower = admin.isAdmin || admin.isSuper;
-  const childProfilesEnabled = false;
+  const childProfilesEnabled = true;
 
   useEffect(() => {
     const client = supabase;
@@ -776,23 +776,27 @@ export default function PlayerProfilePage() {
     const guardianUser = appUserById.get(currentProfileLinkedUserId);
     const guardianName = player.full_name?.trim() ? player.full_name : player.display_name;
     setCreatingChild(true);
-    const { error } = await client.from("players").insert({
+    const { data, error } = await client
+      .from("players")
+      .insert({
       display_name: first,
       first_name: first,
       nickname: null,
       full_name: first,
-      is_archived: false,
       location_id: childLocationId,
       age_band: childAgeBand,
-      guardian_consent: true,
-      guardian_consent_at: new Date().toISOString(),
+      guardian_consent: false,
+      guardian_consent_at: null,
       guardian_user_id: currentProfileLinkedUserId,
       guardian_name: guardianName,
       guardian_email: guardianUser?.email ?? null,
-    });
-    setCreatingChild(false);
-    if (error) {
-      if (error.message.includes("players_display_name_lower_uniq")) {
+      is_archived: true,
+      })
+      .select("id")
+      .single();
+    if (error || !data?.id) {
+      setCreatingChild(false);
+      if (error?.message?.includes("players_display_name_lower_uniq")) {
         const suggestion = `${first}-${Math.floor(Math.random() * 90 + 10)}`;
         setChildFirstName(suggestion);
         setMessage(null);
@@ -805,17 +809,40 @@ export default function PlayerProfilePage() {
       setMessage(null);
       setInfoModal({
         title: "Unable to create child profile",
-        description: error.message,
+        description: error?.message ?? "Child profile could not be created.",
+      });
+      return;
+    }
+    const requestRes = await client.from("player_update_requests").insert({
+      player_id: data.id,
+      requester_user_id: currentProfileLinkedUserId,
+      requested_full_name: first,
+      requested_location_id: childLocationId,
+      requested_age_band: childAgeBand,
+      requested_guardian_consent: true,
+      requested_guardian_name: guardianName,
+      requested_guardian_email: guardianUser?.email ?? null,
+      requested_guardian_user_id: currentProfileLinkedUserId,
+      status: "pending",
+    });
+    setCreatingChild(false);
+    if (requestRes.error) {
+      await client.from("players").delete().eq("id", data.id);
+      setMessage(null);
+      setInfoModal({
+        title: "Unable to submit child profile request",
+        description: requestRes.error.message,
       });
       return;
     }
     setChildFirstName("");
-    setChildAgeBand("under_13");
+    setChildAgeBand("under_18");
     setChildLocationId("");
     setMessage(null);
     setInfoModal({
-      title: "Child profile created",
-      description: "Child profile created and linked to this parent/guardian.",
+      title: "Child profile request submitted",
+      description:
+        "The under-18 profile has been submitted for approval. A club admin can approve it for this location, or the Super User can approve it if no club admin is in place yet.",
     });
     const reload = await client
       .from("players")
@@ -1068,6 +1095,8 @@ export default function PlayerProfilePage() {
                       Age band:{" "}
                       {player?.age_band === "under_13"
                         ? "Under 13"
+                        : player?.age_band === "under_18"
+                          ? "Under 18s"
                         : player?.age_band === "13_15"
                           ? "13–15"
                           : player?.age_band === "16_17"
@@ -1158,14 +1187,14 @@ export default function PlayerProfilePage() {
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <h2 className="text-lg font-semibold text-slate-900">Create child profile</h2>
                   <p className="mt-1 text-sm text-slate-600">
-                    Create an under-18 profile linked to this parent/guardian profile.
+                    Create an under-18 player profile linked to this parent or guardian. The request will be reviewed by a club admin, or by the Super User if no club admin exists yet.
                   </p>
                   {!currentProfileLinkedUserId ? (
                     <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                       This parent or guardian profile must be linked to a user account before child profiles can be created.
                     </p>
                   ) : null}
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <input
                       className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                       placeholder="Child first name or nickname"
@@ -1173,16 +1202,6 @@ export default function PlayerProfilePage() {
                       onChange={(e) => setChildFirstName(e.target.value)}
                       disabled={!canCreateChildProfile || creatingChild}
                     />
-                    <select
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                      value={childAgeBand}
-                      onChange={(e) => setChildAgeBand(e.target.value as "under_13" | "13_15" | "16_17")}
-                      disabled={!canCreateChildProfile || creatingChild}
-                    >
-                      <option value="under_13">Under 13</option>
-                      <option value="13_15">13–15</option>
-                      <option value="16_17">16–17</option>
-                    </select>
                     <select
                       className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                       value={childLocationId}
@@ -1197,6 +1216,7 @@ export default function PlayerProfilePage() {
                       ))}
                     </select>
                   </div>
+                  <p className="mt-2 text-xs text-slate-500">Age band: Under 18s</p>
                   <div className="mt-3">
                     <button
                       type="button"
@@ -1306,6 +1326,7 @@ export default function PlayerProfilePage() {
                         }}
                       >
                         <option value="18_plus">18+</option>
+                        <option value="under_18">Under 18s</option>
                         <option value="16_17">16–17</option>
                         <option value="13_15">13–15</option>
                         <option value="under_13">Under 13</option>
@@ -1418,6 +1439,7 @@ export default function PlayerProfilePage() {
                         onChange={(e) => setRequestAgeBand(e.target.value)}
                       >
                         <option value="18_plus">18+</option>
+                        <option value="under_18">Under 18s</option>
                         <option value="16_17">16–17</option>
                         <option value="13_15">13–15</option>
                         <option value="under_13">Under 13</option>
