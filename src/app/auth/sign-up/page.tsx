@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -7,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { logAudit } from "@/lib/audit";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
+import rackAndFramePhoto from "@/photo/rackandframe.png";
 
 type Location = { id: string; name: string };
 type SignupDraft = {
@@ -108,6 +110,8 @@ export default function SignUpPage() {
   const privacyPolicyUrl = process.env.NEXT_PUBLIC_PRIVACY_POLICY_URL?.trim() || "/privacy";
   const termsUrl = process.env.NEXT_PUBLIC_TERMS_URL?.trim() || "/terms";
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const fieldClass = "w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-200";
+  const cardClass = "rounded-[28px] border border-slate-200 bg-white/95 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur";
 
   const getEmailRedirectUrl = () => {
     if (siteUrl) {
@@ -371,74 +375,145 @@ export default function SignUpPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-100 p-6">
-      <div className="mx-auto max-w-md space-y-4">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.16),_transparent_34%),linear-gradient(180deg,_#f8fafc_0%,_#eef6f4_48%,_#fff8ef_100%)] p-4 sm:p-6">
+      <div className="mx-auto max-w-6xl space-y-4">
         <AuthTopNav onBack={() => router.back()} />
-        <h1 className="text-3xl font-bold text-slate-900">Create Account</h1>
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">First-time setup</p>
-            <p className="text-sm text-slate-600">
-              {step === 1
-                ? "Complete your account details and profile check."
-                : "Review legal terms and finish account creation."}
-            </p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Steps</p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-3">
-              <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"><span className="font-semibold text-slate-900">1.</span> Enter details</div>
-              <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"><span className="font-semibold text-slate-900">2.</span> Legal agreement</div>
-              <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"><span className="font-semibold text-slate-900">3.</span> Create account</div>
-            </div>
-          </div>
-          {step === 1 ? (
-            <>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Email</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Password</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-                />
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2" placeholder="First name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-                <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2" placeholder="Second name" value={secondName} onChange={(e) => setSecondName(e.target.value)} />
-              </div>
-              <div>
-                <select
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-                  value={locationId}
-                  onChange={(e) => setLocationId(e.target.value)}
-                >
-                  <option value="">Select location (required)</option>
-                  {locations.map((loc) => (
-                    <option key={loc.id} value={loc.id}>
-                      {loc.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="mb-2 text-xs text-slate-600">
-                    Location not listed? Enter a new one below. The account can still be created and the Super User can review or rename the location afterwards.
+        <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+          <section className={`${cardClass} overflow-hidden`}>
+            <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+              <div className="space-y-4">
+                <div className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-teal-700">
+                  Rack &amp; Frame Club
+                </div>
+                <div className="space-y-3">
+                  <h1 className="max-w-xl text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
+                    Join your club for quick matches, local competitions, and player results.
+                  </h1>
+                  <p className="max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
+                    Create your account to track your player profile, take part in club events, and keep up with scores, rankings, and notifications in one place.
                   </p>
-                  <div className="flex flex-wrap items-center gap-2">
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Play Faster</p>
+                    <p className="mt-1 text-sm text-slate-700">Jump into quick matches and scoring without messy setup.</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Stay Organised</p>
+                    <p className="mt-1 text-sm text-slate-700">Keep player profiles, locations, results, and approvals in one club system.</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Built For Clubs</p>
+                    <p className="mt-1 text-sm text-slate-700">Designed for social clubs running local tournaments and weekly play.</p>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  We check whether your player profile already exists. If it does, the Super User can review and link it. If not, your profile is created as part of sign-up.
+                </div>
+              </div>
+              <div className="relative">
+                <div className="absolute inset-0 rounded-[30px] bg-gradient-to-br from-teal-200/40 via-transparent to-amber-200/50 blur-2xl" />
+                <div className="relative overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_30px_70px_rgba(15,23,42,0.18)]">
+                  <Image
+                    src={rackAndFramePhoto}
+                    alt="Rack and Frame club"
+                    className="h-[280px] w-full object-cover object-center sm:h-[360px]"
+                    priority
+                  />
+                  <div className="border-t border-slate-200 bg-white px-4 py-4">
+                    <p className="text-sm font-semibold text-slate-900">What happens next?</p>
+                    <ol className="mt-2 space-y-2 text-sm text-slate-600">
+                      <li>1. Enter your details and choose your club location.</li>
+                      <li>2. We check for an existing player profile match.</li>
+                      <li>3. You verify your email and sign in to start using the club app.</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className={`${cardClass} space-y-4`}>
+            <div className="space-y-2">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Create account</p>
+              <h2 className="text-2xl font-bold text-slate-900 sm:text-3xl">Set up your player login</h2>
+              <p className="text-sm leading-6 text-slate-600">
+                {step === 1
+                  ? "Tell us who you are, where you play, and we’ll get your account ready."
+                  : "Review your details, accept the club terms, and finish creating your account."}
+              </p>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className={`rounded-2xl border px-3 py-2 text-sm ${step === 1 ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                <span className="font-semibold">1.</span> Your details
+              </div>
+              <div className={`rounded-2xl border px-3 py-2 text-sm ${step === 2 ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                <span className="font-semibold">2.</span> Club terms
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                <span className="font-semibold">3.</span> Email confirm
+              </div>
+            </div>
+
+            {step === 1 ? (
+              <>
+                <div className="grid gap-3">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">Email address</label>
                     <input
-                      className="min-w-[220px] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                      placeholder="Enter new location name"
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className={fieldClass}
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">Password</label>
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className={fieldClass}
+                      placeholder="Choose a secure password"
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">First name</label>
+                      <input className={fieldClass} placeholder="First name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">Second name</label>
+                      <input className={fieldClass} placeholder="Second name" value={secondName} onChange={(e) => setSecondName(e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Club location</label>
+                  <select
+                    className={fieldClass}
+                    value={locationId}
+                    onChange={(e) => setLocationId(e.target.value)}
+                  >
+                    <option value="">Select location (required)</option>
+                    {locations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-3 text-xs leading-5 text-slate-600">
+                    Can’t see your club yet? Add it below. Your account can still be created and the Super User can tidy the location name afterwards.
+                  </p>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      className={`${fieldClass} min-w-0 flex-1`}
+                      placeholder="Enter new club or venue name"
                       value={requestedLocationName}
                       onChange={(e) => setRequestedLocationName(e.target.value)}
                     />
@@ -446,80 +521,83 @@ export default function SignUpPage() {
                       type="button"
                       onClick={() => void submitLocationRequest()}
                       disabled={requestingLocation}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-60"
+                      className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm disabled:opacity-60"
                     >
-                      {requestingLocation ? "Submitting..." : "Check location"}
+                      {requestingLocation ? "Submitting..." : "Add new location"}
                     </button>
                   </div>
                 </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                <p className="font-semibold text-slate-900">Review your details</p>
-                <p className="mt-1">{email.trim()}</p>
-                <p>{firstName.trim()} {secondName.trim()}</p>
-                <p>{locations.find((l) => l.id === locationId)?.name ?? (requestedLocationName.trim() || "Location not selected")}</p>
-              </div>
-              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                Under-18 players do not create login accounts directly. A parent/guardian or administrator should create and manage under-18 player profiles.
-              </p>
-              <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={acceptPrivacy}
-                    onChange={(e) => setAcceptPrivacy(e.target.checked)}
-                    className="mt-1"
-                  />
-                  <span>
-                    I have read and accept the{" "}
-                    <a href={privacyPolicyUrl} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
-                      Privacy Policy
-                    </a>
-                    .
-                  </span>
-                </label>
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={acceptTerms}
-                    onChange={(e) => setAcceptTerms(e.target.checked)}
-                    className="mt-1"
-                  />
-                  <span>
-                    I have read and accept the{" "}
-                    <a href={termsUrl} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
-                      Terms &amp; Conditions
-                    </a>
-                    .
-                  </span>
-                </label>
-              </div>
-            </>
-          )}
-          <div className="flex flex-wrap gap-2">
-            {step === 1 ? (
-              <button type="button" onClick={() => void onContinue()} className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white">
-                Continue
-              </button>
+              </>
             ) : (
               <>
-                <button type="button" onClick={onSignUp} disabled={busy} className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60">
-                  {busy ? "Please wait..." : "Create account"}
-                </button>
-                <button type="button" onClick={() => setStep(1)} disabled={busy} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
-                  Back
-                </button>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">Review your details</p>
+                  <div className="mt-2 space-y-1">
+                    <p>{email.trim()}</p>
+                    <p>{firstName.trim()} {secondName.trim()}</p>
+                    <p>{locations.find((l) => l.id === locationId)?.name ?? (requestedLocationName.trim() || "Location not selected")}</p>
+                  </div>
+                </div>
+                <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-700">
+                  Under-18 players do not create login accounts directly. A parent, guardian, or club admin should create and manage under-18 player profiles instead.
+                </p>
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={acceptPrivacy}
+                      onChange={(e) => setAcceptPrivacy(e.target.checked)}
+                      className="mt-1"
+                    />
+                    <span>
+                      I have read and accept the{" "}
+                      <a href={privacyPolicyUrl} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
+                        Privacy Policy
+                      </a>
+                      .
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={acceptTerms}
+                      onChange={(e) => setAcceptTerms(e.target.checked)}
+                      className="mt-1"
+                    />
+                    <span>
+                      I have read and accept the{" "}
+                      <a href={termsUrl} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
+                        Terms &amp; Conditions
+                      </a>
+                      .
+                    </span>
+                  </label>
+                </div>
               </>
             )}
-            <Link href="/auth/sign-in" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
-              Back to sign in
-            </Link>
-          </div>
-          <MessageModal message={message} onClose={() => setMessage(null)} />
-        </section>
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {step === 1 ? (
+                <button type="button" onClick={() => void onContinue()} className="rounded-2xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800">
+                  Continue
+                </button>
+              ) : (
+                <>
+                  <button type="button" onClick={onSignUp} disabled={busy} className="rounded-2xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:opacity-60">
+                    {busy ? "Please wait..." : "Create account"}
+                  </button>
+                  <button type="button" onClick={() => setStep(1)} disabled={busy} className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                    Back
+                  </button>
+                </>
+              )}
+              <Link href="/auth/sign-in" className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-center text-sm font-medium text-slate-700 shadow-sm">
+                Already registered? Sign in
+              </Link>
+            </div>
+            <MessageModal message={message} onClose={() => setMessage(null)} />
+          </section>
+        </div>
       </div>
       <InfoModal
         open={Boolean(infoModal)}

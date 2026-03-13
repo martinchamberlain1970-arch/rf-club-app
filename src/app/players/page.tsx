@@ -2180,8 +2180,8 @@ export default function PlayersPage() {
               </div>
 
               <div className="mt-6">
-                <h3 className="text-xl font-semibold text-slate-900">Profile Update Requests</h3>
-                {!visibleUpdates.length ? <p className="mt-2 text-sm text-slate-600">No pending profile updates.</p> : null}
+                <h3 className="text-xl font-semibold text-slate-900">Profile And Child Requests</h3>
+                {!visibleUpdates.length ? <p className="mt-2 text-sm text-slate-600">No pending profile or child approval requests.</p> : null}
                 <div className="mt-3 space-y-2">
                   {visibleUpdates.map((r) => {
                     const player = players.find((p) => p.id === r.player_id);
