@@ -1,0 +1,504 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import RequireAuth from "@/components/RequireAuth";
+import PageNav from "@/components/PageNav";
+import useAdminStatus from "@/components/useAdminStatus";
+import { supabase } from "@/lib/supabase";
+import usePremiumStatus from "@/components/usePremiumStatus";
+import ConfirmModal from "@/components/ConfirmModal";
+
+const links = [
+  { href: "/welcome-tour", title: "Welcome Tour", desc: "Fast setup walkthrough for first-time use." },
+  { href: "/players", title: "Registered Players", desc: "Add and manage players." },
+  { href: "/quick-match", title: "Quick Match", desc: "Create and start a practice match." },
+  { href: "/events/new", title: "Create Competition", desc: "Create knockout or league events." },
+  { href: "/events", title: "Events", desc: "View open and completed events." },
+  { href: "/backup", title: "Data Management", desc: "Backup, restore, and controlled data reset." },
+  { href: "/audit", title: "Audit Log", desc: "Super User action trail across the system." },
+  { href: "/signup-requests", title: "Signup Requests", desc: "Review new-account profile and location requests." },
+  { href: "/usage", title: "Usage Analytics", desc: "Super User page-usage summary." },
+  { href: "/results", title: "Results Queue", desc: "Review and approve submitted results." },
+  { href: "/notifications", title: "Notifications", desc: "Read and manage your inbox notifications." },
+  { href: "/live", title: "Live Overview", desc: "In-progress overview of active events." },
+  { href: "/stats", title: "Stats", desc: "Player and matchup stats." },
+  { href: "/rules", title: "Rules", desc: "Pool and Snooker reference." },
+  { href: "/help", title: "User Guide", desc: "How to use the app." },
+  { href: "/premium", title: "Premium", desc: "Premium features and test mode." },
+  { href: "/legal", title: "Legal & Credits", desc: "Legal and support information." },
+];
+
+export default function HomePage() {
+  const router = useRouter();
+  const admin = useAdminStatus();
+  const premium = usePremiumStatus();
+  const [completionMessage, setCompletionMessage] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userPlayerId, setUserPlayerId] = useState<string | null>(null);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [secondName, setSecondName] = useState("");
+  const [pendingClaim, setPendingClaim] = useState<{ id: string; name: string } | null>(null);
+  const [claimStatusOpen, setClaimStatusOpen] = useState(false);
+  const [pendingAdminRequest, setPendingAdminRequest] = useState<{ id: string; createdAt: string } | null>(null);
+  const [showProfilePrompt, setShowProfilePrompt] = useState(false);
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    resolve?: (value: boolean) => void;
+  }>({ open: false, title: "", description: "" });
+
+  const askConfirm = (title: string, description: string, confirmLabel = "Confirm", cancelLabel = "Cancel") =>
+    new Promise<boolean>((resolve) => {
+      setConfirmState({ open: true, title, description, confirmLabel, cancelLabel, resolve });
+    });
+
+  const closeConfirm = (result: boolean) => {
+    const resolver = confirmState.resolve;
+    setConfirmState({ open: false, title: "", description: "" });
+    resolver?.(result);
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const complete = params.get("complete");
+    const event = params.get("event");
+    const winner = params.get("winner");
+    if (complete === "1" && event && winner) {
+      setCompletionMessage(`${event} is now complete. Winner: ${winner}.`);
+      params.delete("complete");
+      params.delete("event");
+      params.delete("winner");
+      const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+      window.history.replaceState({}, "", next);
+      return;
+    }
+    setCompletionMessage(null);
+  }, []);
+
+  useEffect(() => {
+    const common = [
+      "/quick-match",
+      "/events",
+      "/events/new",
+      "/players",
+      "/results",
+      "/signup-requests",
+      "/notifications",
+      "/stats",
+      "/live",
+      "/rules",
+      "/help",
+      "/premium",
+      "/legal",
+    ];
+    common.forEach((path) => router.prefetch(path));
+  }, [router]);
+
+  useEffect(() => {
+    const run = async () => {
+      const client = supabase;
+      if (!client) return;
+      const { data } = await client.auth.getUser();
+      const userId = data.user?.id;
+      setUserEmail(data.user?.email ?? null);
+      if (!userId) return;
+      if (admin.isSuper) {
+        setUserName(null);
+        setUserPlayerId(null);
+        setPendingClaim(null);
+        setPendingAdminRequest(null);
+        return;
+      }
+      const linkRes = await client.from("app_users").select("linked_player_id").eq("id", userId).maybeSingle();
+      const linkedPlayerId = linkRes.data?.linked_player_id ?? null;
+      const { data: player } = linkedPlayerId
+        ? await client
+            .from("players")
+            .select("id,display_name,full_name,location_id")
+            .eq("id", linkedPlayerId)
+            .maybeSingle()
+        : await client
+            .from("players")
+            .select("id,display_name,full_name,location_id")
+            .eq("claimed_by", userId)
+            .maybeSingle();
+      const name = player?.full_name?.trim() ? player.full_name : player?.display_name ?? null;
+      setUserName(name);
+      setUserPlayerId(player?.id ?? null);
+      const { data: pending } = await client
+        .from("player_claim_requests")
+        .select("id,requested_full_name,player_id,status")
+        .eq("requester_user_id", userId)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const pendingRow = pending?.[0];
+      const pendingName = pendingRow?.requested_full_name ?? null;
+      setPendingClaim(pendingRow && pendingName ? { id: pendingRow.id, name: pendingName } : null);
+      const { data: pendingAdmin } = await client
+        .from("admin_requests")
+        .select("id,created_at,status")
+        .eq("requester_user_id", userId)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const adminRow = pendingAdmin?.[0] as { id: string; created_at: string } | undefined;
+      setPendingAdminRequest(adminRow ? { id: adminRow.id, createdAt: adminRow.created_at } : null);
+
+    };
+    run();
+  }, [admin.isSuper]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (admin.loading || admin.isSuper) return;
+    if (!admin.userId || !userPlayerId) return;
+    const key = `profile_onboarding_prompt_seen_${admin.userId}_${userPlayerId}`;
+    const seen = window.localStorage.getItem(key);
+    if (!seen) setShowProfilePrompt(true);
+  }, [admin.loading, admin.isSuper, admin.userId, userPlayerId]);
+
+  const submitClaimRequest = async () => {
+    setProfileMessage(null);
+    const client = supabase;
+    if (!client) {
+      setProfileMessage("Supabase is not configured.");
+      return;
+    }
+    const first = firstName.trim();
+    const second = secondName.trim();
+    if (!first || !second) {
+      setProfileMessage("Enter your first and second name to continue.");
+      return;
+    }
+    const { data: userRes } = await client.auth.getUser();
+    const userId = userRes.user?.id;
+    if (!userId) {
+      setProfileMessage("You must be signed in to submit a profile check.");
+      return;
+    }
+    const fullName = `${first} ${second}`;
+    const patternA = `%${first}%${second}%`;
+    const patternB = `%${second}%${first}%`;
+    const { data: candidates } = await client
+      .from("players")
+      .select("id,full_name,claimed_by")
+      .eq("is_archived", false)
+      .or(`full_name.ilike.${patternA},full_name.ilike.${patternB}`)
+      .limit(1);
+    const candidate = candidates?.[0];
+    if (candidate && !candidate.claimed_by) {
+      const ok = await askConfirm(
+        "Possible profile match",
+        `We found a possible match: "${candidate.full_name ?? fullName}". Is this you?`,
+        "Yes, that's me",
+        "No"
+      );
+      if (!ok) {
+        setProfileMessage("Profile claim cancelled. If this is not you, ask an administrator to create your profile.");
+        return;
+      }
+      const { error } = await client.from("player_claim_requests").insert({
+        player_id: candidate.id,
+        requester_user_id: userId,
+        requested_full_name: candidate.full_name ?? fullName,
+        status: "pending",
+      });
+      if (error) {
+        setProfileMessage(`Claim request failed: ${error.message}`);
+        return;
+      }
+      setPendingClaim({ id: candidate.id, name: candidate.full_name ?? fullName });
+      setProfileMessage("Claim request sent for administrator approval.");
+      setProfileModalOpen(false);
+      return;
+    }
+
+    const { data: created, error: createError } = await client
+      .from("players")
+      .insert({
+        display_name: first,
+        first_name: first,
+        nickname: null,
+        full_name: fullName,
+        is_archived: false,
+        claimed_by: null,
+      })
+      .select("id")
+      .single();
+    if (createError || !created?.id) {
+      setProfileMessage(createError?.message ?? "Unable to create your profile for review.");
+      return;
+    }
+    const { error: claimError } = await client.from("player_claim_requests").insert({
+      player_id: created.id,
+      requester_user_id: userId,
+      requested_full_name: fullName,
+      status: "pending",
+    });
+    if (claimError) {
+      setProfileMessage(`Profile created, but claim request failed: ${claimError.message}`);
+      return;
+    }
+    setPendingClaim({ id: created.id, name: fullName });
+    setProfileMessage("Profile created and sent for administrator approval.");
+    setProfileModalOpen(false);
+  };
+
+  const cancelPendingClaim = async () => {
+    const client = supabase;
+    if (!client || !pendingClaim) return;
+    const { error } = await client
+      .from("player_claim_requests")
+      .update({ status: "rejected" })
+      .eq("id", pendingClaim.id)
+      .eq("status", "pending");
+    if (error) {
+      setProfileMessage(`Failed to cancel claim: ${error.message}`);
+      return;
+    }
+    setPendingClaim(null);
+    setProfileMessage("Claim request cancelled.");
+    setClaimStatusOpen(false);
+  };
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-6">
+      <div className="mx-auto max-w-4xl space-y-4">
+        <RequireAuth>
+          <section className="rounded-2xl border border-slate-200 bg-gradient-to-r from-teal-50 via-slate-50 to-amber-50 p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Dashboard</p>
+                <h1 className="text-3xl font-bold text-slate-900">Rack &amp; Frame - Professional Management for Pool &amp; Snooker</h1>
+              </div>
+              <PageNav />
+            </div>
+            <p className="mt-2 text-sm text-slate-600">Web setup baseline with auth and players management.</p>
+          </section>
+          {completionMessage ? (
+            <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-emerald-900">
+              {completionMessage}
+            </section>
+          ) : null}
+          <section className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur">
+            <p className="text-sm text-slate-600">User Profile</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-lg font-semibold text-slate-900">
+                {admin.isSuper
+                  ? "Super User Account"
+                  : admin.isAdmin
+                    ? "Administrator account"
+                    : userName
+                      ? `Logged in as ${userName}`
+                      : "No player profile linked"}
+              </p>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  admin.isSuper
+                    ? "bg-amber-100 text-amber-800"
+                    : admin.isAdmin
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {admin.isSuper ? "Super User" : admin.isAdmin ? "Administrator" : "User"}
+              </span>
+            </div>
+            {userEmail ? <p className="text-sm text-slate-600">Logged in: {userEmail}</p> : null}
+            {!admin.isSuper && userPlayerId ? (
+              <Link href={`/players/${userPlayerId}`} className="mt-1 inline-block text-sm text-teal-700 underline underline-offset-4">
+                View my profile
+              </Link>
+            ) : null}
+            {!admin.isAdmin && !userName ? (
+              <button
+                type="button"
+                onClick={() => setProfileModalOpen(true)}
+                className="mt-1 text-left text-sm text-teal-700 underline underline-offset-4"
+              >
+                Complete the profile check to link your player profile.
+              </button>
+            ) : null}
+            {!admin.isAdmin && !userName && pendingClaim ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="text-sm text-amber-700">Claim pending approval for {pendingClaim.name}.</p>
+                <button
+                  type="button"
+                  onClick={() => setClaimStatusOpen(true)}
+                  className="text-sm text-teal-700 underline underline-offset-4"
+                >
+                  View claim status
+                </button>
+              </div>
+            ) : null}
+            {!admin.isAdmin ? (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-sm font-semibold text-slate-900">Request administrator access</p>
+                <p className="text-xs text-slate-600">Submit this from your Player Profile screen.</p>
+                {pendingAdminRequest ? (
+                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    User profile change requested: admin access request pending since{" "}
+                    {new Date(pendingAdminRequest.createdAt).toLocaleString()}.
+                  </p>
+                ) : null}
+                {!pendingAdminRequest && userPlayerId ? (
+                  <Link href={`/players/${userPlayerId}`} className="mt-2 inline-block text-sm text-teal-700 underline underline-offset-4">
+                    Go to my profile to request admin access
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
+            {profileMessage ? <p className="mt-2 text-sm text-slate-700">{profileMessage}</p> : null}
+          </section>
+
+          <section className="grid gap-3 sm:grid-cols-2">
+            {links
+              .filter((item) => {
+                if (admin.loading) return true;
+                if (admin.isSuper && item.href === "/premium") return false;
+                if (!admin.isSuper && (item.href === "/audit" || item.href === "/usage" || item.href === "/signup-requests")) return false;
+                if (admin.isAdmin) return true;
+                return ["/welcome-tour", "/quick-match", "/events", "/events/new", "/live", "/rules", "/help", "/legal", "/premium", "/stats", "/notifications"].includes(item.href);
+              })
+              .map((item) => {
+                const isLive = item.href === "/live";
+                const handleClick = async (e: React.MouseEvent) => {
+                  if (!isLive || premium.loading || premium.unlocked || admin.isAdmin) return;
+                  e.preventDefault();
+                  const ok = await askConfirm(
+                    "Premium feature",
+                    "Live Overview is a Premium feature. Would you like to view Premium options?",
+                    "View Premium",
+                    "Cancel"
+                  );
+                  if (ok) router.push("/premium");
+                };
+                const isPremium = item.href === "/premium";
+                const title = isPremium && admin.isSuper ? "Premium Requests" : item.title;
+                const desc = isPremium && admin.isSuper ? "Approve or reject Premium access requests." : item.desc;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={handleClick}
+                    className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md"
+                  >
+                    <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+                    <p className="mt-1 text-sm text-slate-600">{desc}</p>
+                  </Link>
+                );
+              })}
+          </section>
+
+          {profileModalOpen && !admin.isAdmin ? (
+            <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 p-4">
+              <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
+                <h2 className="text-lg font-semibold text-slate-900">Profile check</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Enter your first and second name. We’ll check for an unclaimed profile and send a claim request for approval.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <input
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                    placeholder="First name"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                    placeholder="Second name"
+                    value={secondName}
+                    onChange={(e) => setSecondName(e.target.value)}
+                  />
+                </div>
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700"
+                    onClick={() => setProfileModalOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white"
+                    onClick={submitClaimRequest}
+                  >
+                    Submit for approval
+                  </button>
+                </div>
+                {profileMessage ? <p className="mt-3 text-sm text-amber-800">{profileMessage}</p> : null}
+              </div>
+            </div>
+          ) : null}
+
+          {claimStatusOpen && pendingClaim && !admin.isAdmin ? (
+            <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 p-4">
+              <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
+                <h2 className="text-lg font-semibold text-slate-900">Claim status</h2>
+                <p className="mt-1 text-sm text-slate-600">Awaiting administrator approval for:</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">{pendingClaim.name}</p>
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700"
+                    onClick={() => setClaimStatusOpen(false)}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white"
+                    onClick={cancelPendingClaim}
+                  >
+                    Cancel request
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </RequireAuth>
+      </div>
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title}
+        description={confirmState.description}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        onConfirm={() => closeConfirm(true)}
+        onCancel={() => closeConfirm(false)}
+      />
+      <ConfirmModal
+        open={showProfilePrompt}
+        title="Review your profile"
+        description="Would you like to review your profile now and optionally upload a profile picture?"
+        confirmLabel="Review now"
+        cancelLabel="Later"
+        onConfirm={() => {
+          if (typeof window !== "undefined" && admin.userId && userPlayerId) {
+            const key = `profile_onboarding_prompt_seen_${admin.userId}_${userPlayerId}`;
+            window.localStorage.setItem(key, "1");
+          }
+          setShowProfilePrompt(false);
+          if (userPlayerId) router.push(`/players/${userPlayerId}?prompt=photo`);
+        }}
+        onCancel={() => {
+          if (typeof window !== "undefined" && admin.userId && userPlayerId) {
+            const key = `profile_onboarding_prompt_seen_${admin.userId}_${userPlayerId}`;
+            window.localStorage.setItem(key, "1");
+          }
+          setShowProfilePrompt(false);
+        }}
+      />
+    </main>
+  );
+}

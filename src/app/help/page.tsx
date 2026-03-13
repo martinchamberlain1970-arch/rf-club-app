@@ -1,0 +1,258 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import RequireAuth from "@/components/RequireAuth";
+import useAdminStatus from "@/components/useAdminStatus";
+import ScreenHeader from "@/components/ScreenHeader";
+
+type GuideFilter = "getting_started" | "matches" | "competitions" | "stats_rules" | "rankings" | "premium" | "approvals";
+type GuideRole = "player" | "admin";
+
+const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bullets: string[] }>> = {
+  player: {
+    getting_started: {
+      title: "Getting Started (Player)",
+      bullets: [
+        "Sign in and complete profile check: first name, second name, age band, and location.",
+        "Your account must be linked to a player profile before match creation is enabled.",
+        "If your profile is not linked yet, request linking from the Players screen.",
+      ],
+    },
+    matches: {
+      title: "Quick Match & Submission (Player)",
+      bullets: [
+        "Create Quick Match as singles and ensure you are one of the selected players.",
+        "Submit final score for approval instead of editing frame-by-frame live scoring.",
+        "Break & Run and Run Out submission is available; totals are validated against match length.",
+      ],
+    },
+    competitions: {
+      title: "Competitions (Player)",
+      bullets: [
+        "You can create knockout competitions up to 4 players (singles) on free access.",
+        "League format, doubles competitions, and larger draws require Premium.",
+        "Competition Sign-ups lets players join open events and track entry status.",
+        "You can open events and view fixtures/brackets for assigned matches.",
+      ],
+    },
+    stats_rules: {
+      title: "Stats & Rules (Player)",
+      bullets: [
+        "Stats are based on approved completed matches only (not in-progress).",
+        "Rules page includes pool/snooker quick reference and dispute wizard.",
+        "Under-18 accounts have safety controls applied (restricted identity/display/media rules).",
+      ],
+    },
+    rankings: {
+      title: "Player Ratings & Rankings (Player)",
+      bullets: [
+        "Each completed approved match updates player ratings using an Elo-style calculation.",
+        "Expected result is calculated from both players' current rating; larger upsets produce larger gains/losses.",
+        "K-factor scales by experience (fewer rated matches = faster movement, more matches = steadier movement).",
+        "Player Profile shows current rating, peak rating, rated-match count, and rank for Pool and Snooker.",
+        "Use Pop-out Ranking Card on Player Profile to show a clean ranking card on a second screen.",
+      ],
+    },
+    approvals: {
+      title: "Result Approvals (Player)",
+      bullets: [
+        "Track submitted results in Results Queue and Notifications.",
+        "Approve/reject is admin-only; players can view status updates.",
+        "Approved submissions update event progress and stats automatically.",
+      ],
+    },
+    premium: {
+      title: "Premium Features",
+      bullets: [
+        "Premium is requested from your profile and approved by the Super User.",
+        "New accounts can receive a 14-day premium trial period (where enabled) to test advanced features.",
+        "Premium unlocks: full Stats, Live Overview, doubles, larger competitions, advanced round lengths, and auto-breaker.",
+        "Free access remains: Quick Match and small singles knockout competitions.",
+      ],
+    },
+  },
+  admin: {
+    getting_started: {
+      title: "Getting Started (Admin)",
+      bullets: [
+        "Register players with mandatory first name, second name, age band, and location.",
+        "Administrators can run events, approve results, and manage day-to-day match operations.",
+        "Super User has additional governance controls (roles, premium approvals, user linking, location management).",
+      ],
+    },
+    matches: {
+      title: "Match Flow (Admin)",
+      bullets: [
+        "Open matches to record rack/frame scoring live.",
+        "Complete a match once a player reaches the required racks/frames.",
+        "Walkovers and BYEs do not count toward player stats.",
+      ],
+    },
+    competitions: {
+      title: "Competitions (Admin)",
+      bullets: [
+        "Knockout supports uneven entries with BYEs and auto-advance.",
+        "Fixture List and Bracket views both stay available for event tracking.",
+        "Competition Sign-ups can be opened per event, with admin approve/reject workflow.",
+        "Round-specific best-of settings and advanced setup are Premium features.",
+      ],
+    },
+    stats_rules: {
+      title: "Stats & Rules (Admin)",
+      bullets: [
+        "Stats include Table, Head-to-Head, and Predictor views.",
+        "Only completed approved matches are counted in stats.",
+        "Rules and dispute wizard are available for in-match decisions.",
+      ],
+    },
+    rankings: {
+      title: "Player Ratings & Rankings (Admin)",
+      bullets: [
+        "Ratings are applied once per approved completed match and stored against each player profile.",
+        "BYE and walkover outcomes are excluded from rating movement.",
+        "Player Profile displays both sport ratings (Pool/Snooker), rank position, peak rating, and rated-match totals.",
+        "Pop-out Ranking Card is available from Player Profile for TV/external display use.",
+      ],
+    },
+    approvals: {
+      title: "Approvals (Admin)",
+      bullets: [
+        "Review pending result submissions in Results Queue.",
+        "Approve applies score/stats progression; reject returns outcome as not accepted.",
+        "Role or premium request approvals are Super User actions.",
+      ],
+    },
+    premium: {
+      title: "Premium Features (Admin View)",
+      bullets: [
+        "Administrators can use Premium features only when premium is enabled for their account.",
+        "Trial and premium-access state is governed centrally and can be reviewed by Super User.",
+        "Super User can approve premium requests and enable premium globally or per user.",
+        "Super User account is always fully unlocked.",
+      ],
+    },
+  },
+};
+
+const roleSummary: Record<GuideRole, string[]> = {
+  player: [
+    "Can create and submit Quick Match results (must be a selected player).",
+    "Can create small singles knockout competitions (up to 4 players) on free access.",
+    "Can use Competition Sign-ups, view events/rules/notifications, and open their ranking card.",
+  ],
+  admin: [
+    "Can run day-to-day event operations and match/result approvals.",
+    "Cannot perform Super User-only governance actions unless account role is Super User.",
+    "Super User controls roles, premium approvals, account linking, locations, and governance.",
+  ],
+};
+
+export default function HelpPage() {
+  const admin = useAdminStatus();
+  const [role, setRole] = useState<GuideRole>("player");
+  const [filter, setFilter] = useState<GuideFilter>("getting_started");
+  const [tipResetMessage, setTipResetMessage] = useState<string | null>(null);
+  const selectedRole: GuideRole = admin.isAdmin ? role : "player";
+  const section = useMemo(() => guideSections[selectedRole][filter], [filter, selectedRole]);
+  const cardBaseClass = "rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm";
+  const pillBaseClass = "rounded-full border px-3 py-1 text-sm transition";
+  const pillActiveClass = `${pillBaseClass} border-teal-700 bg-teal-700 text-white`;
+  const pillInactiveClass = `${pillBaseClass} border-slate-300 bg-white text-slate-700 hover:bg-slate-50`;
+  const buttonSecondaryClass = "rounded-xl border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50";
+  const buttonPrimaryClass = "inline-flex items-center rounded-full border border-teal-700 bg-teal-700 px-3 py-1 text-sm font-medium text-white transition hover:bg-teal-800";
+
+  const onResetProfileSetupTip = () => {
+    if (typeof window === "undefined") return;
+    const keysToDelete: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith("profile_onboarding_prompt_seen_")) {
+        keysToDelete.push(key);
+      }
+    }
+    keysToDelete.forEach((k) => window.localStorage.removeItem(k));
+    setTipResetMessage("Profile setup tip reset. It will show again on Dashboard after your next sign-in.");
+  };
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 sm:p-6">
+      <div className="mx-auto max-w-5xl space-y-3 sm:space-y-4">
+        <RequireAuth>
+          <ScreenHeader title="User Guide" eyebrow="Guide" subtitle="How to use Rack & Frame web." />
+
+          <section className={`${cardBaseClass} space-y-3`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-slate-700">Step-by-step usage reference for Rack &amp; Frame web.</p>
+              <Link href="/welcome-tour" className={buttonPrimaryClass}>
+                Open Welcome Tour
+              </Link>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setRole("player")}
+                className={selectedRole === "player" ? pillActiveClass : pillInactiveClass}
+              >
+                Player / User
+              </button>
+              {admin.isAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => setRole("admin")}
+                  className={selectedRole === "admin" ? pillActiveClass : pillInactiveClass}
+                >
+                  Administrator
+                </button>
+              ) : null}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-sm font-semibold text-slate-900">Role summary</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                {roleSummary[selectedRole].map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-sm font-semibold text-slate-900">Profile setup tip</p>
+              <p className="mt-1 text-sm text-slate-700">
+                If needed, you can show the profile setup prompt again.
+              </p>
+              <button
+                type="button"
+                onClick={onResetProfileSetupTip}
+                className={`mt-2 ${buttonSecondaryClass}`}
+              >
+                Show profile setup tip again
+              </button>
+              {tipResetMessage ? <p className="mt-2 text-xs text-emerald-700">{tipResetMessage}</p> : null}
+            </div>
+            <select
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as GuideFilter)}
+            >
+              <option value="getting_started">Getting Started</option>
+              <option value="matches">Quick Match & Match Flow</option>
+              <option value="competitions">Competitions</option>
+              <option value="stats_rules">Stats & Rules</option>
+              <option value="rankings">Ratings & Rankings</option>
+              <option value="approvals">Approvals</option>
+              <option value="premium">Premium Features</option>
+            </select>
+          </section>
+
+          <section className={cardBaseClass}>
+            <h2 className="text-xl font-semibold text-slate-900">{section.title}</h2>
+            <ul className="mt-2 list-disc space-y-2 pl-5 text-slate-700">
+              {section.bullets.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          </section>
+        </RequireAuth>
+      </div>
+    </main>
+  );
+}
