@@ -14,7 +14,7 @@ import MessageModal from "@/components/MessageModal";
 type Competition = {
   id: string;
   name: string;
-  sport_type: "snooker" | "pool_8_ball";
+  sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   competition_format: "knockout" | "league";
   match_mode: "singles" | "doubles";
   best_of: number;
@@ -233,7 +233,7 @@ export default function EventsPage() {
               <article key={r.id} className={cardBaseClass}>
                 <h2 className="text-xl font-semibold text-slate-900">{r.name}</h2>
                 <p className="mt-1 text-slate-700">
-                  {r.sport_type === "pool_8_ball" ? "Pool (8-ball)" : "Snooker"} · {r.competition_format === "knockout" ? "Knockout" : "League"}{r.is_practice ? " · Practice match" : ""}
+                  {r.sport_type === "pool_8_ball" ? "Pool (8-ball)" : r.sport_type === "pool_9_ball" ? "Pool (9-ball)" : "Snooker"} · {r.competition_format === "knockout" ? "Knockout" : "League"}{r.is_practice ? " · Practice match" : ""}
                 </p>
                 <p className="mt-1 text-slate-700">Format: {r.match_mode === "doubles" ? "Doubles" : "Singles"}</p>
                 <p className="mt-1 text-slate-700">Best of {r.best_of}</p>

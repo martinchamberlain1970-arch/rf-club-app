@@ -22,22 +22,22 @@ const coreActionLinks = [
 const supportLinks = [
   { href: "/rules", title: "Rules" },
   { href: "/help", title: "Help" },
+  { href: "/help#report-an-issue", title: "Report An Issue" },
   { href: "/welcome-tour", title: "Welcome Tour" },
   { href: "/legal", title: "Legal" },
 ] as const;
 
 const adminToolLinks = [
-  { href: "/signups", title: "Competition Sign-ups" },
-  { href: "/live", title: "Live Overview" },
-  { href: "/stats", title: "Stats" },
+  { href: "/signups", title: "Competition Sign-ups", desc: "Review open sign-ups and player entry requests." },
+  { href: "/live", title: "Live Overview", desc: "See active matches and competition progress at a glance." },
 ] as const;
 
 const systemToolLinks = [
-  { href: "/locations", title: "Locations" },
-  { href: "/signup-requests", title: "Signup Requests" },
-  { href: "/backup", title: "Data Management" },
-  { href: "/audit", title: "Audit Log" },
-  { href: "/usage", title: "Usage Analytics" },
+  { href: "/locations", title: "Locations", desc: "Review and tidy club and venue records." },
+  { href: "/signup-requests", title: "Signup Requests", desc: "Review pending access, profile, and child requests." },
+  { href: "/backup", title: "Data Management", desc: "Run maintenance and data cleanup tools." },
+  { href: "/audit", title: "Audit Log", desc: "Check important account and system actions." },
+  { href: "/usage", title: "Usage Analytics", desc: "Review app activity and usage trends." },
 ] as const;
 
 export default function HomePage() {
@@ -94,6 +94,7 @@ export default function HomePage() {
     return admin.isAdmin || admin.isSuper;
   });
   const visibleSystemTools = admin.isSuper ? systemToolLinks : [];
+  const dashboardLinks = [...visibleCoreLinks, ...visibleAdminTools, ...visibleSystemTools];
   const cardBaseClass = "rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm";
   const subtleCardClass = "rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm";
   const pillBaseClass = "rounded-full border px-3 py-1 text-sm transition";
@@ -591,7 +592,7 @@ export default function HomePage() {
 
           <section className="space-y-3">
             <div className="grid gap-2 sm:gap-3 sm:grid-cols-3">
-              {visibleCoreLinks.map((item) => (
+              {dashboardLinks.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -620,44 +621,6 @@ export default function HomePage() {
             <p className="text-center text-xs uppercase tracking-[0.18em] text-slate-500">
               Designed and developed by Martin Chamberlain
             </p>
-
-            {visibleAdminTools.length ? (
-              <details className={cardBaseClass}>
-                <summary className="cursor-pointer text-sm font-semibold text-slate-900">
-                  Admin Tools
-                </summary>
-                <p className="mt-2 text-sm text-slate-600">Extra controls for running sessions, tracking live play, and reviewing club stats.</p>
-                <div className="mt-2 sm:mt-3 grid gap-2 sm:grid-cols-2">
-                  {visibleAdminTools.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
-                    >
-                      {item.title}
-                    </Link>
-                  ))}
-                </div>
-              </details>
-            ) : null}
-
-            {visibleSystemTools.length ? (
-              <details className={cardBaseClass}>
-                <summary className="cursor-pointer text-sm font-semibold text-slate-900">System Tools</summary>
-                <p className="mt-2 text-sm text-slate-600">Back-office utilities for setup, auditing, and data maintenance.</p>
-                <div className="mt-2 sm:mt-3 grid gap-2 sm:grid-cols-2">
-                  {visibleSystemTools.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
-                    >
-                      {item.title}
-                    </Link>
-                  ))}
-                </div>
-              </details>
-            ) : null}
           </section>
 
           {profileModalOpen && !admin.isAdmin ? (

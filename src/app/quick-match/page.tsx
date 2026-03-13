@@ -14,7 +14,7 @@ import MessageModal from "@/components/MessageModal";
 
 type Player = { id: string; display_name: string; full_name: string | null; avatar_url?: string | null };
 type Location = { id: string; name: string };
-type Sport = "snooker" | "pool_8_ball";
+type Sport = "snooker" | "pool_8_ball" | "pool_9_ball";
 type Mode = "singles" | "doubles";
 const BEST_OF_OPTIONS = [1, 3, 5, 7, 9, 11, 13, 15];
 
@@ -299,8 +299,9 @@ export default function QuickMatchPage() {
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Sport</label>
                 <select className={fieldClass} value={sport} onChange={(e) => setSport(e.target.value as Sport)}>
-                  <option value="snooker">Snooker</option>
                   <option value="pool_8_ball">Pool (8-ball)</option>
+                  <option value="pool_9_ball">Pool (9-ball)</option>
+                  <option value="snooker">Snooker</option>
                 </select>
               </div>
               <div>

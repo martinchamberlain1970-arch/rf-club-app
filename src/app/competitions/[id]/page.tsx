@@ -13,7 +13,7 @@ type Competition = {
   id: string;
   name: string;
   venue: string | null;
-  sport_type: "snooker" | "pool_8_ball";
+  sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   competition_format: "knockout" | "league";
   match_mode?: "singles" | "doubles";
   app_assign_opening_break?: boolean;

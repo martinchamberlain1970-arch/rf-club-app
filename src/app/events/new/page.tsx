@@ -12,7 +12,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
 
-type Sport = "snooker" | "pool_8_ball";
+type Sport = "snooker" | "pool_8_ball" | "pool_9_ball";
 type Mode = "singles" | "doubles";
 type Player = { id: string; display_name: string; full_name?: string | null };
 type TeamPick = { player1: string; player2: string };
@@ -477,6 +477,7 @@ export default function NewEventPage() {
                 <label className="mb-1 block text-sm font-medium text-slate-700">Sport</label>
                 <select className={fieldClass} value={sport} onChange={(e) => setSport(e.target.value as Sport)}>
                   <option value="pool_8_ball">Pool (8-ball)</option>
+                  <option value="pool_9_ball">Pool (9-ball)</option>
                   <option value="snooker">Snooker</option>
                 </select>
               </div>

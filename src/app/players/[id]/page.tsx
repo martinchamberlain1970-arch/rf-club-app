@@ -47,7 +47,7 @@ type MatchRow = {
   status: "pending" | "in_progress" | "complete" | "bye";
   updated_at: string | null;
 };
-type Competition = { id: string; sport_type: "snooker" | "pool_8_ball"; competition_format: "knockout" | "league" };
+type Competition = { id: string; sport_type: "snooker" | "pool_8_ball" | "pool_9_ball"; competition_format: "knockout" | "league" };
 type Frame = { match_id: string; winner_player_id: string | null; is_walkover_award: boolean };
 type LeagueFixtureLite = {
   id: string;
@@ -900,7 +900,7 @@ export default function PlayerProfilePage() {
       if (c?.sport_type === "snooker") {
         snookerPlayed += 1;
         if (isWin) snookerWon += 1;
-      } else if (c?.sport_type === "pool_8_ball") {
+      } else if (c?.sport_type === "pool_8_ball" || c?.sport_type === "pool_9_ball") {
         poolPlayed += 1;
         if (isWin) poolWon += 1;
       }

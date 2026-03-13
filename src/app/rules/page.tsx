@@ -56,6 +56,13 @@ const ultimateDisputeTopics: DisputeTopic[] = [
   { label: "Referee", quickCheck: "Was an official ruling already given?", action: "Record ruling and continue. Escalate only through the event's formal protest path." },
 ];
 
+const officialRuleLinks = {
+  internationalPool: "https://www.epa.org.uk/rules/international-rules/",
+  worldPoolAndNineBall: "https://wpapool.com/rules/",
+  ultimatePool: "https://www.ultimatepool.com/rules/",
+  snooker: "https://wpbsa.com/rules/",
+};
+
 const snookerRuleEntries: RuleEntry[] = [
   { title: "Frame start and break-off", tags: "break-off baulk d", summary: "Cue ball starts in hand in the 'D'. A legal break-off must strike a red first or be a valid miss/foul under event rules." },
   { title: "Ball values", tags: "points red yellow green brown blue pink black", summary: "Red=1, Yellow=2, Green=3, Brown=4, Blue=5, Pink=6, Black=7. Highest total after final black wins frame." },
@@ -167,6 +174,36 @@ export default function RulesPage() {
               placeholder={sportTab === 0 ? "Search rules (e.g. foul, break, 8-ball)" : "Search rules (e.g. miss, free ball, respot)"}
             />
             <p className="text-sm text-slate-600">{filtered.length} rule topic{filtered.length === 1 ? "" : "s"}</p>
+          </section>
+
+          <section className={`${cardBaseClass} space-y-3`}>
+            <h2 className="text-xl font-semibold text-slate-900">Official rule websites</h2>
+            <div className="space-y-2 text-sm text-slate-700">
+              <p>
+                Pool (International / 8-ball):{" "}
+                <a href={officialRuleLinks.internationalPool} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
+                  English Pool Association rules
+                </a>
+              </p>
+              <p>
+                Pool (9-ball and world-standard pool rules):{" "}
+                <a href={officialRuleLinks.worldPoolAndNineBall} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
+                  World Pool Association rules
+                </a>
+              </p>
+              <p>
+                Ultimate Pool:{" "}
+                <a href={officialRuleLinks.ultimatePool} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
+                  Ultimate Pool official rules
+                </a>
+              </p>
+              <p>
+                Snooker:{" "}
+                <a href={officialRuleLinks.snooker} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
+                  WPBSA official rules
+                </a>
+              </p>
+            </div>
           </section>
 
           <section className={`${cardBaseClass} space-y-3`}>

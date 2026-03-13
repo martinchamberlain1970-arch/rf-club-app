@@ -54,7 +54,7 @@ type KnockoutRoundBestOf = {
 type CompetitionSettings = {
   id: string;
   name: string;
-  sport_type: "snooker" | "pool_8_ball";
+  sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   location_id?: string | null;
   competition_format: "knockout" | "league";
   app_assign_opening_break: boolean;
@@ -175,7 +175,7 @@ type RatingKeys = {
   matches: "rated_matches_pool" | "rated_matches_snooker";
 };
 
-function ratingKeysForSport(sport: "snooker" | "pool_8_ball"): RatingKeys {
+function ratingKeysForSport(sport: "snooker" | "pool_8_ball" | "pool_9_ball"): RatingKeys {
   return sport === "snooker"
     ? { rating: "rating_snooker", peak: "peak_rating_snooker", matches: "rated_matches_snooker" }
     : { rating: "rating_pool", peak: "peak_rating_pool", matches: "rated_matches_pool" };

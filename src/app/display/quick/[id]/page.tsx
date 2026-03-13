@@ -23,7 +23,7 @@ type Match = {
 };
 
 type Player = { id: string; display_name: string; full_name: string | null; avatar_url?: string | null };
-type Competition = { id: string; name: string; sport_type: "snooker" | "pool_8_ball"; competition_format: "knockout" | "league" };
+type Competition = { id: string; name: string; sport_type: "snooker" | "pool_8_ball" | "pool_9_ball"; competition_format: "knockout" | "league" };
 type FrameRow = {
   frame_number: number;
   winner_player_id: string | null;

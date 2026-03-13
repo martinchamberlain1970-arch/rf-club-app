@@ -9,7 +9,7 @@ import useAdminStatus from "@/components/useAdminStatus";
 import MessageModal from "@/components/MessageModal";
 
 type FormatFilter = "all" | "knockout";
-type SportFilter = "all" | "pool_8_ball" | "snooker";
+type SportFilter = "all" | "pool_8_ball" | "pool_9_ball" | "snooker";
 type ModeFilter = "singles" | "doubles";
 type ViewFilter = "table" | "head_to_head" | "predictor";
 
@@ -26,7 +26,7 @@ type Location = { id: string; name: string };
 type Competition = {
   id: string;
   competition_format: "knockout" | "league";
-  sport_type: "pool_8_ball" | "snooker";
+  sport_type: "pool_8_ball" | "pool_9_ball" | "snooker";
 };
 type Match = {
   id: string;
@@ -995,7 +995,8 @@ export default function StatsPage() {
                         <label className={filterLabelClass}>Sport</label>
                         <select className={fieldClass} value={sport} onChange={(e) => setSport(e.target.value as SportFilter)}>
                           <option value="all">All sports</option>
-                          <option value="pool_8_ball">Pool</option>
+                          <option value="pool_8_ball">Pool (8-ball)</option>
+                          <option value="pool_9_ball">Pool (9-ball)</option>
                           <option value="snooker">Snooker</option>
                         </select>
                       </div>

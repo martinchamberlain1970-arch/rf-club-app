@@ -13,7 +13,7 @@ type Competition = {
   id: string;
   name: string;
   competition_format: "knockout" | "league";
-  sport_type: "snooker" | "pool_8_ball";
+  sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   is_archived: boolean;
   is_completed: boolean;
 };
@@ -211,7 +211,7 @@ export default function LivePage() {
                       <div className="mt-2 flex items-center gap-3">
                         <span className={pillSecondaryClass}>In Progress</span>
                         <p className="text-slate-700">
-                          {c.competition_format === "knockout" ? "Knockout" : "League"} · {c.sport_type === "pool_8_ball" ? "Pool (8-ball)" : "Snooker"}
+                          {c.competition_format === "knockout" ? "Knockout" : "League"} · {c.sport_type === "pool_8_ball" ? "Pool (8-ball)" : c.sport_type === "pool_9_ball" ? "Pool (9-ball)" : "Snooker"}
                         </p>
                       </div>
                       <p className="mt-2 text-3xl font-semibold text-slate-900">

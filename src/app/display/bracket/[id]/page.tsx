@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 type Competition = {
   id: string;
   name: string;
-  sport_type: "snooker" | "pool_8_ball";
+  sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   competition_format: "knockout" | "league";
   best_of: number;
   knockout_round_best_of?: {

@@ -15,14 +15,14 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       title: "Getting Started (Player)",
       bullets: [
         "Sign in and complete profile check: first name, second name, age band, and location.",
-        "Your account must be linked to a player profile before match creation is enabled.",
+        "Your account must be linked to a player profile before match play is enabled.",
         "If your profile is not linked yet, request linking from the Players screen.",
       ],
     },
     matches: {
       title: "Quick Match & Submission (Player)",
       bullets: [
-        "Create Quick Match as singles and ensure you are one of the selected players.",
+        "Create Quick Match in snooker, 8-ball pool, or 9-ball pool and ensure you are one of the selected players.",
         "Submit final score for approval instead of editing frame-by-frame live scoring.",
         "Break & Run and Run Out submission is available; totals are validated against match length.",
       ],
@@ -30,8 +30,8 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
     competitions: {
       title: "Competitions (Player)",
       bullets: [
-        "You can create knockout competitions up to 4 players (singles) on free access.",
-        "League format, doubles competitions, and larger draws require Premium.",
+        "Players can enter events, follow fixtures, and track results from the Events board.",
+        "Competition creation is reserved for Club Admin and Super User accounts.",
         "Competition Sign-ups lets players join open events and track entry status.",
         "You can open events and view fixtures/brackets for assigned matches.",
       ],
@@ -74,10 +74,10 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
   },
   admin: {
     getting_started: {
-      title: "Getting Started (Admin)",
+      title: "Getting Started (Club Admin)",
       bullets: [
         "Register players with mandatory first name, second name, age band, and location.",
-        "Administrators can run events, approve results, and manage day-to-day match operations.",
+        "Club Admin can run events, approve results, and manage day-to-day match operations.",
         "Super User has additional governance controls (roles, premium approvals, user linking, location management).",
       ],
     },
@@ -90,9 +90,10 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       ],
     },
     competitions: {
-      title: "Competitions (Admin)",
+      title: "Competitions (Club Admin)",
       bullets: [
         "Knockout supports uneven entries with BYEs and auto-advance.",
+        "Competition setup supports snooker, 8-ball pool, and 9-ball pool.",
         "Fixture List and Bracket views both stay available for event tracking.",
         "Competition Sign-ups can be opened per event, with admin approve/reject workflow.",
         "Round-specific best-of settings and advanced setup are Premium features.",
@@ -116,10 +117,11 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       ],
     },
     approvals: {
-      title: "Approvals (Admin)",
+      title: "Approvals (Club Admin)",
       bullets: [
         "Review pending result submissions in Results Queue.",
         "Approve applies score/stats progression; reject returns outcome as not accepted.",
+        "If no Club Admin exists for a location, approvals that need an admin can be escalated to the Super User.",
         "Role or premium request approvals are Super User actions.",
       ],
     },
@@ -138,11 +140,11 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
 const roleSummary: Record<GuideRole, string[]> = {
   player: [
     "Can create and submit Quick Match results (must be a selected player).",
-    "Can create small singles knockout competitions (up to 4 players) on free access.",
-    "Can use Competition Sign-ups, view events/rules/notifications, and open their ranking card.",
+    "Cannot create competitions, but can use Competition Sign-ups, view events, check results, and open their ranking card.",
+    "Can play snooker, 8-ball pool, and 9-ball pool through Quick Match.",
   ],
   admin: [
-    "Can run day-to-day event operations and match/result approvals.",
+    "Can run day-to-day event operations, create competitions, and approve match/result activity for their club.",
     "Cannot perform Super User-only governance actions unless account role is Super User.",
     "Super User controls roles, premium approvals, account linking, locations, and governance.",
   ],
@@ -202,7 +204,7 @@ export default function HelpPage() {
                   onClick={() => setRole("admin")}
                   className={selectedRole === "admin" ? pillActiveClass : pillInactiveClass}
                 >
-                  Administrator
+                  Club Admin
                 </button>
               ) : null}
             </div>
@@ -241,6 +243,20 @@ export default function HelpPage() {
               <option value="approvals">Approvals</option>
               <option value="premium">Premium Features</option>
             </select>
+          </section>
+
+          <section id="report-an-issue" className={cardBaseClass}>
+            <h2 className="text-xl font-semibold text-slate-900">Report an issue</h2>
+            <p className="mt-2 text-slate-700">
+              If something is broken or does not look right, send a short description and, if possible, a screenshot to{" "}
+              <a href="mailto:rackandframe.app@gmail.com" className="font-medium text-teal-700 underline">
+                rackandframe.app@gmail.com
+              </a>
+              .
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Include what page you were on, what you expected to happen, and what happened instead.
+            </p>
           </section>
 
           <section className={cardBaseClass}>
