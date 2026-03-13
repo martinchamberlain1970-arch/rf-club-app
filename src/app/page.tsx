@@ -8,7 +8,6 @@ import PageNav from "@/components/PageNav";
 import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
 import ConfirmModal from "@/components/ConfirmModal";
-import useFeatureAccess from "@/components/useFeatureAccess";
 
 const coreActionLinks = [
   { href: "/quick-match", title: "Quick Match", desc: "Start a local practice or social match." },
@@ -44,7 +43,6 @@ const systemToolLinks = [
 export default function HomePage() {
   const router = useRouter();
   const admin = useAdminStatus();
-  const features = useFeatureAccess();
   const [completionMessage] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
@@ -77,13 +75,11 @@ export default function HomePage() {
     resolve?: (value: boolean) => void;
   }>({ open: false, title: "", description: "" });
 
-  const quickMatchAllowed = admin.isSuper || (admin.isAdmin && features.quickMatchEnabled);
-  const createCompetitionAllowed = admin.isSuper || (admin.isAdmin && features.competitionCreateEnabled);
-  const isDisabledAdminFeature = (href: string) =>
-    admin.isAdmin &&
-    !admin.isSuper &&
-    ((href === "/quick-match" && !quickMatchAllowed) || (href === "/events/new" && !createCompetitionAllowed));
+  const quickMatchAllowed = Boolean(admin.userId);
+  const createCompetitionAllowed = admin.isAdmin || admin.isSuper;
   const visibleCoreLinks = coreActionLinks.filter((item) => {
+    if (item.href === "/quick-match") return quickMatchAllowed;
+    if (item.href === "/events/new") return createCompetitionAllowed;
     if (item.href === "/players") return admin.isAdmin || admin.isSuper;
     if (item.href === "/results") return admin.isAdmin || admin.isSuper;
     if (item.href === "/stats") return admin.isAdmin || admin.isSuper;
@@ -590,28 +586,15 @@ export default function HomePage() {
           <section className="space-y-3">
             <div className="grid gap-2 sm:gap-3 sm:grid-cols-3">
               {visibleCoreLinks.map((item) => (
-                isDisabledAdminFeature(item.href) ? (
-                  <div
-                    key={item.href}
-                    className={`${cardBaseClass} border-l-4 border-l-slate-300 opacity-75`}
-                  >
-                    <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
-                    <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
-                    <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
-                      Disabled · Ask Super User to enable
-                    </p>
-                  </div>
-                ) : (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={primaryCardClass(item.href)}
-                  >
-                    <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
-                    <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
-                    <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
-                  </Link>
-                )
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={primaryCardClass(item.href)}
+                >
+                  <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
+                  <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
+                </Link>
               ))}
             </div>
 

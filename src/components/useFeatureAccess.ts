@@ -37,25 +37,14 @@ export default function useFeatureAccess(): FeatureAccessState {
         return;
       }
 
-      const { data: appUser, error } = await client
-        .from("app_users")
-        .select("role,quick_match_enabled,competition_create_enabled")
-        .eq("id", userId)
-        .maybeSingle();
-
-      const err = error?.message?.toLowerCase() ?? "";
-      if (error && (err.includes("quick_match_enabled") || err.includes("competition_create_enabled"))) {
-        setState({ loading: false, quickMatchEnabled: false, competitionCreateEnabled: false });
-        return;
-      }
+      const { data: appUser } = await client.from("app_users").select("role").eq("id", userId).maybeSingle();
 
       const role = (appUser?.role ?? "").toLowerCase();
       const isAdmin = role === "admin" || role === "owner";
       setState({
         loading: false,
-        quickMatchEnabled: isAdmin && Boolean((appUser as { quick_match_enabled?: boolean | null } | null)?.quick_match_enabled),
-        competitionCreateEnabled:
-          isAdmin && Boolean((appUser as { competition_create_enabled?: boolean | null } | null)?.competition_create_enabled),
+        quickMatchEnabled: true,
+        competitionCreateEnabled: isAdmin,
       });
     };
 

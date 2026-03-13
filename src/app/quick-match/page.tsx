@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import RequireAuth from "@/components/RequireAuth";
 import useAdminStatus from "@/components/useAdminStatus";
 import usePremiumStatus from "@/components/usePremiumStatus";
-import useFeatureAccess from "@/components/useFeatureAccess";
 import { supabase } from "@/lib/supabase";
 import ScreenHeader from "@/components/ScreenHeader";
 import { logAudit } from "@/lib/audit";
@@ -23,7 +22,6 @@ export default function QuickMatchPage() {
   const router = useRouter();
   const admin = useAdminStatus();
   const premium = usePremiumStatus();
-  const features = useFeatureAccess();
   const [players, setPlayers] = useState<Player[]>([]);
   const [singlesSelected, setSinglesSelected] = useState<string[]>([]);
   const [singlesSearch, setSinglesSearch] = useState("");
@@ -45,8 +43,8 @@ export default function QuickMatchPage() {
   const [locationId, setLocationId] = useState<string>("");
   const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
   const [infoModal, setInfoModal] = useState<{ title: string; description: string } | null>(null);
-  const quickMatchAllowed = admin.isSuper || (admin.isAdmin && features.quickMatchEnabled);
-  const hasAdminPower = quickMatchAllowed;
+  const quickMatchAllowed = Boolean(admin.userId);
+  const hasAdminPower = admin.isAdmin || admin.isSuper;
   const player1 = singlesSelected[0] ?? "";
   const player2 = singlesSelected[1] ?? "";
   const hasDraftChanges = !!(
@@ -129,10 +127,6 @@ export default function QuickMatchPage() {
     const client = supabase;
     if (!client) {
       setMessage("Supabase is not configured.");
-      return;
-    }
-    if (!quickMatchAllowed) {
-      setMessage("Quick Match is disabled for your account. Ask the Super User to enable it.");
       return;
     }
     if (!hasAdminPower && !linkedPlayerId) {
@@ -271,12 +265,6 @@ export default function QuickMatchPage() {
             warnOnNavigate={hasDraftChanges}
             warnMessage="You have unsaved quick match setup. Leave this screen and lose your changes?"
           />
-
-          {!admin.loading && !features.loading && !quickMatchAllowed ? (
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-              Quick Match is disabled for your account. Ask the Super User to enable this feature.
-            </section>
-          ) : null}
 
           {quickMatchAllowed ? (
           <section className={`${cardClass} space-y-4`}>

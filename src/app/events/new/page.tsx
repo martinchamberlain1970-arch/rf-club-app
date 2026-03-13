@@ -6,7 +6,6 @@ import RequireAuth from "@/components/RequireAuth";
 import { supabase } from "@/lib/supabase";
 import usePremiumStatus from "@/components/usePremiumStatus";
 import useAdminStatus from "@/components/useAdminStatus";
-import useFeatureAccess from "@/components/useFeatureAccess";
 import ScreenHeader from "@/components/ScreenHeader";
 import { logAudit } from "@/lib/audit";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -30,8 +29,7 @@ export default function NewEventPage() {
   const router = useRouter();
   const premium = usePremiumStatus();
   const admin = useAdminStatus();
-  const features = useFeatureAccess();
-  const competitionCreateAllowed = admin.isSuper || (admin.isAdmin && features.competitionCreateEnabled);
+  const competitionCreateAllowed = admin.isAdmin || admin.isSuper;
   const [name, setName] = useState("");
   const [venue, setVenue] = useState("");
   const [locationId, setLocationId] = useState("");
@@ -254,7 +252,7 @@ export default function NewEventPage() {
       return;
     }
     if (!competitionCreateAllowed) {
-      setMessage("Create Competition is disabled for your account. Ask the Super User to enable it.");
+      setMessage("Competition setup is available to the club administrator only.");
       return;
     }
     if (!locationId) {
@@ -439,12 +437,6 @@ export default function NewEventPage() {
           {!admin.loading && !admin.isAdmin ? (
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
               Competition setup is available to the club administrator only.
-            </section>
-          ) : null}
-
-          {!admin.loading && admin.isAdmin && !features.loading && !competitionCreateAllowed ? (
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-              Create Competition is disabled for your account. Ask the Super User to enable this feature.
             </section>
           ) : null}
 
