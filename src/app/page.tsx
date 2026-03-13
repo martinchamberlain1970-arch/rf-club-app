@@ -45,6 +45,10 @@ export default function HomePage() {
   const router = useRouter();
   const admin = useAdminStatus();
   const premium = usePremiumStatus();
+  const [setupProfileRequested] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("setup") === "profile";
+  });
   const [completionMessage] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
@@ -364,6 +368,16 @@ export default function HomePage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (admin.loading || admin.isAdmin) return;
+    if (setupProfileRequested && !userPlayerId && !pendingClaim) {
+      queueMicrotask(() => {
+        setProfileModalOpen(true);
+      });
+      const params = new URLSearchParams(window.location.search);
+      params.delete("setup");
+      const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+      window.history.replaceState({}, "", next);
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     if (params.get("claimStatus") !== "1") return;
     if (pendingClaim) {
@@ -374,7 +388,7 @@ export default function HomePage() {
     params.delete("claimStatus");
     const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
     window.history.replaceState({}, "", next);
-  }, [admin.loading, admin.isAdmin, pendingClaim]);
+  }, [admin.loading, admin.isAdmin, pendingClaim, setupProfileRequested, userPlayerId]);
 
   const submitClaimRequest = async () => {
     setProfileMessage(null);

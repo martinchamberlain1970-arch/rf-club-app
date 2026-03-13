@@ -20,15 +20,23 @@ function readSignupState(): string | null {
   return new URLSearchParams(window.location.search).get("signup");
 }
 
+function readSignedOutState(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("signed_out") === "1";
+}
+
 export default function SignInPage() {
   const router = useRouter();
   const nextPath = useMemo(() => readNextPath(), []);
   const signupState = useMemo(() => readSignupState(), []);
+  const signedOutState = useMemo(() => readSignedOutState(), []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(() =>
-    signupState === "created"
+    signedOutState
+      ? "You have been signed out."
+      : signupState === "created"
       ? "Account created. Check your email if verification is enabled, then sign in."
       : signupState === "confirmed"
         ? "Email confirmed. You can sign in now."

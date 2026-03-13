@@ -23,6 +23,10 @@ export default function RequireAuth({ children }: RequireAuthProps) {
     let active = true;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     const SESSION_TIMEOUT_MS = 7000;
+    const superAdminEmail =
+      process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ??
+      process.env.NEXT_PUBLIC_OWNER_EMAIL?.trim().toLowerCase() ??
+      "";
     const buildNextPath = () => {
       const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
       return `${pathname}${query ? `?${query}` : ""}`;
@@ -60,12 +64,23 @@ export default function RequireAuth({ children }: RequireAuthProps) {
         if (userId) {
           const { data: appUser, error } = await client
             .from("app_users")
-            .select("id")
+            .select("id,linked_player_id,role")
             .eq("id", userId)
             .maybeSingle();
           if (!active) return;
           if (error || !appUser) {
             await redirectToSignIn();
+            return;
+          }
+          const sessionEmail = data.session.user?.email?.trim().toLowerCase() ?? "";
+          const isSuper = Boolean(superAdminEmail && sessionEmail && sessionEmail === superAdminEmail);
+          const role = typeof appUser.role === "string" ? appUser.role.toLowerCase() : "";
+          const isAdmin = role === "admin" || role === "owner";
+          const hasLinkedPlayer = Boolean(appUser.linked_player_id);
+          if (!hasLinkedPlayer && !isSuper && !isAdmin && pathname !== "/") {
+            router.replace("/?setup=profile");
+            setAllowed(false);
+            setReady(true);
             return;
           }
         }

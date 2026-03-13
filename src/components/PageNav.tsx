@@ -41,8 +41,22 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
 
   const onSignOut = async () => {
     const client = supabase;
-    if (client) await client.auth.signOut();
-    router.replace("/auth/sign-in");
+    if (client) {
+      try {
+        await client.auth.signOut({ scope: "local" });
+      } catch {
+        // Fall through to local storage cleanup and redirect.
+      }
+    }
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(storageKey);
+      window.localStorage.removeItem(dismissedKey);
+      window.localStorage.removeItem("pending_claim");
+      window.sessionStorage.removeItem("signup_draft_v1");
+      window.location.replace("/auth/sign-in?signed_out=1");
+      return;
+    }
+    router.replace("/auth/sign-in?signed_out=1");
   };
 
   const onNotifications = () => {
