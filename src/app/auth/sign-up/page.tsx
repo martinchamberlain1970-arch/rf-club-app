@@ -118,6 +118,17 @@ export default function SignUpPage() {
   }>({ open: false, title: "", description: "" });
   const privacyPolicyUrl = process.env.NEXT_PUBLIC_PRIVACY_POLICY_URL?.trim() || "/privacy";
   const termsUrl = process.env.NEXT_PUBLIC_TERMS_URL?.trim() || "/terms";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+  const getEmailRedirectUrl = () => {
+    if (siteUrl) {
+      return `${siteUrl.replace(/\/$/, "")}/auth/sign-in?signup=confirmed`;
+    }
+    if (typeof window !== "undefined") {
+      return `${window.location.origin}/auth/sign-in?signup=confirmed`;
+    }
+    return undefined;
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -395,6 +406,7 @@ export default function SignUpPage() {
       email,
       password,
       options: {
+        emailRedirectTo: getEmailRedirectUrl(),
         data: {
           privacy_policy_accepted: true,
           privacy_policy_version: "2026-03-03",

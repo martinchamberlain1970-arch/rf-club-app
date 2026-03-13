@@ -26,7 +26,11 @@ export default function SignInPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(() =>
-    signupState === "created" ? "Account created. Check your email if verification is enabled, then sign in." : null
+    signupState === "created"
+      ? "Account created. Check your email if verification is enabled, then sign in."
+      : signupState === "confirmed"
+        ? "Email confirmed. You can sign in now."
+        : null
   );
 
   const onSignIn = async (e: FormEvent) => {
