@@ -6,7 +6,6 @@ type ExistingPayload = {
   playerId: string;
   fullName: string;
   locationId?: string;
-  autoRequestAdmin?: boolean;
 };
 
 type CreatePayload = {
@@ -14,7 +13,6 @@ type CreatePayload = {
   firstName: string;
   secondName?: string;
   locationId?: string;
-  autoRequestAdmin?: boolean;
   ageBand?: "under_13" | "13_15" | "16_17" | "18_plus";
   guardianConsent?: boolean;
   guardianName?: string;
@@ -24,11 +22,6 @@ type CreatePayload = {
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const superAdminEmail =
-  process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase() ??
-  process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ??
-  "";
-
 export async function POST(req: NextRequest) {
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json({ error: "Server is not configured." }, { status: 500 });
@@ -67,35 +60,6 @@ export async function POST(req: NextRequest) {
       email,
       role: "user",
       linked_player_id: playerId,
-    });
-  };
-
-  const maybeCreateAdminRequest = async (locationId?: string) => {
-    if (!locationId || !payload.autoRequestAdmin || !superAdminEmail) return;
-
-    const { data: superUser } = await adminClient
-      .from("app_users")
-      .select("id")
-      .eq("email", superAdminEmail)
-      .maybeSingle();
-
-    if (!superUser?.id) return;
-
-    const { data: existing } = await adminClient
-      .from("admin_requests")
-      .select("id")
-      .eq("requester_user_id", createdUserId)
-      .eq("location_id", locationId)
-      .eq("status", "pending")
-      .limit(1);
-
-    if ((existing ?? []).length > 0) return;
-
-    await adminClient.from("admin_requests").insert({
-      requester_user_id: createdUserId,
-      target_admin_user_id: superUser.id,
-      location_id: locationId,
-      status: "pending",
     });
   };
 
@@ -140,7 +104,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await maybeCreateAdminRequest(payload.locationId);
     return NextResponse.json({ ok: true, mode: "claim" });
   }
 
@@ -173,7 +136,7 @@ export async function POST(req: NextRequest) {
   const { data: createdPlayer, error: createError } = await adminClient
     .from("players")
     .insert({
-      display_name: payload.firstName,
+      display_name: fullName,
       first_name: payload.firstName,
       nickname: null,
       full_name: fullName,
@@ -199,8 +162,6 @@ export async function POST(req: NextRequest) {
   if (linkResult.error) {
     return NextResponse.json({ error: linkResult.error.message }, { status: 400 });
   }
-
-  await maybeCreateAdminRequest(payload.locationId);
 
   return NextResponse.json({ ok: true, mode: "created", playerId: createdPlayer.id });
 }

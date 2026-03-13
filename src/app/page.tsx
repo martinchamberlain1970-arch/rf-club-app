@@ -490,15 +490,27 @@ export default function HomePage() {
           <section className={subtleCardClass}>
             <p className="text-sm text-slate-600">{admin.isSuper ? "Account" : "User Profile"}</p>
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-lg font-semibold text-slate-900">
-                {admin.isSuper
-                  ? userName || "Super User account"
-                  : admin.isAdmin
-                    ? userName || "Administrator account"
-                    : userName
-                      ? `Logged in as ${userName}`
-                      : "No player profile linked"}
-              </p>
+              {userPlayerId ? (
+                <Link href={`/players/${userPlayerId}`} className="text-lg font-semibold text-slate-900 underline-offset-4 hover:underline">
+                  {admin.isSuper
+                    ? userName || "Super User account"
+                    : admin.isAdmin
+                      ? userName || "Administrator account"
+                      : userName
+                        ? `Logged in as ${userName}`
+                        : "No player profile linked"}
+                </Link>
+              ) : (
+                <p className="text-lg font-semibold text-slate-900">
+                  {admin.isSuper
+                    ? userName || "Super User account"
+                    : admin.isAdmin
+                      ? userName || "Administrator account"
+                      : userName
+                        ? `Logged in as ${userName}`
+                        : "No player profile linked"}
+                </p>
+              )}
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                   admin.isSuper

@@ -28,7 +28,6 @@ type PendingClaimPayload =
       fullName: string;
       locationId?: string;
       requestedLocationName?: string | null;
-      autoRequestAdmin?: boolean;
       restoreArchived?: boolean;
     }
   | {
@@ -37,7 +36,6 @@ type PendingClaimPayload =
       secondName: string;
       locationId?: string;
       requestedLocationName?: string | null;
-      autoRequestAdmin?: boolean;
       ageBand?: "under_13" | "13_15" | "16_17" | "18_plus";
       guardianConsent?: boolean;
       guardianName?: string;
@@ -189,27 +187,6 @@ export default function SignUpPage() {
     return true;
   };
 
-  const isFirstUserAtLocation = async (locationId: string) => {
-    const client = supabase;
-    if (!client) return false;
-    const { data: locationPlayers, error: locationPlayersError } = await client
-      .from("players")
-      .select("id")
-      .eq("location_id", locationId)
-      .eq("is_archived", false);
-    if (locationPlayersError) return false;
-    const ids = (locationPlayers ?? []).map((p) => p.id);
-    if (!ids.length) return true;
-    const { data: linkedAdmins, error: linkedAdminsError } = await client
-      .from("app_users")
-      .select("id")
-      .in("linked_player_id", ids)
-      .in("role", ["admin", "owner"])
-      .limit(1);
-    if (linkedAdminsError) return false;
-    return (linkedAdmins ?? []).length === 0;
-  };
-
   const validateStepOne = async () => {
     if (!email.trim()) {
       setMessage("Enter your email to create an account.");
@@ -280,13 +257,6 @@ export default function SignUpPage() {
       }
     }
     const fullName = `${first} ${second}`.trim();
-    const autoRequestAdmin = selectedLocation ? await isFirstUserAtLocation(selectedLocation) : false;
-    if (autoRequestAdmin) {
-      setInfoModal({
-        title: "First account-linked user at this location",
-        body: "You are the first account-linked user at this location. An admin-access request can be submitted for Super User approval after sign-in.",
-      });
-    }
     const { data } = await client
       .from("players")
       .select("id,full_name,display_name,claimed_by,location_id,is_archived")
@@ -307,7 +277,6 @@ export default function SignUpPage() {
         fullName,
         locationId: !candidate.location_id && selectedLocation ? selectedLocation : undefined,
         requestedLocationName: pendingRequestedLocationName,
-        autoRequestAdmin,
         restoreArchived: Boolean(candidate.is_archived),
       };
     } else if ((data ?? []).some((p) => p.claimed_by)) {
@@ -321,7 +290,6 @@ export default function SignUpPage() {
         secondName: second,
         locationId: selectedLocation,
         requestedLocationName: pendingRequestedLocationName,
-        autoRequestAdmin,
       };
     }
 

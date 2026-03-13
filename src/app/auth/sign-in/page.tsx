@@ -76,7 +76,6 @@ export default function SignInPage() {
           secondName?: string;
           locationId?: string;
           requestedLocationName?: string;
-          autoRequestAdmin?: boolean;
           ageBand?: "under_13" | "13_15" | "16_17" | "18_plus";
           guardianConsent?: boolean;
           guardianName?: string;
@@ -102,36 +101,10 @@ export default function SignInPage() {
           parsed.requestedLocationName
             ? `Your account is active. Your requested location "${parsed.requestedLocationName}" is waiting for Super User review.`
             : "Your profile-link request has been submitted for administrator approval.";
-        const maybeEnsureAdminAccess = async (playerIdForAutoLink?: string) => {
-          if (!parsed.autoRequestAdmin || !parsed.locationId) return;
-          if (playerIdForAutoLink) {
-            const { data: sessionRes } = await client.auth.getSession();
-            const token = sessionRes.session?.access_token;
-            if (token) {
-              const resp = await fetch("/api/auth/bootstrap-first-admin", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ playerId: playerIdForAutoLink, locationId: parsed.locationId }),
-              });
-              if (resp.ok) {
-                setMessage("No admin exists at this location. Your profile has been linked and you are now the location administrator.");
-                return;
-              }
-            }
-          }
-          setMessage("No admin was found at this location. Please ask the Super User to approve administrator access.");
-        };
 
         if (parsed.type === "existing" && parsed.playerId && parsed.fullName) {
-          if (parsed.autoRequestAdmin && parsed.locationId) {
-            await maybeEnsureAdminAccess(parsed.playerId);
-          } else {
-            await submitClaim(parsed.playerId, parsed.fullName);
-            setMessage(getPostSignInMessage());
-          }
+          await submitClaim(parsed.playerId, parsed.fullName);
+          setMessage(getPostSignInMessage());
           if (parsed.locationId) {
             await client.from("player_update_requests").insert({
               player_id: parsed.playerId,
@@ -153,7 +126,7 @@ export default function SignInPage() {
           const { data: created } = await client
             .from("players")
             .insert({
-              display_name: parsed.firstName,
+              display_name: fullName,
               first_name: parsed.firstName,
               nickname: null,
               full_name: fullName,
@@ -170,12 +143,8 @@ export default function SignInPage() {
             .select("id")
             .single();
           if (created?.id) {
-            if (parsed.autoRequestAdmin && parsed.locationId) {
-              await maybeEnsureAdminAccess(created.id);
-            } else {
-              await submitClaim(created.id, fullName);
-              setMessage(getPostSignInMessage());
-            }
+            await submitClaim(created.id, fullName);
+            setMessage(getPostSignInMessage());
           }
         }
       } catch {
