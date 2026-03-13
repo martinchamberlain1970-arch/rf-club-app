@@ -162,9 +162,9 @@ export default function SignInPage() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.16),_transparent_34%),linear-gradient(180deg,_#f8fafc_0%,_#eef6f4_48%,_#fff8ef_100%)] p-4 sm:p-6">
       <div className="mx-auto max-w-6xl space-y-4">
-        <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="grid gap-5 lg:grid-cols-[1.18fr_0.82fr] lg:items-start">
           <section className={`${cardClass} overflow-hidden`}>
-            <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+            <div className="grid gap-5 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
               <div className="space-y-4">
                 <div className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-teal-700">
                   Rack &amp; Frame Club
@@ -177,18 +177,18 @@ export default function SignInPage() {
                     Rack &amp; Frame keeps your quick matches, local tournaments, player updates, results, and rankings together in one place.
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick Match</p>
-                    <p className="mt-1 text-sm text-slate-700">Start a local match and go straight to scoring.</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Quick Match</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-700">Start a local match and go straight to scoring.</p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Club Competitions</p>
-                    <p className="mt-1 text-sm text-slate-700">Follow fixtures, results, and progress through the event board.</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Club Competitions</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-700">Follow fixtures, results, and progress through the event board.</p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Player Profiles</p>
-                    <p className="mt-1 text-sm text-slate-700">Track your profile, notifications, and player history.</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Player Profiles</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-700">Track your profile, notifications, and player history.</p>
                   </div>
                 </div>
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -215,7 +215,7 @@ export default function SignInPage() {
             </div>
           </section>
 
-          <section className={`${cardClass} space-y-4`}>
+          <section className={`${cardClass} space-y-4 lg:max-w-xl lg:justify-self-end`}>
             <div className="space-y-2">
               <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Sign in</p>
               <h2 className="text-2xl font-bold text-slate-900 sm:text-3xl">Welcome back</h2>
