@@ -595,6 +595,9 @@ export default function SignUpPage() {
                 Already registered? Sign in
               </Link>
             </div>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+              Designed and developed by Martin Chamberlain
+            </p>
             <MessageModal message={message} onClose={() => setMessage(null)} />
           </section>
         </div>

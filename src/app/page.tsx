@@ -617,6 +617,10 @@ export default function HomePage() {
               </div>
             ) : null}
 
+            <p className="text-center text-xs uppercase tracking-[0.18em] text-slate-500">
+              Designed and developed by Martin Chamberlain
+            </p>
+
             {visibleAdminTools.length ? (
               <details className={cardBaseClass}>
                 <summary className="cursor-pointer text-sm font-semibold text-slate-900">

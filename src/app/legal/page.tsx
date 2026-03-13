@@ -20,6 +20,10 @@ export default function LegalPage() {
             <p className="text-slate-800">Copyright © 2026 Rack &amp; Frame. All rights reserved.</p>
             <p className="text-slate-800">Brand, app name, and visual identity are proprietary.</p>
             <p className="text-slate-800">
+              Rack &amp; Frame was designed and developed by Martin Chamberlain for local social-club cue sports, including quick matches,
+              player profiles, and club competitions.
+            </p>
+            <p className="text-slate-800">
               Privacy Policy:{" "}
               <a href={privacyPolicyUrl} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
                 View policy
