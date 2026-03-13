@@ -94,7 +94,6 @@ export default function HomePage() {
     return admin.isAdmin || admin.isSuper;
   });
   const visibleSystemTools = admin.isSuper ? systemToolLinks : [];
-  const dashboardLinks = [...visibleCoreLinks, ...visibleAdminTools, ...visibleSystemTools];
   const cardBaseClass = "rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm";
   const subtleCardClass = "rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm";
   const pillBaseClass = "rounded-full border px-3 py-1 text-sm transition";
@@ -591,18 +590,70 @@ export default function HomePage() {
           </section>
 
           <section className="space-y-3">
-            <div className="grid gap-2 sm:gap-3 sm:grid-cols-3">
-              {dashboardLinks.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={primaryCardClass(item.href)}
-                >
-                  <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
-                  <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
-                  <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
-                </Link>
-              ))}
+            <div className="space-y-3">
+              <div className={cardBaseClass}>
+                <p className="text-sm font-semibold text-slate-900">Club Play</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  The main day-to-day actions for running matches, competitions, players, and results.
+                </p>
+                <div className="mt-3 grid gap-2 sm:gap-3 sm:grid-cols-3">
+                  {visibleCoreLinks.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={primaryCardClass(item.href)}
+                    >
+                      <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
+                      <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
+                      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
+              {visibleAdminTools.length ? (
+                <div className={cardBaseClass}>
+                  <p className="text-sm font-semibold text-slate-900">Club Admin</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Extra controls for organisers running sign-ups, live sessions, and club operations.
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:gap-3 sm:grid-cols-3">
+                    {visibleAdminTools.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={primaryCardClass(item.href)}
+                      >
+                        <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
+                        <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {visibleSystemTools.length ? (
+                <div className={cardBaseClass}>
+                  <p className="text-sm font-semibold text-slate-900">System</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Super-user governance and back-office tools, kept separate from everyday club play.
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:gap-3 sm:grid-cols-3">
+                    {visibleSystemTools.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={primaryCardClass(item.href)}
+                      >
+                        <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
+                        <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {visibleSupportLinks.length ? (
