@@ -37,7 +37,6 @@ export default function usePremiumStatus(): PremiumState {
       const userId = data.user?.id;
       const email = data.user?.email?.trim().toLowerCase() ?? "";
       const superEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
-      const isSuper = Boolean(superEmail && email && email === superEmail);
       if (!userId) {
         setState({ loading: false, unlocked: false, trialActive: false, trialEndsAt: null, trialDaysLeft: 0 });
         return;
@@ -79,6 +78,9 @@ export default function usePremiumStatus(): PremiumState {
           applyTrialFrom(fallbackRes.data as { created_at?: string | null });
         }
       }
+      const roleRes = await client.from("app_users").select("role").eq("id", userId).maybeSingle();
+      const appRole = (roleRes.data?.role ?? "").toLowerCase();
+      const isSuper = Boolean(superEmail && email && email === superEmail) || appRole === "owner" || appRole === "super";
 
       setState({
         loading: false,

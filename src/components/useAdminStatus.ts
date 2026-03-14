@@ -10,6 +10,12 @@ function parseRole(value?: string | null): boolean {
   return value.toLowerCase() === "admin" || value.toLowerCase() === "owner";
 }
 
+function parseSuperRole(value?: string | null): boolean {
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  return normalized === "owner" || normalized === "super";
+}
+
 export default function useAdminStatus(): AdminState {
   const [state, setState] = useState<AdminState>({
     loading: Boolean(supabase),
@@ -34,12 +40,13 @@ export default function useAdminStatus(): AdminState {
         const { data: appUser } = await client.from("app_users").select("role").eq("id", data.user.id).maybeSingle();
         appRole = (appUser?.role as string | null) ?? null;
       }
+      const isSuper = isOwner || parseSuperRole(metadataRole) || parseSuperRole(appRole);
       setState({
         loading: false,
-        isAdmin: isOwner || parseRole(metadataRole) || parseRole(appRole),
+        isAdmin: isSuper || parseRole(metadataRole) || parseRole(appRole),
         userId: data.user?.id ?? null,
         email: data.user?.email ?? null,
-        isSuper: isOwner,
+        isSuper,
       });
     };
     run();

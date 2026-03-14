@@ -77,9 +77,9 @@ export default function RequireAuth({ children }: RequireAuthProps) {
             return;
           }
           const sessionEmail = data.session.user?.email?.trim().toLowerCase() ?? "";
-          const isSuper = Boolean(superAdminEmail && sessionEmail && sessionEmail === superAdminEmail);
           const role = typeof appUser.role === "string" ? appUser.role.toLowerCase() : "";
-          const isAdmin = role === "admin" || role === "owner";
+          const isSuper = Boolean(superAdminEmail && sessionEmail && sessionEmail === superAdminEmail) || role === "owner" || role === "super";
+          const isAdmin = isSuper || role === "admin" || role === "owner";
           const hasLinkedPlayer = Boolean(appUser.linked_player_id);
           if (!hasLinkedPlayer && !isSuper && !isAdmin && pathname !== "/") {
             router.replace("/?setup=profile");
