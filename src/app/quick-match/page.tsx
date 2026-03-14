@@ -253,17 +253,6 @@ export default function QuickMatchPage() {
   const pillActiveClass = `${pillBaseClass} border border-teal-700 bg-teal-700 text-white`;
   const pillIdleClass = `${pillBaseClass} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`;
   const primaryButtonClass = "rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60";
-  const sportAccentClass =
-    sport === "snooker"
-      ? "rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-4"
-      : sport === "pool_9_ball"
-        ? "rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-4"
-        : "rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-4";
-  const summaryItems = [
-    { label: "Sport", value: sport === "snooker" ? "Snooker" : sport === "pool_9_ball" ? "Pool (9-ball)" : "Pool (8-ball)" },
-    { label: "Format", value: mode === "singles" ? "Singles" : "Doubles" },
-    { label: "Length", value: `Best of ${bestOf}` },
-  ];
 
   return (
     <main className="min-h-screen bg-slate-100 p-6">
@@ -284,7 +273,7 @@ export default function QuickMatchPage() {
                 Link your player profile before creating a quick match.
               </p>
             ) : null}
-            <div className={sportAccentClass}>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">Fast match setup</p>
               <p className="mt-1 text-sm text-slate-600">
                 Choose the location, pick the sport and players, then open the scoring screen.
@@ -292,14 +281,6 @@ export default function QuickMatchPage() {
               <p className="mt-2 text-sm text-slate-600">
                 Singles quick matches are included. Premium adds doubles and Auto-Select Opening Breaker.
               </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                {summaryItems.map((item) => (
-                  <div key={item.label} className="rounded-xl border border-white/80 bg-white/80 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-900">{item.value}</p>
-                  </div>
-                ))}
-              </div>
               {!premium.loading && !premium.unlocked ? (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                   Your account is currently on the free plan. You can still create singles quick matches.
@@ -405,7 +386,7 @@ export default function QuickMatchPage() {
                       })
                     )}
                   </div>
-                  <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-inner">
+                  <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2">
                     {players
                       .filter((p) => {
                         const label = (p.full_name?.trim() ? p.full_name : p.display_name).toLowerCase();
@@ -471,7 +452,7 @@ export default function QuickMatchPage() {
                     );
                   })}
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2 shadow-inner">
+                <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
                   <input
                     className={fieldClass}
                     placeholder="Search players"
@@ -506,20 +487,14 @@ export default function QuickMatchPage() {
                 </div>
               </div>
             )}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-900">Ready to launch</p>
-              <p className="mt-1 text-sm text-slate-600">
-                The app will create the match shell, open scoring, and track it in stats if enabled.
-              </p>
-              <button
-                type="button"
-                onClick={onCreateClick}
-                disabled={saving || !canCreate}
-                className={`mt-3 ${primaryButtonClass}`}
-              >
-                {saving ? "Creating..." : "Start match"}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onCreateClick}
+              disabled={saving || !canCreate}
+              className={primaryButtonClass}
+            >
+              {saving ? "Creating..." : "Start match"}
+            </button>
             <MessageModal message={message} onClose={() => setMessage(null)} />
           </section>
           ) : null}
