@@ -602,7 +602,7 @@ export default function HomePage() {
                         See what Premium adds for players and Club Admin accounts, including doubles, stats, live overview, auto breaker, and enhanced competition tools.
                       </p>
                       <p className="mt-2 text-sm text-slate-600">
-                        If your account is on a free Premium trial, the Premium page shows the exact expiry date.
+                        Check the Premium page to see whether a free Premium trial is active on your account and when it expires.
                       </p>
                     </div>
                     <Link href="/premium" className={actionLinkClass}>
