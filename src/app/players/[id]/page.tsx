@@ -1056,7 +1056,7 @@ export default function PlayerProfilePage() {
       map.set(oppId, row);
     }
     return [...map.entries()]
-      .map(([oppId, s]) => ({ opponent: nameMap.get(oppId) ?? "Unknown", ...s }))
+      .map(([oppId, s]) => ({ opponentId: oppId, opponent: nameMap.get(oppId) ?? "Unknown", ...s }))
       .sort((a, b) => b.played - a.played || a.opponent.localeCompare(b.opponent));
   }, [relevant, id, nameMap]);
   const leagueOpponents = useMemo(() => {
@@ -1074,10 +1074,85 @@ export default function PlayerProfilePage() {
       map.set(oppId, row);
     }
     return [...map.entries()]
-      .map(([oppId, s]) => ({ opponent: nameMap.get(oppId) ?? "Unknown", ...s }))
+      .map(([oppId, s]) => ({ opponentId: oppId, opponent: nameMap.get(oppId) ?? "Unknown", ...s }))
       .sort((a, b) => b.played - a.played || a.opponent.localeCompare(b.opponent));
   }, [leagueRelevant, id, nameMap]);
   const effectiveOpponents = opponents.length > 0 ? opponents : leagueOpponents;
+  const opponentRecentById = useMemo(() => {
+    const map = new Map<string, Array<{ key: string; date: string | null; result: "W" | "L"; label: string }>>();
+    const sorted = [...relevant].sort((a, b) => Date.parse(b.updated_at ?? "0") - Date.parse(a.updated_at ?? "0"));
+    for (const match of sorted) {
+      if (match.match_mode !== "singles") continue;
+      const opponentId = match.player1_id === id ? match.player2_id : match.player1_id;
+      if (!opponentId) continue;
+      const result = match.winner_player_id === id ? "W" : "L";
+      const entry = {
+        key: match.id,
+        date: match.updated_at,
+        result,
+        label: `${nameMap.get(opponentId) ?? "Unknown"} · ${result}`,
+      };
+      const prev = map.get(opponentId) ?? [];
+      if (prev.length < 3) {
+        prev.push(entry);
+        map.set(opponentId, prev);
+      }
+    }
+    return map;
+  }, [relevant, id, nameMap]);
+  const enhancedOpponents = useMemo(
+    () =>
+      effectiveOpponents.map((opp) => {
+        const recent = opp.opponentId ? opponentRecentById.get(opp.opponentId) ?? [] : [];
+        const frameDiff = opp.won - opp.lost;
+        return { ...opp, frameDiff, recent };
+      }),
+    [effectiveOpponents, opponentRecentById]
+  );
+
+  const favoriteDiscipline = useMemo(() => {
+    if (!disciplineBreakdown.length) return null;
+    return [...disciplineBreakdown].sort((a, b) => b.played - a.played || b.won - a.won)[0];
+  }, [disciplineBreakdown]);
+
+  const seasonSummary = useMemo(() => {
+    const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    let played = 0;
+    let won = 0;
+    for (const match of relevant) {
+      const playedAt = Date.parse(match.updated_at ?? "0");
+      if (!playedAt || playedAt < cutoff) continue;
+      played += 1;
+      const inTeam1 = match.team1_player1_id === id || match.team1_player2_id === id;
+      const winnerIsTeam1 = match.winner_player_id === match.team1_player1_id || match.winner_player_id === match.team1_player2_id;
+      const winnerIsTeam2 = match.winner_player_id === match.team2_player1_id || match.winner_player_id === match.team2_player2_id;
+      const isWin = match.match_mode === "singles" ? match.winner_player_id === id : inTeam1 ? winnerIsTeam1 : winnerIsTeam2;
+      if (isWin) won += 1;
+    }
+    return { played, won };
+  }, [relevant, id]);
+
+  const achievements = useMemo(() => {
+    const items: string[] = [];
+    if (effectiveSummary.won > 0) items.push("First win recorded");
+    if (effectiveSummary.played >= 10) items.push("10 matches played");
+    if (effectiveSummary.played >= 25) items.push("25 matches played");
+    if (effectiveSummary.played >= 50) items.push("50 matches played");
+
+    let bestStreak = 0;
+    let currentStreak = 0;
+    for (const item of recentFormItems) {
+      if (item.result === "W") {
+        currentStreak += 1;
+        bestStreak = Math.max(bestStreak, currentStreak);
+      } else {
+        currentStreak = 0;
+      }
+    }
+    if (bestStreak >= 3) items.push(`${bestStreak} match win streak`);
+    return items;
+  }, [effectiveSummary.won, effectiveSummary.played, recentFormItems]);
+
   const leagueHistory = useMemo(() => {
     return leagueRelevant
       .map((s) => {
@@ -1617,13 +1692,71 @@ export default function PlayerProfilePage() {
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h2 className="text-xl font-semibold text-slate-900">Profile Highlights</h2>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-sm font-semibold text-slate-900">Favorite discipline</p>
+                    <p className="mt-2 text-sm text-slate-800">
+                      {favoriteDiscipline ? favoriteDiscipline.label : "Not enough data yet"}
+                    </p>
+                    {favoriteDiscipline ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Most played: {favoriteDiscipline.played} matches
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-sm font-semibold text-slate-900">Last 30 days</p>
+                    <p className="mt-2 text-sm text-slate-800">
+                      Played {seasonSummary.played} · Won {seasonSummary.won}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Win% {pct(seasonSummary.won, seasonSummary.played)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-sm font-semibold text-slate-900">Achievements</p>
+                    {achievements.length ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {achievements.map((item) => (
+                          <span key={item} className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-700">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-slate-600">More results are needed to unlock achievements.</p>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="text-xl font-semibold text-slate-900">Vs Opponents (Singles)</h2>
-                {effectiveOpponents.length === 0 ? <p className="mt-2 text-slate-600">No singles head-to-head data yet.</p> : null}
+                {enhancedOpponents.length === 0 ? <p className="mt-2 text-slate-600">No singles head-to-head data yet.</p> : null}
                 <div className="mt-2 space-y-2">
-                  {effectiveOpponents.map((o) => (
-                    <div key={o.opponent} className="rounded-lg border border-slate-200 px-3 py-2">
-                      <p className="font-medium text-slate-900">{o.opponent}</p>
-                      <p className="text-slate-700">P {o.played} · W {o.won} · L {o.lost}</p>
+                  {enhancedOpponents.map((o) => (
+                    <div key={o.opponentId} className="rounded-lg border border-slate-200 px-3 py-2">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="font-medium text-slate-900">{o.opponent}</p>
+                          <p className="text-slate-700">P {o.played} · W {o.won} · L {o.lost} · Diff {o.frameDiff > 0 ? "+" : ""}{o.frameDiff}</p>
+                        </div>
+                        {o.recent.length ? (
+                          <div className="flex gap-1">
+                            {o.recent.map((item) => (
+                              <span
+                                key={item.key}
+                                className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
+                                  item.result === "W" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                                }`}
+                              >
+                                {item.result}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>
