@@ -152,6 +152,27 @@ export default function HomePage() {
             { label: "Auto Breaker", allowed: premium.unlocked, note: premium.unlocked ? "Included" : "Premium" },
           ],
         };
+  const emailName =
+    userEmail
+      ?.split("@")[0]
+      ?.split(/[._-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") ?? null;
+  const accountName = admin.isSuper
+    ? userName || emailName || "Martin Chamberlain"
+    : admin.isAdmin
+      ? userName || emailName || "Club Admin account"
+      : userName
+        ? `Logged in as ${userName}`
+        : emailName
+          ? `Logged in as ${emailName}`
+          : "No player profile linked";
+  const roleLabel = admin.isSuper
+    ? "Super User"
+    : admin.isAdmin
+      ? "Club Admin"
+      : "User";
 
   const primaryCardClass = (href: string) => {
     if (admin.isSuper) {
@@ -549,23 +570,11 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center gap-2">
               {userPlayerId ? (
                 <Link href={`/players/${userPlayerId}`} className="text-lg font-semibold text-slate-900 underline-offset-4 hover:underline">
-                  {admin.isSuper
-                    ? userName || "Super User account"
-                    : admin.isAdmin
-                      ? userName || "Club Admin account"
-                      : userName
-                        ? `Logged in as ${userName}`
-                        : "No player profile linked"}
+                  {accountName}
                 </Link>
               ) : (
                 <p className="text-lg font-semibold text-slate-900">
-                  {admin.isSuper
-                    ? userName || "Super User account"
-                    : admin.isAdmin
-                      ? userName || "Club Admin account"
-                      : userName
-                        ? `Logged in as ${userName}`
-                        : "No player profile linked"}
+                  {accountName}
                 </p>
               )}
               <span
@@ -577,7 +586,7 @@ export default function HomePage() {
                       : "bg-slate-100 text-slate-600"
                 }`}
               >
-                {admin.isSuper ? "Super User" : admin.isAdmin ? "Club Admin" : "User"}
+                {roleLabel}
               </span>
             </div>
             {userEmail ? <p className="text-sm text-slate-600">Logged in: {userEmail}</p> : null}
