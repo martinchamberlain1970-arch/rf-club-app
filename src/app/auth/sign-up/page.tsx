@@ -71,23 +71,6 @@ function readSignupDraft(): SignupDraft | null {
   }
 }
 
-function AuthTopNav({ onBack }: { onBack: () => void }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      <button
-        type="button"
-        onClick={onBack}
-        className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700"
-      >
-        Back
-      </button>
-      <Link href="/" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700">
-        Home
-      </Link>
-    </div>
-  );
-}
-
 export default function SignUpPage() {
   const router = useRouter();
   const [draft] = useState<SignupDraft | null>(() => readSignupDraft());
@@ -376,11 +359,10 @@ export default function SignUpPage() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.16),_transparent_34%),linear-gradient(180deg,_#f8fafc_0%,_#eef6f4_48%,_#fff8ef_100%)] p-4 sm:p-6">
-      <div className="mx-auto max-w-6xl space-y-4">
-        <AuthTopNav onBack={() => router.back()} />
-        <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+      <div className="mx-auto max-w-6xl">
+        <div className="grid gap-5 lg:grid-cols-[1.18fr_0.82fr] lg:items-start">
           <section className={`${cardClass} overflow-hidden`}>
-            <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+            <div className="grid gap-5 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
               <div className="space-y-4">
                 <div className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-teal-700">
                   Rack &amp; Frame Club
@@ -393,18 +375,14 @@ export default function SignUpPage() {
                     Create your account to track your player profile, take part in club events, and keep up with scores, rankings, and notifications in one place.
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Play Faster</p>
-                    <p className="mt-1 text-sm text-slate-700">Jump into quick matches and scoring without messy setup.</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick match ready</p>
+                    <p className="mt-1 text-sm text-slate-700">Set up your player account once, then jump into club matches and scoring faster.</p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Stay Organised</p>
-                    <p className="mt-1 text-sm text-slate-700">Keep player profiles, locations, results, and approvals in one club system.</p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Built For Clubs</p>
-                    <p className="mt-1 text-sm text-slate-700">Designed for social clubs running local tournaments and weekly play.</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Built for local clubs</p>
+                    <p className="mt-1 text-sm text-slate-700">Follow competitions, player updates, results, and notifications from the same club app.</p>
                   </div>
                 </div>
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -417,7 +395,7 @@ export default function SignUpPage() {
                   <Image
                     src={rackAndFramePhoto}
                     alt="Rack and Frame club"
-                    className="h-[280px] w-full object-cover object-center sm:h-[360px]"
+                    className="h-[360px] w-full bg-slate-100 object-contain object-center sm:h-[520px]"
                     priority
                   />
                   <div className="border-t border-slate-200 bg-white px-4 py-4">
@@ -433,7 +411,7 @@ export default function SignUpPage() {
             </div>
           </section>
 
-          <section className={`${cardClass} space-y-4`}>
+          <section className={`${cardClass} space-y-4 lg:max-w-md lg:justify-self-end`}>
             <div className="space-y-2">
               <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Create account</p>
               <h2 className="text-2xl font-bold text-slate-900 sm:text-3xl">Set up your player login</h2>
