@@ -591,6 +591,23 @@ export default function HomePage() {
 
           <section className="space-y-3">
             <div className="space-y-3">
+              {!admin.isSuper ? (
+                <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="max-w-2xl">
+                      <p className="text-sm font-semibold uppercase tracking-wide text-teal-700">Premium Access</p>
+                      <h2 className="mt-1 text-xl font-bold text-slate-900">Unlock the advanced extras</h2>
+                      <p className="mt-1 text-sm text-slate-700">
+                        See what Premium adds for players and Club Admin accounts, including doubles, stats, live overview, auto breaker, and enhanced competition tools.
+                      </p>
+                    </div>
+                    <Link href="/premium" className={actionLinkClass}>
+                      See plans and features
+                    </Link>
+                  </div>
+                </div>
+              ) : null}
+
               <div className={cardBaseClass}>
                 <p className="text-sm font-semibold text-slate-900">Club Play</p>
                 <p className="mt-1 text-sm text-slate-600">
