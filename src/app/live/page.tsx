@@ -166,11 +166,20 @@ export default function LivePage() {
 
           {!admin.loading && !admin.isAdmin ? (
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-              Live Overview is available to the club administrator only.
+              <p className="font-semibold">Live Overview is available to Club Admin accounts only.</p>
+              <p className="mt-1">
+                This screen is designed for organisers keeping track of active matches and event progress.
+              </p>
             </section>
           ) : !premium.loading && !premium.unlocked ? (
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-              Live Overview is a Premium feature.
+              <p className="font-semibold">Live Overview is a Premium feature.</p>
+              <p className="mt-1">
+                Club Admin access is required first, and Premium then unlocks the live event board for in-progress competitions.
+              </p>
+              <Link href="/premium" className="mt-3 inline-flex rounded-full border border-amber-300 bg-white px-3 py-1 text-sm font-medium text-amber-900">
+                View premium access options
+              </Link>
             </section>
           ) : (
             <>

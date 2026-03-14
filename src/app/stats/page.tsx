@@ -978,7 +978,13 @@ export default function StatsPage() {
           <MessageModal message={message} onClose={() => setMessage(null)} />
           {!premium.loading && !premium.unlocked ? (
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-              Stats is a Premium feature. Request access on the Premium page.
+              <p className="font-semibold">Stats is a Premium feature.</p>
+              <p className="mt-1">
+                Premium unlocks the full stats suite, including performance tables, head-to-head records, and predictor views.
+              </p>
+              <a href="/premium" className="mt-3 inline-flex rounded-full border border-amber-300 bg-white px-3 py-1 text-sm font-medium text-amber-900">
+                View premium access options
+              </a>
             </section>
           ) : (
             <>

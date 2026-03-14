@@ -278,6 +278,14 @@ export default function QuickMatchPage() {
               <p className="mt-1 text-sm text-slate-600">
                 Choose the location, pick the sport and players, then open the scoring screen.
               </p>
+              <p className="mt-2 text-sm text-slate-600">
+                Singles quick matches are included. Premium adds doubles and Auto-Select Opening Breaker.
+              </p>
+              {!premium.loading && !premium.unlocked ? (
+                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  Your account is currently on the free plan. You can still create singles quick matches.
+                </div>
+              ) : null}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Match title</label>
