@@ -1152,6 +1152,33 @@ export default function PlayerProfilePage() {
     if (bestStreak >= 3) items.push(`${bestStreak} match win streak`);
     return items;
   }, [effectiveSummary.won, effectiveSummary.played, recentFormItems]);
+  const recognitionBadges = useMemo(() => {
+    const items: string[] = [];
+    const linkedAccount = currentProfileLinkedUserId ? appUserById.get(currentProfileLinkedUserId) ?? null : null;
+    const linkedRole = (linkedAccount?.role ?? "").toLowerCase();
+
+    if (effectiveSummary.played >= 10) items.push("Quick Match Regular");
+    if (relevant.some((match) => Boolean(match.competition_id))) items.push("Competition Player");
+    if (disciplineBreakdown.find((row) => row.label === "Snooker" && row.played >= 5)) items.push("Snooker Specialist");
+    if (disciplineBreakdown.find((row) => row.label === "8-ball Pool" && row.played >= 5)) items.push("8-ball Regular");
+    if (disciplineBreakdown.find((row) => row.label === "9-ball Pool" && row.played >= 5)) items.push("9-ball Regular");
+    if (recentFormItems.filter((item) => item.result === "W").length >= 3) items.push("Win Streak");
+    if (linkedRole === "admin") items.push("Club Admin");
+    if (linkedRole === "owner") items.push("Super User");
+    if ((player?.age_band ?? "18_plus") !== "18_plus") items.push("Under 18s");
+    if (childProfiles.length > 0) items.push("Parent / Guardian Linked");
+
+    return items;
+  }, [
+    appUserById,
+    childProfiles.length,
+    currentProfileLinkedUserId,
+    disciplineBreakdown,
+    effectiveSummary.played,
+    player?.age_band,
+    recentFormItems,
+    relevant,
+  ]);
 
   const leagueHistory = useMemo(() => {
     return leagueRelevant
@@ -1728,6 +1755,23 @@ export default function PlayerProfilePage() {
                       <p className="mt-2 text-sm text-slate-600">More results are needed to unlock achievements.</p>
                     )}
                   </div>
+                </div>
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-sm font-semibold text-slate-900">Recognition badges</p>
+                  {recognitionBadges.length ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {recognitionBadges.map((item) => (
+                        <span
+                          key={item}
+                          className="rounded-full border border-teal-200 bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-800"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-600">Recognition badges will appear as this profile builds up activity.</p>
+                  )}
                 </div>
               </section>
 
