@@ -601,6 +601,9 @@ export default function HomePage() {
                       <p className="mt-1 text-sm text-slate-700">
                         See what Premium adds for players and Club Admin accounts, including doubles, stats, live overview, auto breaker, and enhanced competition tools.
                       </p>
+                      <p className="mt-2 text-sm text-slate-600">
+                        If your account is on a free Premium trial, the Premium page shows the exact expiry date.
+                      </p>
                     </div>
                     <Link href="/premium" className={actionLinkClass}>
                       See plans and features
