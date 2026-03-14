@@ -223,6 +223,23 @@ export default function PlayersPage() {
       return haystack.includes(q);
     });
   }, [appUsers, roleSearch, roleFilter, premiumFilter, superAdminEmail, players]);
+  const duplicateProfileRows = useMemo(() => {
+    return appUsers
+      .map((u) => {
+        const claimedPlayers = players.filter((p) => p.claimed_by === u.id);
+        const linkedPlayer = u.linked_player_id ? players.find((p) => p.id === u.linked_player_id) ?? null : null;
+        const relatedPlayers = new Map<string, Player>();
+        claimedPlayers.forEach((player) => relatedPlayers.set(player.id, player));
+        if (linkedPlayer) relatedPlayers.set(linkedPlayer.id, linkedPlayer);
+        if (relatedPlayers.size <= 1) return null;
+        return {
+          userId: u.id,
+          email: u.email ?? u.id,
+          players: Array.from(relatedPlayers.values()),
+        };
+      })
+      .filter(Boolean) as Array<{ userId: string; email: string; players: Player[] }>;
+  }, [appUsers, players]);
   const filteredActivePlayers = useMemo(() => {
     if (profileLocationFilter === "all") return activePlayers;
     if (profileLocationFilter === "__none") return activePlayers.filter((p) => !p.location_id);
@@ -1382,6 +1399,30 @@ export default function PlayersPage() {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-semibold text-slate-900">Account access ({filteredRoleUsers.length} users)</p>
                   <p className="mt-1 text-sm text-slate-600">Manage roles and premium access for user and club admin accounts.</p>
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-sm font-semibold text-amber-900">Duplicate profile check by registration email</p>
+                    {duplicateProfileRows.length === 0 ? (
+                      <p className="mt-1 text-sm text-amber-800">No duplicate linked profiles found.</p>
+                    ) : (
+                      <div className="mt-2 space-y-2">
+                        {duplicateProfileRows.map((row) => (
+                          <div key={row.userId} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
+                            <p className="font-medium">{row.email}</p>
+                            <p className="mt-1 text-xs text-slate-600">
+                              Multiple player profiles are linked to this registration email:
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              {row.players.map((player) => (
+                                <span key={player.id} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
+                                  {player.full_name?.trim() ? player.full_name : player.display_name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="mt-3 space-y-3">
               <div className="flex flex-wrap gap-2">
                 <button
