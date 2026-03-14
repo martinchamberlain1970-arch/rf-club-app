@@ -33,22 +33,23 @@ export default function useAdminStatus(): AdminState {
       if (active) {
         setState((current) => ({ ...current, loading: true }));
       }
-      const { data } = await client.auth.getUser();
+      const { data } = await client.auth.getSession();
       if (!active) return;
-      const email = data.user?.email?.toLowerCase() ?? "";
+      const sessionUser = data.session?.user ?? null;
+      const email = sessionUser?.email?.toLowerCase() ?? "";
       const isOwner = Boolean(ownerEmail && email && email === ownerEmail);
-      const metadataRole = data.user?.user_metadata?.role ?? null;
+      const metadataRole = sessionUser?.user_metadata?.role ?? null;
       let appRole: string | null = null;
-      if (data.user?.id) {
-        const { data: appUser } = await client.from("app_users").select("role").eq("id", data.user.id).maybeSingle();
+      if (sessionUser?.id) {
+        const { data: appUser } = await client.from("app_users").select("role").eq("id", sessionUser.id).maybeSingle();
         appRole = (appUser?.role as string | null) ?? null;
       }
       const isSuper = isOwner || parseSuperRole(metadataRole) || parseSuperRole(appRole);
       setState({
         loading: false,
         isAdmin: isSuper || parseRole(metadataRole) || parseRole(appRole),
-        userId: data.user?.id ?? null,
-        email: data.user?.email ?? null,
+        userId: sessionUser?.id ?? null,
+        email: sessionUser?.email ?? null,
         isSuper,
       });
     };

@@ -23,10 +23,11 @@ export default function useFeatureAccess(): FeatureAccessState {
     const superAdminEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
 
     const run = async () => {
-      const { data } = await client.auth.getUser();
+      const { data } = await client.auth.getSession();
       if (!active) return;
-      const userId = data.user?.id ?? null;
-      const email = data.user?.email?.trim().toLowerCase() ?? "";
+      const sessionUser = data.session?.user ?? null;
+      const userId = sessionUser?.id ?? null;
+      const email = sessionUser?.email?.trim().toLowerCase() ?? "";
       if (!userId) {
         setState({ loading: false, quickMatchEnabled: false, competitionCreateEnabled: false });
         return;

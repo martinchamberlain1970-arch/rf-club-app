@@ -32,17 +32,18 @@ export default function usePremiumStatus(): PremiumState {
     let active = true;
 
     const refresh = async () => {
-      const { data } = await client.auth.getUser();
+      const { data } = await client.auth.getSession();
       if (!active) return;
-      const userId = data.user?.id;
-      const email = data.user?.email?.trim().toLowerCase() ?? "";
+      const sessionUser = data.session?.user ?? null;
+      const userId = sessionUser?.id;
+      const email = sessionUser?.email?.trim().toLowerCase() ?? "";
       const superEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
       if (!userId) {
         setState({ loading: false, unlocked: false, trialActive: false, trialEndsAt: null, trialDaysLeft: 0 });
         return;
       }
 
-      let premiumUnlocked = parseFlag(data.user?.user_metadata?.premium_unlocked);
+      let premiumUnlocked = parseFlag(sessionUser?.user_metadata?.premium_unlocked);
       let trialEndsAt: string | null = null;
       let trialActive = false;
       let trialDaysLeft = 0;

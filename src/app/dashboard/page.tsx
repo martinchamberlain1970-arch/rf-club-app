@@ -235,9 +235,10 @@ export default function HomePage() {
     const run = async () => {
       const client = supabase;
       if (!client) return;
-      const { data } = await client.auth.getUser();
-      const userId = data.user?.id;
-      const authEmail = data.user?.email ?? null;
+      const { data } = await client.auth.getSession();
+      const sessionUser = data.session?.user ?? null;
+      const userId = sessionUser?.id;
+      const authEmail = sessionUser?.email ?? null;
       setUserEmail(authEmail);
       if (!userId) return;
       const linkRes = await client.from("app_users").select("linked_player_id").eq("id", userId).maybeSingle();
@@ -424,8 +425,8 @@ export default function HomePage() {
       setProfileMessage("Enter your first and second name to continue.");
       return;
     }
-    const { data: userRes } = await client.auth.getUser();
-    const userId = userRes.user?.id;
+    const { data: sessionRes } = await client.auth.getSession();
+    const userId = sessionRes.session?.user?.id;
     if (!userId) {
       setProfileMessage("You must be signed in to submit a profile check.");
       return;
