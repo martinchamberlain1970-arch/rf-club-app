@@ -969,6 +969,23 @@ export default function StatsPage() {
   const tableCellTextClass = "py-2 pr-4 text-sm text-slate-700";
   const tableNumericHeaderClass = `${tableHeaderTextClass} text-right tabular-nums whitespace-nowrap`;
   const tableNumericCellClass = `${tableCellTextClass} text-right tabular-nums whitespace-nowrap`;
+  const accentCardClass =
+    sport === "snooker"
+      ? "rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-4 shadow-sm"
+      : sport === "pool_9_ball"
+        ? "rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-4 shadow-sm"
+        : sport === "pool_8_ball"
+          ? "rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-4 shadow-sm"
+          : "rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 p-4 shadow-sm";
+  const summaryCards = [
+    { label: "Rows", value: String(tableRows.length), sub: view === "table" ? "current table" : "current selection" },
+    { label: "Matches", value: String(filteredMatches.length), sub: `${mode} results` },
+    {
+      label: "Sport",
+      value: sport === "all" ? "All sports" : sport === "snooker" ? "Snooker" : sport === "pool_9_ball" ? "Pool (9-ball)" : "Pool (8-ball)",
+      sub: format === "all" ? "all formats" : "knockout",
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-slate-100 p-6">
@@ -988,7 +1005,16 @@ export default function StatsPage() {
             </section>
           ) : (
             <>
-                  <section className={`${cardClass} p-4`}>
+                  <section className={accentCardClass}>
+                    <div className="mb-4 grid gap-2 sm:grid-cols-3">
+                      {summaryCards.map((item) => (
+                        <div key={item.label} className="rounded-xl border border-white/80 bg-white/80 p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</p>
+                          <p className="mt-1 text-xl font-bold text-slate-900">{item.value}</p>
+                          <p className="text-xs text-slate-500">{item.sub}</p>
+                        </div>
+                      ))}
+                    </div>
                     <div className="flex flex-wrap items-end gap-3">
                       <div className={filterItemClass}>
                         <label className={filterLabelClass}>Format</label>
@@ -1044,7 +1070,7 @@ export default function StatsPage() {
                             <span className="text-xs font-medium text-slate-500 group-open:hidden">Expand</span>
                             <span className="hidden text-xs font-medium text-slate-500 group-open:inline">Collapse</span>
                           </summary>
-                          <div className="mt-3 overflow-x-auto">
+                          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white p-2">
                             <table className="min-w-full text-left align-middle">
                               <thead>
                                 <tr className="text-slate-700">
@@ -1103,7 +1129,7 @@ export default function StatsPage() {
                               <span className="text-xs font-medium text-slate-500 group-open:hidden">Expand</span>
                               <span className="hidden text-xs font-medium text-slate-500 group-open:inline">Collapse</span>
                             </summary>
-                            <div className="mt-3 overflow-x-auto">
+                            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white p-2">
                               <table className="min-w-full text-left align-middle">
                                 <thead>
                                   <tr className="text-slate-700">
