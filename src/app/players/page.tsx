@@ -428,8 +428,13 @@ export default function PlayersPage() {
       setMessage("Select a location.");
       return;
     }
-    const displayName = firstName;
     const fullName = `${firstName} ${secondName}`;
+    const displayNameConflict = players.some((p) => {
+      const sameDisplay = p.display_name.trim().toLowerCase() === firstName.toLowerCase();
+      const samePerson = (p.full_name?.trim().toLowerCase() ?? "") === fullName.toLowerCase();
+      return sameDisplay && !samePerson;
+    });
+    const displayName = displayNameConflict ? fullName : firstName;
     const client = supabase;
     if (!client) {
       setMessage("Supabase is not configured.");
@@ -454,7 +459,11 @@ export default function PlayersPage() {
 
     if (error) {
       if (error.message.includes("players_display_name_lower_uniq")) {
-        const existing = players.find((p) => p.display_name.toLowerCase() === displayName.toLowerCase());
+        const existing = players.find((p) => {
+          const matchesFullName = (p.full_name?.trim().toLowerCase() ?? "") === fullName.toLowerCase();
+          const matchesDisplayName = p.display_name.trim().toLowerCase() === displayName.toLowerCase();
+          return matchesFullName || matchesDisplayName;
+        });
         if (existing) {
           if (existing.is_archived) {
             setConfirmModal({
@@ -852,8 +861,13 @@ export default function PlayersPage() {
       setMessage("Enter a first name and second name.");
       return;
     }
-    const displayName = firstName;
     const fullName = `${firstName} ${secondName}`;
+    const displayNameConflict = players.some((p) => {
+      const sameDisplay = p.display_name.trim().toLowerCase() === firstName.toLowerCase();
+      const samePerson = (p.full_name?.trim().toLowerCase() ?? "") === fullName.toLowerCase();
+      return sameDisplay && !samePerson;
+    });
+    const displayName = displayNameConflict ? fullName : firstName;
     setSaving(true);
     const { data, error } = await client
       .from("players")
