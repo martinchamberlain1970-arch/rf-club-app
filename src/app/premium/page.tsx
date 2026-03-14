@@ -213,7 +213,7 @@ export default function PremiumPage() {
           <ScreenHeader
             title="Premium"
             eyebrow="Premium"
-            subtitle={isSuperAdmin ? "Manage premium approvals and access." : "Premium unlocks the advanced extras on top of the standard club roles."}
+            subtitle={isSuperAdmin ? "Manage premium approvals and account access." : "Premium adds the advanced extras on top of the standard Player and Club Admin roles."}
           />
 
           <section className={`${cardBaseClass} space-y-2`}>
@@ -286,22 +286,22 @@ export default function PremiumPage() {
                   <p className="mt-1 text-2xl font-bold text-slate-900">One-off £12.99</p>
                   <p className="text-sm text-slate-600">No subscription · one account upgrade</p>
                   <p className="mt-2 text-slate-700">
-                    Premium does not replace roles. Player, Club Admin, and Super User stay the same. Premium adds the advanced extras to Player or Club Admin accounts.
+                    Premium does not replace roles. Player, Club Admin, and Super User stay the same. Premium simply adds the advanced extras to Player or Club Admin accounts.
                   </p>
                 </section>
 
                 <section className="rounded-xl border border-slate-200 bg-white p-4">
                   <p className="font-semibold text-slate-900">How access works</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                    <li>Player accounts can use Quick Match and normal club viewing features on the free plan.</li>
-                    <li>Club Admin accounts can create competitions and run their club on the free plan.</li>
+                    <li>Free Player accounts can use Quick Match and the standard club-viewing screens.</li>
+                    <li>Free Club Admin accounts can create competitions, manage players, and run their club.</li>
                     <li>Premium adds advanced extras like doubles, stats, live overview, and enhanced match tools.</li>
-                    <li>Super User always keeps full access and is not governed by Premium status.</li>
+                    <li>Super User always keeps full system access and is not governed by Premium status.</li>
                   </ul>
                 </section>
 
                 <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="font-semibold text-slate-900">What you get with Premium</p>
+                  <p className="font-semibold text-slate-900">What Premium adds</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
                     {premiumHighlights.map((item) => (
                       <li key={item}>{item}</li>
@@ -310,7 +310,10 @@ export default function PremiumPage() {
                 </section>
 
                 <section className="rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="font-semibold text-slate-900">Free and Premium feature matrix</p>
+                  <p className="font-semibold text-slate-900">Access snapshot</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Use this table as the quick guide to what is included on each plan and role level.
+                  </p>
                   <div className="mt-3 overflow-x-auto">
                     <table className="min-w-full text-left text-sm">
                       <thead>
@@ -342,7 +345,7 @@ export default function PremiumPage() {
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <p className="font-semibold text-slate-900">Request Premium</p>
                       <p className="mt-1 text-sm text-slate-600">
-                        Request a Premium upgrade for this account at £12.99. Requests are reviewed by the Super User.
+                        Request a Premium upgrade for this account at £12.99. Requests are reviewed by the Super User, who can turn Premium on or off for both Player and Club Admin accounts.
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button
@@ -353,14 +356,14 @@ export default function PremiumPage() {
                         >
                           {requestStatus === "pending" ? "Premium request pending" : "Request Premium (£12.99)"}
                         </button>
-                        <span className="text-sm text-slate-600">Premium can be turned on or off by the Super User for standard users and Club Admin accounts.</span>
+                        <span className="text-sm text-slate-600">You keep your current role. Premium only adds the extra features.</span>
                       </div>
                     </div>
 
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                       <p className="font-semibold text-slate-900">Have a voucher code?</p>
                       <p className="mt-1 text-sm text-slate-700">
-                        If you have a Rack &amp; Frame voucher code, enter it here to unlock Premium for free.
+                        If you have a Rack &amp; Frame voucher code, enter it here to unlock Premium on this account without payment.
                       </p>
                       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                         <input
