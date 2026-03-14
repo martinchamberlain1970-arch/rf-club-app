@@ -30,6 +30,9 @@ export default function useAdminStatus(): AdminState {
     const ownerEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ?? process.env.NEXT_PUBLIC_OWNER_EMAIL?.trim().toLowerCase() ?? "";
     let active = true;
     const run = async () => {
+      if (active) {
+        setState((current) => ({ ...current, loading: true }));
+      }
       const { data } = await client.auth.getUser();
       if (!active) return;
       const email = data.user?.email?.toLowerCase() ?? "";
@@ -50,8 +53,12 @@ export default function useAdminStatus(): AdminState {
       });
     };
     run();
+    const { data: sub } = client.auth.onAuthStateChange(async () => {
+      await run();
+    });
     return () => {
       active = false;
+      sub.subscription.unsubscribe();
     };
   }, []);
 
