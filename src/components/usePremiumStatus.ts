@@ -32,18 +32,18 @@ export default function usePremiumStatus(): PremiumState {
     let active = true;
 
     const refresh = async () => {
-      const { data } = await client.auth.getSession();
+      const { data } = await client.auth.getUser();
       if (!active) return;
-      const sessionUser = data.session?.user ?? null;
-      const userId = sessionUser?.id;
-      const email = sessionUser?.email?.trim().toLowerCase() ?? "";
+      const userId = data.user?.id;
+      const email = data.user?.email?.trim().toLowerCase() ?? "";
       const superEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
+      const isSuper = Boolean(superEmail && email && email === superEmail);
       if (!userId) {
         setState({ loading: false, unlocked: false, trialActive: false, trialEndsAt: null, trialDaysLeft: 0 });
         return;
       }
 
-      let premiumUnlocked = parseFlag(sessionUser?.user_metadata?.premium_unlocked);
+      let premiumUnlocked = parseFlag(data.user?.user_metadata?.premium_unlocked);
       let trialEndsAt: string | null = null;
       let trialActive = false;
       let trialDaysLeft = 0;
@@ -79,9 +79,6 @@ export default function usePremiumStatus(): PremiumState {
           applyTrialFrom(fallbackRes.data as { created_at?: string | null });
         }
       }
-      const roleRes = await client.from("app_users").select("role").eq("id", userId).maybeSingle();
-      const appRole = (roleRes.data?.role ?? "").toLowerCase();
-      const isSuper = Boolean(superEmail && email && email === superEmail) || appRole === "owner" || appRole === "super";
 
       setState({
         loading: false,

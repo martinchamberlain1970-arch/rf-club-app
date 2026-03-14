@@ -14,53 +14,15 @@ export default function RequireAuth({ children }: RequireAuthProps) {
   const pathname = usePathname();
   const [ready, setReady] = useState(() => !supabase);
   const [allowed, setAllowed] = useState(() => !supabase);
-  const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
     const client = supabase;
     if (!client) return;
 
     let active = true;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const SESSION_TIMEOUT_MS = 7000;
-    const superAdminEmail =
-      process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ??
-      process.env.NEXT_PUBLIC_OWNER_EMAIL?.trim().toLowerCase() ??
-      "";
-    const buildNextPath = () => {
-      const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
-      return `${pathname}${query ? `?${query}` : ""}`;
-    };
-    const redirectToSignIn = () => {
-      if (!active) return;
-      if (typeof window !== "undefined" && window.sessionStorage.getItem("rf_signing_out") === "1") {
-        window.sessionStorage.removeItem("rf_signing_out");
-        router.replace("/auth/sign-in?signed_out=1");
-      } else {
-        const next = buildNextPath();
-        router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
-      }
-      setAllowed(false);
-      setReady(true);
-    };
-    const armTimeout = () => {
-      timeoutId = setTimeout(() => {
-        if (!active) return;
-        setTimedOut(true);
-        redirectToSignIn();
-      }, SESSION_TIMEOUT_MS);
-    };
-    const clearTimeoutGuard = () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-    };
 
     const check = async () => {
-      armTimeout();
       const { data } = await client.auth.getSession();
-      clearTimeoutGuard();
       if (!active) return;
 
       if (data.session) {
@@ -68,21 +30,15 @@ export default function RequireAuth({ children }: RequireAuthProps) {
         if (userId) {
           const { data: appUser, error } = await client
             .from("app_users")
-            .select("id,linked_player_id,role")
+            .select("id")
             .eq("id", userId)
             .maybeSingle();
           if (!active) return;
           if (error || !appUser) {
-            redirectToSignIn();
-            return;
-          }
-          const sessionEmail = data.session.user?.email?.trim().toLowerCase() ?? "";
-          const role = typeof appUser.role === "string" ? appUser.role.toLowerCase() : "";
-          const isSuper = Boolean(superAdminEmail && sessionEmail && sessionEmail === superAdminEmail) || role === "owner" || role === "super";
-          const isAdmin = isSuper || role === "admin" || role === "owner";
-          const hasLinkedPlayer = Boolean(appUser.linked_player_id);
-          if (!hasLinkedPlayer && !isSuper && !isAdmin && pathname !== "/") {
-            router.replace("/?setup=profile");
+            await client.auth.signOut();
+            const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
+            const next = `${pathname}${query ? `?${query}` : ""}`;
+            router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
             setAllowed(false);
             setReady(true);
             return;
@@ -93,26 +49,28 @@ export default function RequireAuth({ children }: RequireAuthProps) {
         return;
       }
 
-      redirectToSignIn();
+      const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
+      const next = `${pathname}${query ? `?${query}` : ""}`;
+      router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
+      setAllowed(false);
+      setReady(true);
     };
 
     check();
 
     const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
-      clearTimeoutGuard();
       if (!active) return;
       if (session) {
-        setTimedOut(false);
         setAllowed(true);
-        setReady(true);
       } else {
-        redirectToSignIn();
+        const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
+        const next = `${pathname}${query ? `?${query}` : ""}`;
+        router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
       }
     });
 
     return () => {
       active = false;
-      clearTimeoutGuard();
       listener.subscription.unsubscribe();
     };
   }, [pathname, router]);
@@ -122,13 +80,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
     logUsagePageView(pathname || "/");
   }, [ready, allowed, pathname]);
 
-  if (!ready) {
-    return (
-      <p className={`rounded-xl p-4 ${timedOut ? "border border-amber-200 bg-amber-50 text-amber-900" : "border border-slate-200 bg-white"}`}>
-        {timedOut ? "Session check timed out. Redirecting to sign in..." : "Checking session..."}
-      </p>
-    );
-  }
+  if (!ready) return <p className="rounded-xl border border-slate-200 bg-white p-4">Checking session...</p>;
   if (!allowed) return <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">Redirecting to sign in...</p>;
 
   return <>{children}</>;

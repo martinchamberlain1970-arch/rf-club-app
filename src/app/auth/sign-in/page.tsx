@@ -10,11 +10,9 @@ import MessageModal from "@/components/MessageModal";
 import rackAndFramePhoto from "@/photo/rackandframe.png";
 
 function readNextPath(): string {
-  if (typeof window === "undefined") return "/dashboard";
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("signed_out") === "1") return "/dashboard";
-  const raw = params.get("next");
-  return raw || "/dashboard";
+  if (typeof window === "undefined") return "/";
+  const raw = new URLSearchParams(window.location.search).get("next");
+  return raw || "/";
 }
 
 function readSignupState(): string | null {
@@ -22,23 +20,15 @@ function readSignupState(): string | null {
   return new URLSearchParams(window.location.search).get("signup");
 }
 
-function readSignedOutState(): boolean {
-  if (typeof window === "undefined") return false;
-  return new URLSearchParams(window.location.search).get("signed_out") === "1";
-}
-
 export default function SignInPage() {
   const router = useRouter();
   const nextPath = useMemo(() => readNextPath(), []);
   const signupState = useMemo(() => readSignupState(), []);
-  const signedOutState = useMemo(() => readSignedOutState(), []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(() =>
-    signedOutState
-      ? "You have been signed out."
-      : signupState === "created"
+    signupState === "created"
       ? "Account created. Check your email if verification is enabled, then sign in."
       : signupState === "confirmed"
         ? "Email confirmed. You can sign in now."
@@ -50,9 +40,6 @@ export default function SignInPage() {
   const onSignIn = async (e: FormEvent) => {
     e.preventDefault();
     setMessage(null);
-    if (typeof window !== "undefined") {
-      window.sessionStorage.removeItem("rf_signing_out");
-    }
     const client = supabase;
     if (!client) {
       setMessage("Supabase is not configured.");
@@ -64,9 +51,6 @@ export default function SignInPage() {
     if (error) {
       setMessage(`Sign in failed: ${error.message}`);
       return;
-    }
-    if (typeof window !== "undefined") {
-      window.sessionStorage.removeItem("rf_signing_out");
     }
     const authUserRes = await client.auth.getUser();
     const signedInUserId = authUserRes.data.user?.id ?? null;
@@ -106,10 +90,6 @@ export default function SignInPage() {
         const userId = data.user?.id;
         if (!userId) {
           window.localStorage.removeItem("pending_claim");
-          if (typeof window !== "undefined") {
-            window.location.replace(nextPath);
-            return;
-          }
           router.replace(nextPath);
           return;
         }
@@ -175,10 +155,6 @@ export default function SignInPage() {
         // ignore parse/side-effect errors here
       }
       window.localStorage.removeItem("pending_claim");
-    }
-    if (typeof window !== "undefined") {
-      window.location.replace(nextPath);
-      return;
     }
     router.replace(nextPath);
   };

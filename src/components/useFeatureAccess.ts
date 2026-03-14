@@ -23,24 +23,28 @@ export default function useFeatureAccess(): FeatureAccessState {
     const superAdminEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
 
     const run = async () => {
-      const { data } = await client.auth.getSession();
+      const { data } = await client.auth.getUser();
       if (!active) return;
-      const sessionUser = data.session?.user ?? null;
-      const userId = sessionUser?.id ?? null;
-      const email = sessionUser?.email?.trim().toLowerCase() ?? "";
+      const userId = data.user?.id ?? null;
+      const email = data.user?.email?.trim().toLowerCase() ?? "";
+      const isSuper = Boolean(superAdminEmail && email && email === superAdminEmail);
       if (!userId) {
         setState({ loading: false, quickMatchEnabled: false, competitionCreateEnabled: false });
         return;
       }
+      if (isSuper) {
+        setState({ loading: false, quickMatchEnabled: true, competitionCreateEnabled: true });
+        return;
+      }
+
       const { data: appUser } = await client.from("app_users").select("role").eq("id", userId).maybeSingle();
 
       const role = (appUser?.role ?? "").toLowerCase();
-      const isSuper = Boolean(superAdminEmail && email && email === superAdminEmail) || role === "owner" || role === "super";
-      const isAdmin = isSuper || role === "admin" || role === "owner";
+      const isAdmin = role === "admin" || role === "owner";
       setState({
         loading: false,
         quickMatchEnabled: true,
-        competitionCreateEnabled: isAdmin || isSuper,
+        competitionCreateEnabled: isAdmin,
       });
     };
 

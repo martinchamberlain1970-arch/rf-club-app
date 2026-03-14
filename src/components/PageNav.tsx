@@ -28,7 +28,7 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
   );
   const performNavigation = (target: "back" | "home") => {
     if (target === "back") router.back();
-    else router.push("/dashboard");
+    else router.push("/");
   };
 
   const requestNavigation = (target: "back" | "home") => {
@@ -41,37 +41,8 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
 
   const onSignOut = async () => {
     const client = supabase;
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem("rf_signing_out", "1");
-    }
-    if (client) {
-      try {
-        await client.auth.signOut();
-      } catch {
-        // Fall through to local storage cleanup and redirect.
-      }
-    }
-    if (typeof window !== "undefined") {
-      const localKeys = Object.keys(window.localStorage);
-      for (const key of localKeys) {
-        if (key.startsWith("sb-") && key.includes("-auth-token")) {
-          window.localStorage.removeItem(key);
-        }
-      }
-      const sessionKeys = Object.keys(window.sessionStorage);
-      for (const key of sessionKeys) {
-        if (key.startsWith("sb-") && key.includes("-auth-token")) {
-          window.sessionStorage.removeItem(key);
-        }
-      }
-      window.localStorage.removeItem(storageKey);
-      window.localStorage.removeItem(dismissedKey);
-      window.localStorage.removeItem("pending_claim");
-      window.sessionStorage.removeItem("signup_draft_v1");
-      window.location.replace("/auth/sign-in?signed_out=1");
-      return;
-    }
-    router.replace("/auth/sign-in?signed_out=1");
+    if (client) await client.auth.signOut();
+    router.replace("/auth/sign-in");
   };
 
   const onNotifications = () => {
