@@ -181,11 +181,11 @@ export default function HelpPage() {
     <main className="min-h-screen bg-slate-100 p-4 sm:p-6">
       <div className="mx-auto max-w-5xl space-y-3 sm:space-y-4">
         <RequireAuth>
-          <ScreenHeader title="User Guide" eyebrow="Guide" subtitle="How to use Rack & Frame web." />
+          <ScreenHeader title="Help & User Guide" eyebrow="Guide" subtitle="How to use Rack & Frame for quick matches, club competitions, player profiles, and results." />
 
           <section className={`${cardBaseClass} space-y-3`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-slate-700">Step-by-step usage reference for Rack &amp; Frame web.</p>
+              <p className="text-slate-700">Step-by-step guidance for players, club admins, and the Super User running Rack &amp; Frame in day-to-day club use.</p>
               <Link href="/welcome-tour" className={buttonPrimaryClass}>
                 Open Welcome Tour
               </Link>
@@ -255,8 +255,20 @@ export default function HelpPage() {
               .
             </p>
             <p className="mt-2 text-sm text-slate-600">
-              Include what page you were on, what you expected to happen, and what happened instead.
+              Include what page you were on, what you expected to happen, what happened instead, and whether you were signed in as a player, club admin, or Super User.
             </p>
+          </section>
+
+          <section className={cardBaseClass}>
+            <h2 className="text-xl font-semibold text-slate-900">Rules and official guidance</h2>
+            <p className="mt-2 text-slate-700">
+              The Rules page includes quick-reference guidance for snooker, 8-ball pool, and 9-ball pool, plus links to the official governing-body rule websites for formal rulings.
+            </p>
+            <div className="mt-3">
+              <Link href="/rules" className={buttonPrimaryClass}>
+                Open Rules
+              </Link>
+            </div>
           </section>
 
           <section className={cardBaseClass}>

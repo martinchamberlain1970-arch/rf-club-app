@@ -118,7 +118,7 @@ export default function RulesPage() {
           <ScreenHeader
             title={title}
             eyebrow="Rules"
-            subtitle="Quick reference and dispute wizard."
+            subtitle="Quick reference, official rule links, and dispute wizard."
           />
 
           <section className={`${cardBaseClass} space-y-3`}>
@@ -164,8 +164,8 @@ export default function RulesPage() {
             </div>
             <p className="text-sm text-slate-700">
               {sportTab === 0
-                ? `Quick reference only. Active pool ruleset: ${poolRuleSetLabel}. Use Official for formal rulings.`
-                : "Quick reference only. Use Official for formal snooker rulings."}
+                ? `Quick reference only. Active pool ruleset: ${poolRuleSetLabel}. Use the official rule links below for formal rulings.`
+                : "Quick reference only. Use the official WPBSA rules link below for formal snooker rulings."}
             </p>
             <input
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
