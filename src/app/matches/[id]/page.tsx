@@ -806,6 +806,7 @@ export default function MatchPage() {
     const client = supabase;
     if (!client || !match || !competition || options?.isWalkover) return;
     if (isByeMatch) return;
+    if (match.match_mode === "doubles") return;
 
     const keys = ratingKeysForSport(competition.sport_type);
     const matchRead = await client

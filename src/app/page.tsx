@@ -17,6 +17,7 @@ const coreActionLinks = [
   { href: "/results", title: "Results", desc: "Review and approve submitted match results." },
   { href: "/notifications", title: "Notifications", desc: "Check inbox updates and pending actions." },
   { href: "/stats", title: "Stats", desc: "View club rankings, form, and performance summaries." },
+  { href: "/rankings", title: "Rankings", desc: "Browse Elo-style player leaderboards by discipline." },
 ] as const;
 
 const supportLinks = [

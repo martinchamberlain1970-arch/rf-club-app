@@ -157,7 +157,7 @@ export default function PlayerProfilePage() {
           client.from("frames").select("match_id,winner_player_id,is_walkover_award"),
           client.from("locations").select("id,name").order("name"),
           client.from("player_update_requests").select("id,created_at").eq("player_id", id).eq("status", "pending").order("created_at", { ascending: false }).limit(1),
-          client.from("app_users").select("id,email,linked_player_id"),
+          client.from("app_users").select("id,email,linked_player_id,role"),
           client
             .from("player_deletion_requests")
             .select("id,created_at,delete_all_data")
@@ -732,8 +732,14 @@ export default function PlayerProfilePage() {
   const rankingCard = useMemo(() => {
     if (!player) return null;
     const bySnooker = [...players].sort((a, b) => (b.rating_snooker ?? 1000) - (a.rating_snooker ?? 1000));
+    const byPool = [...players].sort((a, b) => (b.rating_pool ?? 1000) - (a.rating_pool ?? 1000));
     const snookerRank = Math.max(1, bySnooker.findIndex((p) => p.id === player.id) + 1);
+    const poolRank = Math.max(1, byPool.findIndex((p) => p.id === player.id) + 1);
     return {
+      poolRank,
+      poolRating: player.rating_pool ?? 1000,
+      poolPeak: player.peak_rating_pool ?? 1000,
+      poolMatches: player.rated_matches_pool ?? 0,
       snookerRank,
       snookerRating: player.rating_snooker ?? 1000,
       snookerPeak: player.peak_rating_snooker ?? 1000,
@@ -1201,6 +1207,35 @@ export default function PlayerProfilePage() {
       .slice(0, 20) as { key: string; date: string | null; label: string; result: "W" | "L" }[];
   }, [leagueRelevant, leagueFixtureById, leagueTeamById, id]);
 
+  const ageBandLabel =
+    player?.age_band === "under_13"
+      ? "Under 13"
+      : player?.age_band === "under_18"
+        ? "Under 18s"
+        : player?.age_band === "13_15"
+          ? "13-15"
+          : player?.age_band === "16_17"
+            ? "16-17"
+            : "18+";
+  const profileLocationName = player?.location_id ? locations.find((l) => l.id === player.location_id)?.name ?? "Assigned" : "Not set";
+  const profileHeaderPills = [
+    { label: `Location: ${profileLocationName}`, tone: "slate" as const },
+    { label: `Age band: ${ageBandLabel}`, tone: "slate" as const },
+    favoriteDiscipline ? { label: `Favorite: ${favoriteDiscipline.label}`, tone: "teal" as const } : null,
+    rankingCard ? { label: `Snooker #${rankingCard.snookerRank}`, tone: "indigo" as const } : null,
+    rankingCard ? { label: `Pool #${rankingCard.poolRank}`, tone: "indigo" as const } : null,
+    player?.age_band && player.age_band !== "18_plus"
+      ? { label: player.guardian_consent ? "Guardian consent on file" : "Guardian consent pending", tone: "amber" as const }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; tone: "slate" | "teal" | "indigo" | "amber" }>;
+
+  const pillClass = (tone: "slate" | "teal" | "indigo" | "amber") => {
+    if (tone === "teal") return "rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-medium text-teal-800";
+    if (tone === "indigo") return "rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-800";
+    if (tone === "amber") return "rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900";
+    return "rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700";
+  };
+
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <div className="mx-auto max-w-4xl space-y-4">
@@ -1226,15 +1261,28 @@ export default function PlayerProfilePage() {
           {!loading ? (
             <>
               {player ? (
-                <section ref={profileRef} className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="h-20 w-20 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                <section ref={profileRef} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="grid gap-4 lg:grid-cols-[auto,1fr,280px] lg:items-start">
+                  <div className="h-24 w-24 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
                     {player.avatar_url ? (
                       <img src={player.avatar_url} alt={playerName} className="h-full w-full object-cover" />
                     ) : null}
                   </div>
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">{playerName}</p>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-2xl font-semibold text-slate-900">{playerName}</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Match history, Elo-style ratings, recognition badges, and club profile details.
+                      </p>
+                    </div>
                     {linkedEmail ? <p className="text-sm text-slate-600">{linkedEmail}</p> : null}
+                    <div className="flex flex-wrap gap-2">
+                      {profileHeaderPills.map((item) => (
+                        <span key={item.label} className={pillClass(item.tone)}>
+                          {item.label}
+                        </span>
+                      ))}
+                    </div>
                     {(guardianLabel || guardianContact) ? (
                       <p className="text-sm text-slate-600">
                         Guardian: {guardianLabel ?? "Name missing"}
@@ -1250,28 +1298,6 @@ export default function PlayerProfilePage() {
                         ) : null}
                       </p>
                     ) : null}
-                    <p className="text-sm text-slate-600">
-                      Age band:{" "}
-                      {player?.age_band === "under_13"
-                        ? "Under 13"
-                        : player?.age_band === "under_18"
-                          ? "Under 18s"
-                        : player?.age_band === "13_15"
-                          ? "13–15"
-                          : player?.age_band === "16_17"
-                            ? "16–17"
-                            : "18+"}
-                      {player?.age_band && player.age_band !== "18_plus" ? (
-                        <span className="ml-2 text-xs text-slate-500">{player.guardian_consent ? "Guardian consent on file" : "Guardian consent pending"}</span>
-                      ) : null}
-                    </p>
-                    {player?.location_id ? (
-                      <p className="text-sm text-slate-600">
-                        Location: {locations.find((l) => l.id === player.location_id)?.name ?? "Assigned"}
-                      </p>
-                    ) : (
-                      <p className="text-sm text-slate-500">Location: Not set</p>
-                    )}
                     <p className="text-sm text-slate-500">Handicap details are not available in this profile view.</p>
                     {!isMinor ? (
                       <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
@@ -1309,30 +1335,68 @@ export default function PlayerProfilePage() {
                       </div>
                     ) : null}
                   </div>
+                  <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Overall record</p>
+                      <p className="mt-2 text-2xl font-bold text-slate-900">{pct(effectiveSummary.won, effectiveSummary.played)}%</p>
+                      <p className="text-sm text-slate-600">
+                        {effectiveSummary.won} wins from {effectiveSummary.played} matches
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Snooker Elo</p>
+                      <p className="mt-2 text-2xl font-bold text-slate-900">{rankingCard ? Math.round(rankingCard.snookerRating) : 1000}</p>
+                      <p className="text-sm text-slate-600">
+                        Rank #{rankingCard?.snookerRank ?? "-"} · Peak {rankingCard ? Math.round(rankingCard.snookerPeak) : 1000}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pool Elo</p>
+                      <p className="mt-2 text-2xl font-bold text-slate-900">{rankingCard ? Math.round(rankingCard.poolRating) : 1000}</p>
+                      <p className="text-sm text-slate-600">
+                        Rank #{rankingCard?.poolRank ?? "-"} · Peak {rankingCard ? Math.round(rankingCard.poolPeak) : 1000}
+                      </p>
+                    </div>
+                  </div>
+                  </div>
                 </section>
               ) : null}
               {rankingCard ? (
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-lg font-semibold text-slate-900">Player ranking</h2>
-                    <button
-                      type="button"
-                      onClick={() => window.open(`/display/ranking/${id}`, "_blank", "noopener,noreferrer,width=900,height=600")}
-                      className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
-                    >
-                      Open display card
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href="/rankings"
+                        className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        View full rankings
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => window.open(`/display/ranking/${id}`, "_blank", "noopener,noreferrer,width=900,height=600")}
+                        className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        Open display card
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-1 text-sm text-slate-600">Current rating and rank against other active players.</p>
                   <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                     <p className="font-semibold text-slate-900">How ranking is calculated</p>
                     <p className="mt-1">
-                      Ratings use an Elo-style model. Expected result is based on current ratings, then updated when approved matches complete.
+                      Ratings use an Elo-style model. Expected result is based on current ratings, then updated when approved singles results complete.
                       Upsets move ratings more than expected wins. K-factor is higher for newer players and lower for experienced players.
                     </p>
-                    <p className="mt-1">BYE and walkover outcomes are excluded from ratings.</p>
+                    <p className="mt-1">BYE, walkover, and doubles outcomes are excluded from ratings.</p>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-1">
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-sm font-semibold text-slate-900">Pool Rating</p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900">{Math.round(rankingCard.poolRating)}</p>
+                      <p className="text-sm text-slate-600">Rank #{rankingCard.poolRank} of {rankingCard.totalPlayers}</p>
+                      <p className="text-xs text-slate-500">Peak {Math.round(rankingCard.poolPeak)} · Rated matches {rankingCard.poolMatches}</p>
+                    </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <p className="text-sm font-semibold text-slate-900">Snooker Rating</p>
                       <p className="mt-1 text-2xl font-bold text-slate-900">{Math.round(rankingCard.snookerRating)}</p>
