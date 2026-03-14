@@ -1235,6 +1235,29 @@ export default function PlayerProfilePage() {
     if (tone === "amber") return "rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900";
     return "rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700";
   };
+  const disciplineCardClass = (label: string) => {
+    if (label === "Snooker") return "rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-3";
+    if (label === "8-ball Pool") return "rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-3";
+    if (label === "9-ball Pool") return "rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-3";
+    return "rounded-xl border border-slate-200 bg-slate-50 p-3";
+  };
+  const achievementClass = (item: string) => {
+    if (item.includes("win streak")) return "rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800";
+    if (item.includes("matches played")) return "rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-800";
+    return "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900";
+  };
+  const recognitionClass = (item: string) => {
+    if (item === "Super User") return "rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900";
+    if (item === "Club Admin") return "rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-800";
+    if (item === "Under 18s" || item === "Parent / Guardian Linked") {
+      return "rounded-full border border-teal-200 bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-800";
+    }
+    if (item.includes("Specialist") || item.includes("Regular")) {
+      return "rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800";
+    }
+    if (item === "Win Streak") return "rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-800";
+    return "rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700";
+  };
 
   return (
     <main className="min-h-screen bg-slate-100 p-6">
@@ -1336,21 +1359,21 @@ export default function PlayerProfilePage() {
                     ) : null}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Overall record</p>
                       <p className="mt-2 text-2xl font-bold text-slate-900">{pct(effectiveSummary.won, effectiveSummary.played)}%</p>
                       <p className="text-sm text-slate-600">
                         {effectiveSummary.won} wins from {effectiveSummary.played} matches
                       </p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Snooker Elo</p>
                       <p className="mt-2 text-2xl font-bold text-slate-900">{rankingCard ? Math.round(rankingCard.snookerRating) : 1000}</p>
                       <p className="text-sm text-slate-600">
                         Rank #{rankingCard?.snookerRank ?? "-"} · Peak {rankingCard ? Math.round(rankingCard.snookerPeak) : 1000}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pool Elo</p>
                       <p className="mt-2 text-2xl font-bold text-slate-900">{rankingCard ? Math.round(rankingCard.poolRating) : 1000}</p>
                       <p className="text-sm text-slate-600">
@@ -1391,13 +1414,13 @@ export default function PlayerProfilePage() {
                     <p className="mt-1">BYE, walkover, and doubles outcomes are excluded from ratings.</p>
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-3">
                       <p className="text-sm font-semibold text-slate-900">Pool Rating</p>
                       <p className="mt-1 text-2xl font-bold text-slate-900">{Math.round(rankingCard.poolRating)}</p>
                       <p className="text-sm text-slate-600">Rank #{rankingCard.poolRank} of {rankingCard.totalPlayers}</p>
                       <p className="text-xs text-slate-500">Peak {Math.round(rankingCard.poolPeak)} · Rated matches {rankingCard.poolMatches}</p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-3">
                       <p className="text-sm font-semibold text-slate-900">Snooker Rating</p>
                       <p className="mt-1 text-2xl font-bold text-slate-900">{Math.round(rankingCard.snookerRating)}</p>
                       <p className="text-sm text-slate-600">Rank #{rankingCard.snookerRank} of {rankingCard.totalPlayers}</p>
@@ -1728,7 +1751,7 @@ export default function PlayerProfilePage() {
                   </div>
                 ) : null}
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-3">
                     <p className="text-sm font-semibold text-slate-900">Recent form</p>
                     <p className="mt-1 text-xs text-slate-500">Last {recentFormItems.length || 0} completed results</p>
                     {recentFormItems.length ? (
@@ -1748,7 +1771,7 @@ export default function PlayerProfilePage() {
                       <p className="mt-2 text-sm text-slate-600">No recent form yet.</p>
                     )}
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 p-3">
                     <p className="text-sm font-semibold text-slate-900">Overall summary</p>
                     <p className="mt-2 text-slate-800">
                       Matches/Frames: {effectiveSummary.played} · Won: {effectiveSummary.won} · Lost: {effectiveSummary.lost} · Win%: {pct(effectiveSummary.won, effectiveSummary.played)}%
@@ -1768,7 +1791,7 @@ export default function PlayerProfilePage() {
                 ) : (
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
                     {disciplineBreakdown.map((row) => (
-                      <div key={row.label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div key={row.label} className={disciplineCardClass(row.label)}>
                         <p className="text-sm font-semibold text-slate-900">{row.label}</p>
                         <p className="mt-2 text-sm text-slate-800">
                           Played {row.played} · Won {row.won} · Win% {pct(row.won, row.played)}
@@ -1785,7 +1808,7 @@ export default function PlayerProfilePage() {
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="text-xl font-semibold text-slate-900">Profile Highlights</h2>
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-xl border border-teal-200 bg-gradient-to-br from-teal-50 via-white to-emerald-50 p-3">
                     <p className="text-sm font-semibold text-slate-900">Favorite discipline</p>
                     <p className="mt-2 text-sm text-slate-800">
                       {favoriteDiscipline ? favoriteDiscipline.label : "Not enough data yet"}
@@ -1796,7 +1819,7 @@ export default function PlayerProfilePage() {
                       </p>
                     ) : null}
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-3">
                     <p className="text-sm font-semibold text-slate-900">Last 30 days</p>
                     <p className="mt-2 text-sm text-slate-800">
                       Played {seasonSummary.played} · Won {seasonSummary.won}
@@ -1805,12 +1828,12 @@ export default function PlayerProfilePage() {
                       Win% {pct(seasonSummary.won, seasonSummary.played)}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-rose-50 p-3">
                     <p className="text-sm font-semibold text-slate-900">Achievements</p>
                     {achievements.length ? (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {achievements.map((item) => (
-                          <span key={item} className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-700">
+                          <span key={item} className={achievementClass(item)}>
                             {item}
                           </span>
                         ))}
@@ -1825,10 +1848,7 @@ export default function PlayerProfilePage() {
                   {recognitionBadges.length ? (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {recognitionBadges.map((item) => (
-                        <span
-                          key={item}
-                          className="rounded-full border border-teal-200 bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-800"
-                        >
+                        <span key={item} className={recognitionClass(item)}>
                           {item}
                         </span>
                       ))}
