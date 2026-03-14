@@ -944,6 +944,53 @@ export default function PlayerProfilePage() {
     };
   }, [leagueRelevant, id]);
   const effectiveSummary = summary.played > 0 ? summary : leagueSummary;
+  const disciplineBreakdown = useMemo(() => {
+    const rows = new Map<"snooker" | "pool_8_ball" | "pool_9_ball", { label: string; played: number; won: number; framesFor: number; framesAgainst: number }>([
+      ["snooker", { label: "Snooker", played: 0, won: 0, framesFor: 0, framesAgainst: 0 }],
+      ["pool_8_ball", { label: "8-ball Pool", played: 0, won: 0, framesFor: 0, framesAgainst: 0 }],
+      ["pool_9_ball", { label: "9-ball Pool", played: 0, won: 0, framesFor: 0, framesAgainst: 0 }],
+    ]);
+
+    for (const m of relevant) {
+      const comp = compMap.get(m.competition_id);
+      if (!comp) continue;
+      const row = rows.get(comp.sport_type);
+      if (!row) continue;
+      row.played += 1;
+
+      const inTeam1 = m.team1_player1_id === id || m.team1_player2_id === id;
+      const winnerIsTeam1 = m.winner_player_id === m.team1_player1_id || m.winner_player_id === m.team1_player2_id;
+      const winnerIsTeam2 = m.winner_player_id === m.team2_player1_id || m.winner_player_id === m.team2_player2_id;
+      const isWin = m.match_mode === "singles" ? m.winner_player_id === id : inTeam1 ? winnerIsTeam1 : winnerIsTeam2;
+      if (isWin) row.won += 1;
+
+      const ff = frames.filter((f) => f.match_id === m.id && !f.is_walkover_award);
+      for (const f of ff) {
+        if (m.match_mode === "singles") {
+          if (f.winner_player_id === id) row.framesFor += 1;
+          else row.framesAgainst += 1;
+        } else {
+          const frameTeam1 = f.winner_player_id === m.team1_player1_id || f.winner_player_id === m.team1_player2_id;
+          const frameTeam2 = f.winner_player_id === m.team2_player1_id || f.winner_player_id === m.team2_player2_id;
+          if ((inTeam1 && frameTeam1) || (!inTeam1 && frameTeam2)) row.framesFor += 1;
+          if ((inTeam1 && frameTeam2) || (!inTeam1 && frameTeam1)) row.framesAgainst += 1;
+        }
+      }
+    }
+
+    if (summary.played > 0) {
+      return Array.from(rows.values()).filter((row) => row.played > 0);
+    }
+
+    const snookerLeagueRow = rows.get("snooker");
+    if (snookerLeagueRow) {
+      snookerLeagueRow.played = leagueSummary.played;
+      snookerLeagueRow.won = leagueSummary.won;
+      snookerLeagueRow.framesFor = leagueSummary.framesFor;
+      snookerLeagueRow.framesAgainst = leagueSummary.framesAgainst;
+    }
+    return Array.from(rows.values()).filter((row) => row.played > 0);
+  }, [relevant, compMap, frames, id, summary.played, leagueSummary]);
 
   const formGuide = useMemo(() => {
     const chars: string[] = [];
@@ -985,6 +1032,16 @@ export default function PlayerProfilePage() {
     return chars.length ? chars.join("") : "-";
   }, [leagueRelevant, leagueFixtureById, id]);
   const effectiveFormGuide = formGuide !== "-" ? formGuide : leagueFormGuide;
+  const recentFormItems = useMemo(
+    () =>
+      effectiveFormGuide === "-"
+        ? []
+        : effectiveFormGuide.split("").map((result, index) => ({
+            key: `${result}-${index}`,
+            result,
+          })),
+    [effectiveFormGuide]
+  );
 
   const opponents = useMemo(() => {
     const map = new Map<string, { played: number; won: number; lost: number }>();
@@ -1504,14 +1561,59 @@ export default function PlayerProfilePage() {
                     </div>
                   </div>
                 ) : null}
-                <p className="text-slate-800">
-                  Matches/Frames: {effectiveSummary.played} · Won: {effectiveSummary.won} · Lost: {effectiveSummary.lost} · Win%: {pct(effectiveSummary.won, effectiveSummary.played)}%
-                </p>
-                <p className="text-slate-800">
-                  Frames: For {effectiveSummary.framesFor} · Against {effectiveSummary.framesAgainst}
-                </p>
-                <p className="text-slate-800">Snooker Match Wins: {effectiveSummary.snookerWon}/{effectiveSummary.snookerPlayed}</p>
-                <p className="text-slate-800">Recent form (last 10): {effectiveFormGuide}</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-sm font-semibold text-slate-900">Recent form</p>
+                    <p className="mt-1 text-xs text-slate-500">Last {recentFormItems.length || 0} completed results</p>
+                    {recentFormItems.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {recentFormItems.map((item) => (
+                          <span
+                            key={item.key}
+                            className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${
+                              item.result === "W" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                            }`}
+                          >
+                            {item.result}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-slate-600">No recent form yet.</p>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-sm font-semibold text-slate-900">Overall summary</p>
+                    <p className="mt-2 text-slate-800">
+                      Matches/Frames: {effectiveSummary.played} · Won: {effectiveSummary.won} · Lost: {effectiveSummary.lost} · Win%: {pct(effectiveSummary.won, effectiveSummary.played)}%
+                    </p>
+                    <p className="mt-1 text-slate-800">
+                      Frames: For {effectiveSummary.framesFor} · Against {effectiveSummary.framesAgainst}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h2 className="text-xl font-semibold text-slate-900">Discipline Breakdown</h2>
+                <p className="mt-1 text-sm text-slate-600">How this player is performing across snooker and pool disciplines.</p>
+                {disciplineBreakdown.length === 0 ? (
+                  <p className="mt-3 text-slate-600">No discipline data yet.</p>
+                ) : (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    {disciplineBreakdown.map((row) => (
+                      <div key={row.label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-sm font-semibold text-slate-900">{row.label}</p>
+                        <p className="mt-2 text-sm text-slate-800">
+                          Played {row.played} · Won {row.won} · Win% {pct(row.won, row.played)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Frames: {row.framesFor} for · {row.framesAgainst} against
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
