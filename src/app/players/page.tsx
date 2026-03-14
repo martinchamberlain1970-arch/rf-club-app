@@ -240,6 +240,17 @@ export default function PlayersPage() {
       })
       .filter(Boolean) as Array<{ userId: string; email: string; players: Player[] }>;
   }, [appUsers, players]);
+  const duplicateNamedProfiles = useMemo(() => {
+    const grouped = new Map<string, Player[]>();
+    activePlayers.forEach((player) => {
+      const key = (player.full_name?.trim() || player.display_name?.trim() || "").toLowerCase();
+      if (!key) return;
+      grouped.set(key, [...(grouped.get(key) ?? []), player]);
+    });
+    return Array.from(grouped.entries())
+      .map(([key, groupedPlayers]) => ({ key, players: groupedPlayers }))
+      .filter((group) => group.players.length > 1);
+  }, [activePlayers]);
   const filteredActivePlayers = useMemo(() => {
     if (profileLocationFilter === "all") return activePlayers;
     if (profileLocationFilter === "__none") return activePlayers.filter((p) => !p.location_id);
@@ -551,6 +562,75 @@ export default function PlayersPage() {
     }
     setMessage(approve ? "Merge request approved." : "Merge request rejected.");
     await loadMergeRequests();
+  };
+
+  const onMergeDuplicateProfiles = async (sourcePlayerId: string, targetPlayerId: string) => {
+    const client = supabase;
+    if (!client || !isSuperAdmin) {
+      setMessage("Only the Super User can merge duplicate profiles.");
+      return;
+    }
+    if (sourcePlayerId === targetPlayerId) {
+      setMessage("Choose two different player profiles to merge.");
+      return;
+    }
+
+    const sourcePlayer = playerById.get(sourcePlayerId);
+    const targetPlayer = playerById.get(targetPlayerId);
+    if (!sourcePlayer || !targetPlayer) {
+      setMessage("Could not resolve both player profiles for merge.");
+      return;
+    }
+
+    const sourceHasHistory = await playerHasMatchHistory(sourcePlayerId);
+    if (sourceHasHistory) {
+      setMessage("This duplicate profile already has match history. For safety, merge is blocked and should be cleaned up manually.");
+      return;
+    }
+
+    if (sourcePlayer.claimed_by && targetPlayer.claimed_by && sourcePlayer.claimed_by !== targetPlayer.claimed_by) {
+      setMessage("Both duplicate profiles are already linked to different user accounts. Resolve the account links manually first.");
+      return;
+    }
+
+    if (sourcePlayer.claimed_by && !targetPlayer.claimed_by) {
+      const claimRes = await client.from("players").update({ claimed_by: sourcePlayer.claimed_by }).eq("id", targetPlayerId);
+      if (claimRes.error) {
+        setMessage(`Failed to transfer claimed profile link: ${claimRes.error.message}`);
+        return;
+      }
+    }
+
+    const relinkRes = await client.from("app_users").update({ linked_player_id: targetPlayerId }).eq("linked_player_id", sourcePlayerId);
+    if (relinkRes.error) {
+      setMessage(`Failed to relink account access: ${relinkRes.error.message}`);
+      return;
+    }
+
+    const requestTables = ["player_claim_requests", "player_update_requests", "player_deletion_requests"];
+    for (const table of requestTables) {
+      const reqRes = await client.from(table).update({ player_id: targetPlayerId }).eq("player_id", sourcePlayerId);
+      if (reqRes.error) {
+        setMessage(`Profile links moved, but failed to update ${table}: ${reqRes.error.message}`);
+        return;
+      }
+    }
+
+    const archiveRes = await client
+      .from("players")
+      .update({ is_archived: true, claimed_by: null })
+      .eq("id", sourcePlayerId);
+    if (archiveRes.error) {
+      setMessage(`Failed to archive duplicate profile: ${archiveRes.error.message}`);
+      return;
+    }
+
+    setMessage("Duplicate player profile merged and archived.");
+    await loadPlayers();
+    await loadUsers();
+    await loadClaims();
+    await loadUpdateRequests();
+    await loadDeletionRequests();
   };
 
   const playerHasMatchHistory = async (playerId: string) => {
@@ -1423,6 +1503,70 @@ export default function PlayersPage() {
                       </div>
                     )}
                   </div>
+                  {isSuperAdmin ? (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-sm font-semibold text-amber-900">Possible duplicate player profiles</p>
+                      {duplicateNamedProfiles.length === 0 ? (
+                        <p className="mt-1 text-sm text-amber-800">No duplicate player names found.</p>
+                      ) : (
+                        <div className="mt-2 space-y-3">
+                          {duplicateNamedProfiles.map((group) => {
+                            const target = group.players.find((player) => Boolean(player.claimed_by)) ?? group.players[0];
+                            return (
+                              <div key={group.key} className="rounded-lg border border-amber-200 bg-white px-3 py-3 text-sm shadow-sm">
+                                <p className="font-medium text-slate-900">
+                                  {target.full_name?.trim() ? target.full_name : target.display_name}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-600">
+                                  Suggested primary profile: {target.id.slice(0, 8)}
+                                </p>
+                                <div className="mt-2 space-y-2">
+                                  {group.players.map((player) => {
+                                    const isPrimary = player.id === target.id;
+                                    const label = player.full_name?.trim() ? player.full_name : player.display_name;
+                                    return (
+                                      <div key={player.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                        <div>
+                                          <p className="text-slate-900">{label}</p>
+                                          <p className="text-xs text-slate-500">
+                                            {player.id}
+                                            {player.claimed_by ? " · Linked account" : " · Unlinked"}
+                                          </p>
+                                        </div>
+                                        {isPrimary ? (
+                                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                                            Keep as primary
+                                          </span>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setConfirmModal({
+                                                title: "Merge duplicate profile",
+                                                body: `Merge "${label}" into "${target.full_name?.trim() ? target.full_name : target.display_name}"? The duplicate profile will be archived. This only works if the duplicate has no match history.`,
+                                                confirmLabel: "Merge profile",
+                                                onConfirm: async () => {
+                                                  await onMergeDuplicateProfiles(player.id, target.id);
+                                                  setConfirmModal(null);
+                                                },
+                                              })
+                                            }
+                                            className={buttonSecondarySmClass}
+                                          >
+                                            Merge into primary
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                   <div className="mt-3 space-y-3">
               <div className="flex flex-wrap gap-2">
                 <button
