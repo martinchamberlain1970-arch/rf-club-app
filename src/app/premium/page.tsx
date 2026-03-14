@@ -79,6 +79,28 @@ export default function PremiumPage() {
     { feature: "Round-specific match lengths", freePlayer: "Not included", premiumPlayer: "Not included", freeAdmin: "Not included", premiumAdmin: "Included" },
     { feature: "Break & Run / Run Out tracking", freePlayer: "Not included", premiumPlayer: "Included", freeAdmin: "Not included", premiumAdmin: "Included" },
   ];
+  const planCards = [
+    {
+      title: "Free Player",
+      accent: "border-slate-300 bg-white",
+      bullets: ["Quick Match", "Events, results, rules, and notifications", "No competition creation", "No advanced extras"],
+    },
+    {
+      title: "Premium Player",
+      accent: "border-teal-200 bg-teal-50/70",
+      bullets: ["Everything in Free Player", "Doubles", "Stats", "Auto breaker and advanced match extras"],
+    },
+    {
+      title: "Free Club Admin",
+      accent: "border-slate-300 bg-white",
+      bullets: ["Everything in Free Player", "Create competitions", "Run club admin workflows", "No premium extras"],
+    },
+    {
+      title: "Premium Club Admin",
+      accent: "border-teal-200 bg-teal-50/70",
+      bullets: ["Everything in Free Club Admin", "Doubles competitions", "Stats and Live Overview", "Round-specific match lengths"],
+    },
+  ] as const;
   const isIncluded = (value: string) => !value.toLowerCase().includes("not included");
   const planCell = (value: string, highlight = false) => {
     const included = isIncluded(value);
@@ -314,6 +336,23 @@ export default function PremiumPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     Use this table as the quick guide to what is included on each plan and role level.
                   </p>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {planCards.map((plan) => (
+                      <div key={plan.title} className={`rounded-2xl border p-4 ${plan.accent}`}>
+                        <p className="text-base font-semibold text-slate-900">{plan.title}</p>
+                        <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                          {plan.bullets.map((bullet) => (
+                            <li key={bullet} className="flex items-start gap-2">
+                              <span aria-hidden="true" className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-teal-700">
+                                ✓
+                              </span>
+                              <span>{bullet}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
                   <div className="mt-3 overflow-x-auto">
                     <table className="min-w-full text-left text-sm">
                       <thead>
