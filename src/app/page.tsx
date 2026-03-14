@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import RequireAuth from "@/components/RequireAuth";
 import PageNav from "@/components/PageNav";
 import useAdminStatus from "@/components/useAdminStatus";
-import usePremiumStatus from "@/components/usePremiumStatus";
 import { supabase } from "@/lib/supabase";
 import ConfirmModal from "@/components/ConfirmModal";
 
@@ -44,7 +43,6 @@ const systemToolLinks = [
 export default function HomePage() {
   const router = useRouter();
   const admin = useAdminStatus();
-  const premium = usePremiumStatus();
   const [completionMessage] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
@@ -103,26 +101,6 @@ export default function HomePage() {
   const pillPrimaryClass = `${pillBaseClass} border-teal-700 bg-teal-700 text-white hover:bg-teal-800`;
   const pillWarningClass = `${pillBaseClass} border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100`;
   const actionLinkClass = "mt-2 inline-flex items-center rounded-full border border-teal-700 bg-teal-700 px-3 py-1 text-sm font-medium text-white transition hover:bg-teal-800";
-  const accessCardClass = "rounded-2xl border border-slate-200 bg-white p-3 shadow-sm";
-
-  const planName = admin.isSuper
-    ? "Super User"
-    : admin.isAdmin
-      ? premium.unlocked
-        ? "Premium Club Admin"
-        : "Free Club Admin"
-      : premium.unlocked
-        ? "Premium Player"
-        : "Free Player";
-
-  const accessRows = [
-    { title: "Quick Match", value: "Included", enabled: true },
-    { title: "Create Competition", value: admin.isAdmin || admin.isSuper ? "Club Admin" : "Club Admin", enabled: admin.isAdmin || admin.isSuper },
-    { title: "Doubles", value: premium.unlocked || admin.isSuper ? "Premium" : "Premium", enabled: premium.unlocked || admin.isSuper },
-    { title: "Stats", value: admin.isSuper ? "Included" : admin.isAdmin ? "Club Admin + Premium" : "Premium", enabled: admin.isSuper || (admin.isAdmin && premium.unlocked) || (!admin.isAdmin && premium.unlocked) },
-    { title: "Live Overview", value: admin.isSuper ? "Included" : admin.isAdmin ? "Club Admin + Premium" : "Club Admin + Premium", enabled: admin.isSuper || (admin.isAdmin && premium.unlocked) },
-    { title: "Auto Breaker", value: premium.unlocked || admin.isSuper ? "Premium" : "Premium", enabled: premium.unlocked || admin.isSuper },
-  ] as const;
 
   const primaryCardClass = (href: string) => {
     if (admin.isSuper) {
@@ -609,47 +587,6 @@ export default function HomePage() {
               </div>
             ) : null}
             {profileMessage ? <p className="mt-2 text-sm text-slate-700">{profileMessage}</p> : null}
-          </section>
-
-          <section className={cardBaseClass}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Access Snapshot</p>
-                <p className="mt-1 text-sm text-slate-600">
-                  Quick Match and core club viewing are included. Premium adds the advanced extras on top of your current role.
-                </p>
-              </div>
-              <Link href="/premium" className={premium.unlocked || admin.isSuper ? pillPrimaryClass : pillSecondaryClass}>
-                {planName}
-              </Link>
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {accessRows.map((item) => (
-                <div key={item.title} className={accessCardClass}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-base font-semibold text-slate-900">{item.title}</p>
-                      <p className="mt-1 text-sm text-slate-600">{item.value}</p>
-                    </div>
-                    <span
-                      aria-hidden="true"
-                      className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${
-                        item.enabled ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-                      }`}
-                    >
-                      {item.enabled ? "✓" : "✕"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {!admin.isSuper ? (
-              <div className="mt-3">
-                <Link href="/premium" className={actionLinkClass}>
-                  View premium access options
-                </Link>
-              </div>
-            ) : null}
           </section>
 
           <section className="space-y-3">
