@@ -106,6 +106,10 @@ export default function SignInPage() {
         const userId = data.user?.id;
         if (!userId) {
           window.localStorage.removeItem("pending_claim");
+          if (typeof window !== "undefined") {
+            window.location.replace(nextPath);
+            return;
+          }
           router.replace(nextPath);
           return;
         }
@@ -171,6 +175,10 @@ export default function SignInPage() {
         // ignore parse/side-effect errors here
       }
       window.localStorage.removeItem("pending_claim");
+    }
+    if (typeof window !== "undefined") {
+      window.location.replace(nextPath);
+      return;
     }
     router.replace(nextPath);
   };
