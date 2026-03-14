@@ -1068,6 +1068,29 @@ export default function PlayersPage() {
     await loadPlayers();
   };
 
+  const onDeleteArchived = async (player: Player) => {
+    if (!isSuperAdmin) {
+      setMessage("Only the Super User can permanently delete archived players.");
+      return;
+    }
+    const outcome = await deletePlayerWithSafety(player.id);
+    if (!outcome.ok) {
+      setMessage(outcome.message);
+      return;
+    }
+    if (outcome.archived) {
+      setMessage("This archived profile still has match history and cannot be deleted permanently.");
+      return;
+    }
+    setMessage(null);
+    setInfoModal({
+      title: "Archived Profile Deleted",
+      body: outcome.message,
+    });
+    await loadPlayers();
+    await loadUsers();
+  };
+
   const onAssignProfile = async () => {
     const client = supabase;
     if (!client) return;
@@ -2232,13 +2255,33 @@ export default function PlayersPage() {
                 {archivedPlayers.map((p) => (
                   <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
                     <span className="text-slate-900">{p.full_name ?? p.display_name}</span>
-                    <button
-                      type="button"
-                      onClick={() => onRestore(p)}
-                      className={buttonSecondaryClass}
-                    >
-                      Restore
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onRestore(p)}
+                        className={buttonSecondaryClass}
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setConfirmModal({
+                            title: "Delete archived profile",
+                            body: `Delete "${p.full_name ?? p.display_name}" permanently? This only works if the archived profile has no match history.`,
+                            confirmLabel: "Delete permanently",
+                            tone: "danger",
+                            onConfirm: async () => {
+                              await onDeleteArchived(p);
+                              setConfirmModal(null);
+                            },
+                          })
+                        }
+                        className={buttonDangerOutlineSmClass}
+                      >
+                        Delete permanently
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
