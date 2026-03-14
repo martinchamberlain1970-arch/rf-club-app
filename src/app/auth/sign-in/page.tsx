@@ -50,6 +50,9 @@ export default function SignInPage() {
   const onSignIn = async (e: FormEvent) => {
     e.preventDefault();
     setMessage(null);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem("rf_signing_out");
+    }
     const client = supabase;
     if (!client) {
       setMessage("Supabase is not configured.");
@@ -61,6 +64,9 @@ export default function SignInPage() {
     if (error) {
       setMessage(`Sign in failed: ${error.message}`);
       return;
+    }
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem("rf_signing_out");
     }
     const authUserRes = await client.auth.getUser();
     const signedInUserId = authUserRes.data.user?.id ?? null;
