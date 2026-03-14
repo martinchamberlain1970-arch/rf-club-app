@@ -1085,7 +1085,7 @@ export default function PlayerProfilePage() {
       if (match.match_mode !== "singles") continue;
       const opponentId = match.player1_id === id ? match.player2_id : match.player1_id;
       if (!opponentId) continue;
-      const result = match.winner_player_id === id ? "W" : "L";
+      const result: "W" | "L" = match.winner_player_id === id ? "W" : "L";
       const entry = {
         key: match.id,
         date: match.updated_at,
