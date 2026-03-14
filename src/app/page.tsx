@@ -23,6 +23,7 @@ const supportLinks = [
   { href: "/rules", title: "Rules" },
   { href: "/help", title: "Help" },
   { href: "/help#report-an-issue", title: "Report An Issue" },
+  { href: "/premium", title: "Premium" },
   { href: "/welcome-tour", title: "Welcome Tour" },
   { href: "/legal", title: "Legal" },
 ] as const;
