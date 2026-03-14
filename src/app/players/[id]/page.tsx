@@ -31,7 +31,7 @@ type Player = {
   rated_matches_pool?: number | null;
   rated_matches_snooker?: number | null;
 };
-type AppUser = { id: string; email: string | null; linked_player_id?: string | null };
+type AppUser = { id: string; email: string | null; linked_player_id?: string | null; role?: string | null };
 type Location = { id: string; name: string };
 type MatchRow = {
   id: string;
