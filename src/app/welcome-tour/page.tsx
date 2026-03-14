@@ -12,85 +12,85 @@ const stepsByRole: Record<TourRole, { title: string; detail: string; href: strin
   player: [
     {
       title: "1) Sign in and complete profile check",
-      detail: "Enter first name, second name, age band, and location. Profile linking is required before match creation.",
+      detail: "Sign in, make sure your account is linked to the right player profile, and confirm your club location before you start playing.",
       href: "/auth/sign-in",
       cta: "Open sign in",
     },
     {
       title: "2) Create a Quick Match",
-      detail: "Create a singles quick match and ensure you are selected as one of the players.",
+      detail: "Quick Match is the fastest way to start a local singles match and jump straight into scoring.",
       href: "/quick-match",
       cta: "Open Quick Match",
     },
     {
       title: "3) Submit your result",
-      detail: "Submit final score (plus optional Break & Run / Run Out counts) for administrator approval.",
+      detail: "Submit your final result and let the club admin approve it so rankings, results, and event progress stay accurate.",
       href: "/results",
       cta: "Open My Submissions",
     },
     {
-      title: "4) Create a small knockout competition",
-      detail: "Free users can create singles knockout competitions up to 4 players.",
-      href: "/events/new",
-      cta: "Open Create Competition",
-    },
-    {
-      title: "5) Track updates",
-      detail: "Use Notifications and Results Queue to monitor approvals and account requests.",
-      href: "/notifications",
-      cta: "Open Notifications",
-    },
-  ],
-  admin: [
-    {
-      title: "1) Register players",
-      detail: "Add players with mandatory first name, second name, age band, and location.",
-      href: "/players",
-      cta: "Open Registered Players",
-    },
-    {
-      title: "2) Create events and matches",
-      detail: "Run competitions and quick matches for your club operations.",
-      href: "/events/new",
-      cta: "Open Create Competition",
-    },
-    {
-      title: "3) Record live match scoring",
-      detail: "Open matches to capture rack/frame winners and complete matches.",
+      title: "4) Follow events and updates",
+      detail: "Use Events, Notifications, and Results to keep track of club competitions, approvals, and account activity.",
       href: "/events",
       cta: "Open Events",
     },
     {
-      title: "4) Approve results",
-      detail: "Review and approve submitted scores so stats update.",
-      href: "/results",
-      cta: "Open Results Queue",
+      title: "5) Explore Premium extras",
+      detail: "Premium adds doubles, stats, live overview access where relevant, auto breaker, and other advanced features.",
+      href: "/premium",
+      cta: "Open Premium",
+    },
+  ],
+  admin: [
+    {
+      title: "1) Check players and account requests",
+      detail: "Use Players to manage linked profiles, review child/profile requests, and keep club accounts organised.",
+      href: "/players",
+      cta: "Open Players",
     },
     {
-      title: "5) Manage premium operations",
-      detail: "Use premium-enabled features where your account has access.",
+      title: "2) Create competitions",
+      detail: "Club Admin accounts can create and run club competitions, assign locations, and manage fixtures from the Events flow.",
+      href: "/events/new",
+      cta: "Open Create Competition",
+    },
+    {
+      title: "3) Run quick matches and scoring",
+      detail: "Quick Match remains the fastest way to start a local practice or social match and open the scoring screen.",
+      href: "/quick-match",
+      cta: "Open Quick Match",
+    },
+    {
+      title: "4) Review results and sign-ups",
+      detail: "Use Results, Notifications, and Competition Sign-ups to keep scores and event entries moving for your club.",
+      href: "/results",
+      cta: "Open Results",
+    },
+    {
+      title: "5) Use Premium where enabled",
+      detail: "Premium adds the advanced extras on top of your Club Admin role, including doubles, stats, live overview, and enhanced competition tools.",
       href: "/premium",
       cta: "Open Premium",
     },
     {
-      title: "6) Super User governance",
-      detail: "Role changes, premium approvals, linking users, and location management are Super User actions.",
-      href: "/players",
-      cta: "Open governance screen",
+      title: "6) Leave governance to the Super User",
+      detail: "Locations, role changes, premium approvals, audit tools, and wider system controls stay with the Super User account.",
+      href: "/help",
+      cta: "Open Help",
     },
   ],
 };
 
 const roleSummary: Record<TourRole, string[]> = {
   player: [
-    "You can create quick matches and submit results when your profile is linked.",
-    "You can create singles knockout competitions up to 4 players on free access.",
-    "Premium unlocks advanced competition setup, full stats, live overview, and doubles.",
+    "You can create Quick Match entries and follow club activity once your player profile is linked.",
+    "Club Admin accounts create competitions and run day-to-day club operations.",
+    "Premium adds advanced extras like doubles, stats, live overview access where relevant, and enhanced match tools.",
   ],
   admin: [
-    "You can run events, score matches, and approve result submissions.",
-    "Super User controls role promotion, premium approvals, account linking, and locations.",
-    "Operational notifications appear in your bell/inbox.",
+    "Club Admin accounts can create competitions, manage player activity, and approve result submissions for their club.",
+    "Super User controls role promotion, premium approvals, account linking, locations, and system governance.",
+    "Premium adds the advanced extras on top of the Club Admin role rather than replacing it.",
   ],
 };
 
@@ -107,12 +107,12 @@ export default function WelcomeTourPage() {
           <ScreenHeader
             title="Welcome Tour"
             eyebrow="Welcome"
-            subtitle="Fast setup path for players and administrators."
+            subtitle="Fast setup path for players and Club Admin accounts on the current stable build."
           />
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
             <p className="text-slate-700">
-              Fast setup path for Rack &amp; Frame. Choose your role to see the right steps.
+              Fast setup path for the current Rack &amp; Frame club workflow. Choose your role to see the right day-to-day path.
             </p>
             <div className="flex flex-wrap gap-2">
               <button
@@ -128,7 +128,7 @@ export default function WelcomeTourPage() {
                   onClick={() => setRole("admin")}
                   className={`rounded-full border px-3 py-1 text-sm ${selectedRole === "admin" ? "border-teal-700 bg-teal-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
                 >
-                  Administrator
+                  Club Admin
                 </button>
               ) : null}
             </div>

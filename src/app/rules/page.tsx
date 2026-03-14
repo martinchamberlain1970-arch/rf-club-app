@@ -57,8 +57,8 @@ const ultimateDisputeTopics: DisputeTopic[] = [
 ];
 
 const officialRuleLinks = {
-  internationalPool: "https://www.epa.org.uk/rules/international-rules/",
-  worldPoolAndNineBall: "https://wpapool.com/rules/",
+  pool8Ball: "https://www.epa.org.uk/rules/international-rules/",
+  pool9Ball: "https://wpapool.com/rules/",
   ultimatePool: "https://www.ultimatepool.com/rules/",
   snooker: "https://wpbsa.com/rules/",
 };
@@ -178,17 +178,20 @@ export default function RulesPage() {
 
           <section className={`${cardBaseClass} space-y-3`}>
             <h2 className="text-xl font-semibold text-slate-900">Official rule websites</h2>
+            <p className="text-sm text-slate-600">
+              Use these official links when you need the full formal rulebook rather than the quick-reference summaries on this page.
+            </p>
             <div className="space-y-2 text-sm text-slate-700">
               <p>
-                Pool (International / 8-ball):{" "}
-                <a href={officialRuleLinks.internationalPool} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
-                  English Pool Association rules
+                8-ball pool:{" "}
+                <a href={officialRuleLinks.pool8Ball} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
+                  English Pool Association International Rules
                 </a>
               </p>
               <p>
-                Pool (9-ball and world-standard pool rules):{" "}
-                <a href={officialRuleLinks.worldPoolAndNineBall} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
-                  World Pool Association rules
+                9-ball pool:{" "}
+                <a href={officialRuleLinks.pool9Ball} target="_blank" rel="noreferrer" className="font-medium text-teal-700 underline">
+                  World Pool Association official rules
                 </a>
               </p>
               <p>
