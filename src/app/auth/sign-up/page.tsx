@@ -247,10 +247,17 @@ export default function SignUpPage() {
     const { data } = await client
       .from("players")
       .select("id,full_name,display_name,claimed_by,location_id,is_archived")
-      .or(`full_name.ilike.%${first}%${second}%,full_name.ilike.%${second}%${first}%,display_name.ilike.${first}`)
+      .or(`full_name.ilike.${fullName},display_name.ilike.${fullName}`)
       .limit(10);
 
-    const unclaimed = (data ?? []).filter((p) => !p.claimed_by);
+    const exactMatches = (data ?? []).filter((p) => {
+      const candidateName = (p.full_name?.trim() || p.display_name?.trim() || "").toLowerCase();
+      const sameName = candidateName === fullName.toLowerCase();
+      const sameLocation = selectedLocation ? p.location_id === selectedLocation : true;
+      return sameName && sameLocation;
+    });
+
+    const unclaimed = exactMatches.filter((p) => !p.claimed_by);
     const activeCandidate = unclaimed.find((p) => !p.is_archived);
     const archivedCandidate = unclaimed.find((p) => p.is_archived);
     const candidate = activeCandidate ?? archivedCandidate ?? null;
@@ -266,7 +273,7 @@ export default function SignUpPage() {
         requestedLocationName: pendingRequestedLocationName,
         restoreArchived: Boolean(candidate.is_archived),
       };
-    } else if ((data ?? []).some((p) => p.claimed_by)) {
+    } else if (exactMatches.some((p) => p.claimed_by)) {
       setBusy(false);
       setMessage("An existing account/profile already appears to be linked for this name. Sign in with your existing account or contact support.");
       return;

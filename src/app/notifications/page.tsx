@@ -34,6 +34,21 @@ type OpenCompetitionRow = {
   created_at: string;
   signup_deadline: string | null;
 };
+
+async function loadPlayerNameMap(playerIds: string[]) {
+  const client = supabase;
+  const map = new Map<string, string>();
+  if (!client || playerIds.length === 0) return map;
+
+  const { data, error } = await client.from("players").select("id,display_name,full_name").in("id", playerIds);
+  if (error) return map;
+
+  (data ?? []).forEach((player: { id: string; display_name: string; full_name: string | null }) => {
+    map.set(player.id, player.full_name?.trim() ? player.full_name : player.display_name);
+  });
+  return map;
+}
+
 export default function NotificationsPage() {
   const admin = useAdminStatus();
   const [items, setItems] = useState<NotificationItem[]>([]);
@@ -184,11 +199,13 @@ export default function NotificationsPage() {
             status: r.status,
           });
         });
-        (updateRes.data ?? []).forEach((r: { id: string; player_id: string; created_at: string; status: string }) => {
+        const updateRows = (updateRes.data ?? []) as Array<{ id: string; player_id: string; created_at: string; status: string }>;
+        const playerNameById = await loadPlayerNameMap(Array.from(new Set(updateRows.map((row) => row.player_id).filter(Boolean))));
+        updateRows.forEach((r) => {
           out.push({
             key: `update:${r.id}`,
             title: "Profile update request pending",
-            detail: `Player ${r.player_id}`,
+            detail: playerNameById.get(r.player_id) ?? "Unknown player",
             created_at: r.created_at,
             href: "/players?tab=claims",
             status: r.status,
@@ -314,11 +331,13 @@ export default function NotificationsPage() {
             status: r.status,
           });
         });
-        (updateRes.data ?? []).forEach((r: { id: string; player_id: string; created_at: string; status: string }) => {
+        const updateRows = (updateRes.data ?? []) as Array<{ id: string; player_id: string; created_at: string; status: string }>;
+        const playerNameById = await loadPlayerNameMap(Array.from(new Set(updateRows.map((row) => row.player_id).filter(Boolean))));
+        updateRows.forEach((r) => {
           out.push({
             key: `update:${r.id}`,
             title: `Profile update ${r.status}`,
-            detail: `Player ${r.player_id}`,
+            detail: playerNameById.get(r.player_id) ?? "Unknown player",
             created_at: r.created_at,
             href: "/players",
             status: r.status,
