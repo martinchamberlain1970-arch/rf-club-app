@@ -26,6 +26,27 @@ type MatchRow = {
   is_archived?: boolean | null;
 };
 
+function getSportMeta(sport: Competition["sport_type"]) {
+  switch (sport) {
+    case "pool_8_ball":
+      return {
+        label: "Pool (8-ball)",
+        badgeClass: "border-cyan-200 bg-cyan-50 text-cyan-800",
+      };
+    case "pool_9_ball":
+      return {
+        label: "Pool (9-ball)",
+        badgeClass: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800",
+      };
+    case "snooker":
+    default:
+      return {
+        label: "Snooker",
+        badgeClass: "border-amber-200 bg-amber-50 text-amber-800",
+      };
+  }
+}
+
 function relativeTime(fromMs: number, toMs: number): string {
   const diffSec = Math.max(0, Math.floor((toMs - fromMs) / 1000));
   if (diffSec < 5) return "just now";
@@ -148,6 +169,14 @@ export default function LivePage() {
         return bt - at;
       });
   }, [competitions, statsByCompetition, search]);
+  const totalInProgressMatches = liveCompetitions.reduce(
+    (total, competition) => total + (statsByCompetition.get(competition.id)?.inProgress ?? 0),
+    0
+  );
+  const totalRemainingMatches = liveCompetitions.reduce(
+    (total, competition) => total + (statsByCompetition.get(competition.id)?.remaining ?? 0),
+    0
+  );
 
   return (
     <main className="min-h-screen bg-slate-100 p-4 sm:p-6">
@@ -165,14 +194,14 @@ export default function LivePage() {
           />
 
           {!admin.loading && !admin.isAdmin ? (
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
               <p className="font-semibold">Live Overview is available to Club Admin accounts only.</p>
               <p className="mt-1">
                 This screen is designed for organisers keeping track of active matches and event progress.
               </p>
             </section>
           ) : !premium.loading && !premium.unlocked ? (
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
               <p className="font-semibold">Live Overview is a Premium feature.</p>
               <p className="mt-1">
                 Club Admin access is required first, and Premium then unlocks the live event board for in-progress competitions.
@@ -183,22 +212,50 @@ export default function LivePage() {
             </section>
           ) : (
             <>
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search in-progress events"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"
-                />
-                <div className="flex items-center gap-3">
-                  <p className="flex-1 text-sm text-slate-600">Updated {relativeTime(lastRefreshMs, nowMs)}</p>
-                  <button type="button" onClick={() => load()} className={buttonSecondaryClass}>
-                    Refresh
-                  </button>
-                  <button type="button" onClick={() => setAutoRefresh((v) => !v)} className={autoRefresh ? `${pillBaseClass} border-teal-700 bg-teal-700 text-white` : buttonSecondaryClass}>
-                    {autoRefresh ? "Auto On" : "Auto Off"}
-                  </button>
+              <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-5 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-[240px] flex-1 space-y-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Live competition board</p>
+                      <p className="text-sm text-slate-600">
+                        Track in-progress events, refresh activity, and jump straight into the live competition view.
+                      </p>
+                    </div>
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search in-progress events"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"
+                    />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="text-sm text-slate-600">Updated {relativeTime(lastRefreshMs, nowMs)}</p>
+                      <button type="button" onClick={() => load()} className={buttonSecondaryClass}>
+                        Refresh
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAutoRefresh((v) => !v)}
+                        className={autoRefresh ? `${pillBaseClass} border-teal-700 bg-teal-700 text-white` : buttonSecondaryClass}
+                      >
+                        {autoRefresh ? "Auto On" : "Auto Off"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Live events</p>
+                      <p className="mt-1 text-2xl font-semibold text-slate-900">{liveCompetitions.length}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Matches running</p>
+                      <p className="mt-1 text-2xl font-semibold text-slate-900">{totalInProgressMatches}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Still to play</p>
+                      <p className="mt-1 text-2xl font-semibold text-slate-900">{totalRemainingMatches}</p>
+                    </div>
+                  </div>
                 </div>
               </section>
 
@@ -207,26 +264,54 @@ export default function LivePage() {
 
               <section className="space-y-3">
                 {!loading && !liveCompetitions.length ? (
-                  <article className={cardBaseClass}>
+                  <article className="rounded-3xl border border-dashed border-slate-300 bg-white p-5 shadow-sm">
                     <h2 className="text-xl font-semibold text-slate-900">No live events</h2>
                     <p className="text-sm text-slate-600">Start or resume a match to show it here.</p>
                   </article>
                 ) : null}
                 {liveCompetitions.map((c) => {
                   const stats = statsByCompetition.get(c.id) ?? { total: 0, complete: 0, inProgress: 0, remaining: 0, lastUpdated: null };
+                  const sportMeta = getSportMeta(c.sport_type);
                   return (
-                    <Link key={c.id} href={`/competitions/${c.id}`} className={`${cardBaseClass} block hover:border-amber-300`}>
-                      <h2 className="text-2xl font-semibold text-slate-900">{c.name}</h2>
-                      <div className="mt-2 flex items-center gap-3">
-                        <span className={pillSecondaryClass}>In Progress</span>
-                        <p className="text-slate-700">
-                          {c.competition_format === "knockout" ? "Knockout" : "League"} · {c.sport_type === "pool_8_ball" ? "Pool (8-ball)" : c.sport_type === "pool_9_ball" ? "Pool (9-ball)" : "Snooker"}
-                        </p>
+                    <Link key={c.id} href={`/competitions/${c.id}`} className="block rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-amber-300 hover:shadow-md">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-[240px] flex-1 space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={pillSecondaryClass}>In Progress</span>
+                            <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${sportMeta.badgeClass}`}>
+                              {sportMeta.label}
+                            </span>
+                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                              {c.competition_format === "knockout" ? "Knockout" : "League"}
+                            </span>
+                          </div>
+                          <div>
+                            <h2 className="text-2xl font-semibold text-slate-900">{c.name}</h2>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {stats.lastUpdated ? `Last activity ${relativeTime(stats.lastUpdated, nowMs)}` : "Live activity is being tracked."}
+                            </p>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Complete</p>
+                              <p className="mt-1 text-xl font-semibold text-slate-900">{stats.complete}/{stats.total}</p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Running</p>
+                              <p className="mt-1 text-xl font-semibold text-slate-900">{stats.inProgress}</p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Remaining</p>
+                              <p className="mt-1 text-xl font-semibold text-slate-900">{stats.remaining}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center">
+                          <span className="inline-flex rounded-xl border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700">
+                            Open live board
+                          </span>
+                        </div>
                       </div>
-                      <p className="mt-2 text-3xl font-semibold text-slate-900">
-                        {stats.complete}/{stats.total} complete <span className="text-slate-700 text-2xl">· {stats.remaining} remaining</span>
-                      </p>
-                      <p className="mt-1 text-slate-600">Tap for details</p>
                     </Link>
                   );
                 })}
