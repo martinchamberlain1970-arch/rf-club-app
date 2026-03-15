@@ -76,18 +76,6 @@ export default function LegalPage() {
                   </p>
                 </div>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Support</p>
-                <p className="mt-3 text-slate-800">For support, bug reports, or questions about the product, contact:</p>
-                <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <a
-                    href="mailto:rackandframe.app@gmail.com"
-                    className="break-all font-medium text-teal-700 underline"
-                  >
-                    rackandframe.app@gmail.com
-                  </a>
-                </p>
-              </div>
             </div>
           </section>
 
