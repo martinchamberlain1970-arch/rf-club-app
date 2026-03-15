@@ -230,6 +230,11 @@ export default function CompetitionSignupPage() {
             {competitions.map((competition) => {
               const myEntry = myEntriesByCompetitionId.get(competition.id) ?? null;
               const currentEntries = activeEntryCountByCompetitionId.get(competition.id) ?? 0;
+              const visibleEntries = entries.filter(
+                (entry) => entry.competition_id === competition.id && (entry.status === "pending" || entry.status === "approved")
+              );
+              const approvedCount = visibleEntries.filter((entry) => entry.status === "approved").length;
+              const pendingCount = visibleEntries.filter((entry) => entry.status === "pending").length;
               const isFull = Boolean(competition.max_entries && currentEntries >= competition.max_entries);
               const deadlinePassed = Boolean(
                 competition.signup_deadline && new Date(competition.signup_deadline).getTime() < Date.now()
@@ -292,23 +297,46 @@ export default function CompetitionSignupPage() {
                     {!deadlinePassed && isFull ? <span className="text-xs text-slate-500">This competition is full.</span> : null}
                   </div>
 
-                  {admin.isAdmin || admin.isSuper ? (
-                    <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-sm font-semibold text-slate-800">Current entries</p>
-                      <div className="mt-1 space-y-1 text-sm text-slate-700">
-                        {entries
-                          .filter((entry) => entry.competition_id === competition.id && (entry.status === "pending" || entry.status === "approved"))
-                          .map((entry) => (
-                            <div key={entry.id}>
-                              {(playerNameById.get(entry.player_id) ?? entry.player_id)} · {entry.status}
-                            </div>
-                          ))}
-                        {entries.filter((entry) => entry.competition_id === competition.id && (entry.status === "pending" || entry.status === "approved")).length === 0 ? (
-                          <p className="text-xs text-slate-500">No entries yet.</p>
-                        ) : null}
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">Current field</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Approved: {approvedCount} · Pending: {pendingCount}
+                          {competition.max_entries ? ` · Capacity: ${currentEntries}/${competition.max_entries}` : ` · Current entries: ${currentEntries}`}
+                        </p>
                       </div>
+                      {isFull ? (
+                        <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-800">
+                          Field full
+                        </span>
+                      ) : competition.max_entries ? (
+                        <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-800">
+                          {competition.max_entries - currentEntries} place{competition.max_entries - currentEntries === 1 ? "" : "s"} left
+                        </span>
+                      ) : null}
                     </div>
-                  ) : null}
+                    {visibleEntries.length ? (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {visibleEntries.map((entry) => (
+                          <div key={entry.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <span className="font-medium text-slate-900">{playerNameById.get(entry.player_id) ?? entry.player_id}</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                entry.status === "approved"
+                                  ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  : "border border-amber-200 bg-amber-50 text-amber-900"
+                              }`}
+                            >
+                              {entry.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-500">No entries yet.</p>
+                    )}
+                  </div>
                 </div>
               );
             })}
