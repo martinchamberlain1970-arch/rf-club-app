@@ -1413,20 +1413,6 @@ export default function PlayerProfilePage() {
                     </p>
                     <p className="mt-1">BYE, walkover, and doubles outcomes are excluded from ratings.</p>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Pool Rating</p>
-                      <p className="mt-1 text-2xl font-bold text-slate-900">{Math.round(rankingCard.poolRating)}</p>
-                      <p className="text-sm text-slate-600">Rank #{rankingCard.poolRank} of {rankingCard.totalPlayers}</p>
-                      <p className="text-xs text-slate-500">Peak {Math.round(rankingCard.poolPeak)} · Rated matches {rankingCard.poolMatches}</p>
-                    </div>
-                    <div className="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Snooker Rating</p>
-                      <p className="mt-1 text-2xl font-bold text-slate-900">{Math.round(rankingCard.snookerRating)}</p>
-                      <p className="text-sm text-slate-600">Rank #{rankingCard.snookerRank} of {rankingCard.totalPlayers}</p>
-                      <p className="text-xs text-slate-500">Peak {Math.round(rankingCard.snookerPeak)} · Rated matches {rankingCard.snookerMatches}</p>
-                    </div>
-                  </div>
                 </section>
               ) : null}
               {childProfilesEnabled && player && (player.age_band ?? "18_plus") === "18_plus" ? (
@@ -1478,8 +1464,8 @@ export default function PlayerProfilePage() {
               ) : null}
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-slate-800">
-                    Full name: <span className="font-medium text-slate-900">{player?.full_name ?? "Not set"}</span>
+                  <p className="text-sm text-slate-600">
+                    Profile details and edit controls
                   </p>
                   {hasAdminPower ? (
                     <div className="flex items-center gap-2">
