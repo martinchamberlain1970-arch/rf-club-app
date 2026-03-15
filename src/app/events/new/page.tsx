@@ -421,6 +421,18 @@ export default function NewEventPage() {
   const pillActiveClass = `${pillBaseClass} border border-teal-700 bg-teal-700 text-white`;
   const pillIdleClass = `${pillBaseClass} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`;
   const primaryButtonClass = "rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60";
+  const sportAccentClass =
+    sport === "snooker"
+      ? "rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-4"
+      : sport === "pool_9_ball"
+        ? "rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-4"
+        : "rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-4";
+  const competitionSummary = [
+    { label: "Sport", value: sport === "snooker" ? "Snooker" : sport === "pool_9_ball" ? "Pool (9-ball)" : "Pool (8-ball)" },
+    { label: "Format", value: mode === "singles" ? "Singles" : "Doubles" },
+    { label: "Opening round", value: `Best of ${bestOf}` },
+    { label: "Entries", value: mode === "singles" ? `${selected.length} selected` : `${teams.filter((t) => t.player1 && t.player2).length} teams` },
+  ];
 
   return (
     <main className="min-h-screen bg-slate-100 p-6">
@@ -442,11 +454,19 @@ export default function NewEventPage() {
 
           {!admin.loading && !admin.isAdmin ? null : !competitionCreateAllowed ? null : (
           <section className={`${cardClass} space-y-4`}>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className={sportAccentClass}>
               <p className="text-sm font-semibold text-slate-900">Competition setup</p>
               <p className="mt-1 text-sm text-slate-600">
                 Choose the location, match format, and player list. The app will build the knockout bracket for you.
               </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                {competitionSummary.map((item) => (
+                  <div key={item.label} className="rounded-xl border border-white/80 bg-white/80 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{item.value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Competition name</label>
@@ -761,9 +781,15 @@ export default function NewEventPage() {
                 </button>
               </div>
             )}
-            <button type="button" onClick={onCreateClick} disabled={saving} className={primaryButtonClass}>
-              {saving ? "Creating..." : "Create competition"}
-            </button>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-900">Ready to launch</p>
+              <p className="mt-1 text-sm text-slate-600">
+                The app will create the competition shell and build the knockout event using the setup above.
+              </p>
+              <button type="button" onClick={onCreateClick} disabled={saving} className={`mt-3 ${primaryButtonClass}`}>
+                {saving ? "Creating..." : "Create competition"}
+              </button>
+            </div>
             <MessageModal message={message} onClose={() => setMessage(null)} />
           </section>
           )}
