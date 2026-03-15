@@ -538,12 +538,15 @@ export default function CompetitionPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-lg font-semibold text-slate-900">Competition Sign-ups</p>
                   <Link href="/signups" className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50">
-                    Open Sign-up Page
+                    Enter or review sign-ups
                   </Link>
                 </div>
                 <p className="mt-1 text-sm text-slate-600">
                   Status: {competition.signup_open ? "Open" : "Closed"} · Pending {pendingEntries.length} · Approved {approvedEntries.length}
                   {competition.max_entries ? ` / Max ${competition.max_entries}` : ""}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Players enter through the Competition Sign-ups page. Super User entries are approved automatically.
                 </p>
                 {competition.signup_deadline ? (
                   <p className="mt-1 text-sm text-slate-600">Deadline: {new Date(competition.signup_deadline).toLocaleString()}</p>

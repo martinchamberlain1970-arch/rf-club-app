@@ -149,10 +149,21 @@ export default function CompetitionSignupPage() {
       return;
     }
 
+    const nextStatus: Entry["status"] = admin.isSuper ? "approved" : "pending";
+    const approvalFields = admin.isSuper
+      ? {
+          reviewed_by_user_id: userId,
+          reviewed_at: new Date().toISOString(),
+        }
+      : {
+          reviewed_by_user_id: null,
+          reviewed_at: null,
+        };
+
     if (existing) {
       const { error } = await client
         .from("competition_entries")
-        .update({ status: "pending", player_id: linkedPlayerId })
+        .update({ status: nextStatus, player_id: linkedPlayerId, ...approvalFields })
         .eq("id", existing.id);
       setBusyCompetitionId(null);
       if (error) {
@@ -164,13 +175,18 @@ export default function CompetitionSignupPage() {
         competition_id: competition.id,
         requester_user_id: userId,
         player_id: linkedPlayerId,
-        status: "pending",
+        status: nextStatus,
+        ...approvalFields,
       });
       setBusyCompetitionId(null);
       if (error) {
         setMessage(error.message);
         return;
       }
+    }
+
+    if (admin.isSuper) {
+      setMessage("Your Super User entry was approved automatically.");
     }
 
     await load();
@@ -205,7 +221,8 @@ export default function CompetitionSignupPage() {
 
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-sm text-slate-600">
-              Choose an open competition and submit your entry. Competition entries are queued as pending until approved by a Club Admin or the Super User.
+              Choose an open competition and submit your entry. Competition entries are normally queued as pending until approved by a Club Admin or the Super User.
+              {admin.isSuper ? " Super User entries are approved automatically." : ""}
             </p>
           </section>
 
@@ -244,7 +261,7 @@ export default function CompetitionSignupPage() {
                       </span>
                       {myEntry ? (
                         <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-slate-700">
-                          Your status: {myEntry.status}
+                          Your status: {myEntry.status === "approved" && admin.isSuper ? "approved automatically" : myEntry.status}
                         </span>
                       ) : null}
                     </div>
