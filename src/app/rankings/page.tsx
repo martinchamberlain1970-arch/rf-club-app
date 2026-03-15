@@ -19,6 +19,8 @@ type Player = {
   peak_rating_snooker?: number | null;
   rated_matches_pool?: number | null;
   rated_matches_snooker?: number | null;
+  snooker_handicap?: number | null;
+  snooker_handicap_base?: number | null;
 };
 type Location = { id: string; name: string };
 
@@ -55,7 +57,7 @@ export default function RankingsPage() {
         client
           .from("players")
           .select(
-            "id,display_name,full_name,is_archived,location_id,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker"
+            "id,display_name,full_name,is_archived,location_id,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker,snooker_handicap,snooker_handicap_base"
           )
           .eq("is_archived", false),
         client.from("locations").select("id,name").order("name"),
@@ -113,7 +115,7 @@ export default function RankingsPage() {
           <ScreenHeader
             title="Player Rankings"
             eyebrow="Stats"
-            subtitle="Elo-style leaderboards for active players, with discipline and location filters."
+            subtitle="Elo-style leaderboards for active players, with discipline, location, and snooker handicap context."
           />
           {message ? <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">{message}</p> : null}
           <section className={`rounded-3xl border border-slate-200 bg-gradient-to-r ${disciplineMeta.accent} p-5 shadow-sm`}>
@@ -123,7 +125,7 @@ export default function RankingsPage() {
                   {disciplineMeta.label}
                 </span>
                 <p className="max-w-2xl text-sm text-slate-700">
-                  Ratings use the current Elo-style values stored on each player profile. Singles results feed the rating model; doubles, BYE, and walkover outcomes are excluded.
+                  Ratings use the current Elo-style values stored on each player profile. Singles results feed the rating model; doubles, BYE, walkover, and void outcomes are excluded. Snooker current and baseline handicap are shown for review context.
                 </p>
               </div>
               <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
@@ -180,7 +182,7 @@ export default function RankingsPage() {
               </label>
             </div>
             <div className={`mt-4 rounded-2xl border px-4 py-3 text-sm text-slate-700 ${disciplineMeta.cardClass}`}>
-              Use the filters to compare players by discipline and location. Rankings are ordered by current Elo-style rating, with peak and rated-match totals shown for context.
+              Use the filters to compare players by discipline and location. Rankings are ordered by current Elo-style rating, with peak, rated-match totals, and snooker handicap context shown for review.
             </div>
           </section>
 
@@ -199,8 +201,10 @@ export default function RankingsPage() {
                     <th className="px-4 py-3 font-medium">Player</th>
                     <th className="px-4 py-3 font-medium">Location</th>
                     <th className="px-4 py-3 font-medium">Rating</th>
-                    <th className="px-4 py-3 font-medium">Peak</th>
-                    <th className="px-4 py-3 font-medium">Rated matches</th>
+                  <th className="px-4 py-3 font-medium">Peak</th>
+                  {discipline === "snooker" ? <th className="px-4 py-3 font-medium">Current</th> : null}
+                  {discipline === "snooker" ? <th className="px-4 py-3 font-medium">Baseline</th> : null}
+                  <th className="px-4 py-3 font-medium">Rated matches</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -225,13 +229,31 @@ export default function RankingsPage() {
                         <td className="px-4 py-3 text-slate-600">{locationMap.get(player.location_id ?? "") ?? "Not set"}</td>
                         <td className="px-4 py-3 font-semibold text-slate-900">{Math.round(rating)}</td>
                         <td className="px-4 py-3 text-slate-600">{ratedMatches > 0 ? Math.round(peak) : "Baseline"}</td>
+                        {discipline === "snooker" ? (
+                          <td className="px-4 py-3 text-slate-600">
+                            {player.snooker_handicap === null || player.snooker_handicap === undefined
+                              ? "—"
+                              : player.snooker_handicap > 0
+                                ? `+${player.snooker_handicap}`
+                                : String(player.snooker_handicap)}
+                          </td>
+                        ) : null}
+                        {discipline === "snooker" ? (
+                          <td className="px-4 py-3 text-slate-600">
+                            {player.snooker_handicap_base === null || player.snooker_handicap_base === undefined
+                              ? "—"
+                              : player.snooker_handicap_base > 0
+                                ? `+${player.snooker_handicap_base}`
+                                : String(player.snooker_handicap_base)}
+                          </td>
+                        ) : null}
                         <td className="px-4 py-3 text-slate-600">{ratedMatches}</td>
                       </tr>
                     );
                   })}
                   {!filteredPlayers.length ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={discipline === "snooker" ? 8 : 6} className="px-4 py-6 text-center text-slate-500">
                         No players match the current ranking filters.
                       </td>
                     </tr>

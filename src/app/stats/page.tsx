@@ -125,6 +125,7 @@ export default function StatsPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [frames, setFrames] = useState<Frame[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [reviewingHandicaps, setReviewingHandicaps] = useState(false);
   const [viewerPlayerId, setViewerPlayerId] = useState<string | null>(null);
   const [viewerIsMinor, setViewerIsMinor] = useState(false);
 
@@ -224,6 +225,38 @@ export default function StatsPage() {
       active = false;
     };
   }, [admin.loading, admin.isAdmin]);
+
+  const recalculateSnookerHandicaps = async () => {
+    const client = supabase;
+    if (!client || !admin.isSuper) return;
+    setReviewingHandicaps(true);
+    setMessage(null);
+    const sessionRes = await client.auth.getSession();
+    const token = sessionRes.data.session?.access_token;
+    if (!token) {
+      setReviewingHandicaps(false);
+      setMessage("You need to be signed in as the Super User to run this review.");
+      return;
+    }
+    const res = await fetch("/api/admin/recalculate-snooker-handicaps", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string; changedPlayers?: number; updatedPlayers?: number };
+    setReviewingHandicaps(false);
+    if (!res.ok) {
+      setMessage(body.error ?? "Unable to recalculate handicaps from Elo.");
+      return;
+    }
+    setMessage(
+      `Snooker handicap review complete. ${body.changedPlayers ?? 0} player${body.changedPlayers === 1 ? "" : "s"} changed out of ${
+        body.updatedPlayers ?? 0
+      } checked.`
+    );
+  };
 
   const minorIds = useMemo(() => new Set(players.filter((p) => p.age_band && p.age_band !== "18_plus").map((p) => p.id)), [players]);
   const visiblePlayers = useMemo(() => {
@@ -1015,6 +1048,24 @@ export default function StatsPage() {
                         </div>
                       ))}
                     </div>
+                    {admin.isSuper && sport === "snooker" ? (
+                      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-white/90 px-4 py-3 shadow-sm">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Snooker handicap review</p>
+                          <p className="text-xs text-slate-600">
+                            Recalculate current handicaps from Elo. This is a manual review step and does not run after every result.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void recalculateSnookerHandicaps()}
+                          disabled={reviewingHandicaps}
+                          className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 disabled:opacity-60"
+                        >
+                          {reviewingHandicaps ? "Recalculating..." : "Recalculate from Elo"}
+                        </button>
+                      </div>
+                    ) : null}
                     <div className="flex flex-wrap items-end gap-3">
                       <div className={filterItemClass}>
                         <label className={filterLabelClass}>Format</label>

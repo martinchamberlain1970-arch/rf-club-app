@@ -22,6 +22,8 @@ export default function TermsPage() {
           <li>You are responsible for accurate match reporting and lawful use of the platform.</li>
           <li>Governance decisions (approvals, role changes, profile actions) are controlled by authorized account roles.</li>
           <li>Premium functionality may require approval and can vary by account role and subscription state.</li>
+          <li>Snooker Elo updates from valid approved singles results only; no-show, walkover, void, and doubles outcomes are excluded.</li>
+          <li>Snooker handicap is reviewed from Elo and may be overridden manually by the Super User when needed.</li>
           <li>Accounts and profiles may be suspended or removed for misuse, fraud, or policy violations.</li>
         </ul>
         <p className="text-slate-700">

@@ -30,6 +30,8 @@ type Player = {
   peak_rating_snooker?: number | null;
   rated_matches_pool?: number | null;
   rated_matches_snooker?: number | null;
+  snooker_handicap?: number | null;
+  snooker_handicap_base?: number | null;
 };
 type AppUser = { id: string; email: string | null; linked_player_id?: string | null; role?: string | null };
 type Location = { id: string; name: string };
@@ -151,6 +153,7 @@ export default function PlayerProfilePage() {
             .from("players")
             .select(
               "id,display_name,full_name,avatar_url,is_archived,claimed_by,location_id,age_band,guardian_consent,guardian_name,guardian_email,guardian_user_id,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker"
+              + ",snooker_handicap,snooker_handicap_base"
             )
             .eq("id", id)
             .maybeSingle(),
@@ -158,6 +161,7 @@ export default function PlayerProfilePage() {
             .from("players")
             .select(
               "id,display_name,full_name,avatar_url,location_id,age_band,guardian_consent,guardian_user_id,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker"
+              + ",snooker_handicap,snooker_handicap_base"
             )
             .eq("is_archived", false),
           client.from("matches").select("id,competition_id,match_mode,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,status,updated_at"),
@@ -759,6 +763,28 @@ export default function PlayerProfilePage() {
   }, [player, players]);
   const formatPeakLabel = (peak: number, ratedMatches: number) =>
     ratedMatches > 0 ? `Peak ${Math.round(peak)}` : "Starting rating 1000";
+  const formatHandicap = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return "—";
+    return value > 0 ? `+${value}` : String(value);
+  };
+  const snookerHandicapGuide = [
+    { elo: 1160, handicap: -32 },
+    { elo: 1100, handicap: -20 },
+    { elo: 1000, handicap: 0 },
+    { elo: 960, handicap: 8 },
+    { elo: 900, handicap: 20 },
+  ];
+  const snookerHandicapExport = useMemo(() => {
+    if (!player) return "";
+    const name = player.full_name?.trim() ? player.full_name : player.display_name;
+    return [
+      `${name}`,
+      `Snooker Elo: ${Math.round(player.rating_snooker ?? 1000)}`,
+      `Current handicap: ${formatHandicap(player.snooker_handicap)}`,
+      `Baseline handicap: ${formatHandicap(player.snooker_handicap_base)}`,
+      `Rated snooker matches: ${player.rated_matches_snooker ?? 0}`,
+    ].join("\n");
+  }, [player]);
   const canCreateChildProfile = Boolean(
     player &&
       (player.age_band ?? "18_plus") === "18_plus" &&
@@ -1361,7 +1387,9 @@ export default function PlayerProfilePage() {
                         ) : null}
                       </p>
                     ) : null}
-                    <p className="text-sm text-slate-500">Handicap details are not available in this profile view.</p>
+                    <p className="text-sm text-slate-500">
+                      Current handicap reflects the latest review. Baseline handicap is the original pre-season or review-cycle starting point.
+                    </p>
                     {!isMinor ? (
                       <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
                         <input
@@ -1412,6 +1440,9 @@ export default function PlayerProfilePage() {
                       <p className="text-sm text-slate-600">
                         Rank #{rankingCard?.snookerRank ?? "-"} · {rankingCard ? formatPeakLabel(rankingCard.snookerPeak, rankingCard.snookerMatches) : "Starting rating 1000"}
                       </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Current {formatHandicap(player?.snooker_handicap)} · Baseline {formatHandicap(player?.snooker_handicap_base)}
+                      </p>
                     </div>
                     <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pool Elo</p>
@@ -1451,7 +1482,64 @@ export default function PlayerProfilePage() {
                       Ratings use an Elo-style model. Expected result is based on current ratings, then updated when approved singles results complete.
                       Upsets move ratings more than expected wins. K-factor is higher for newer players and lower for experienced players.
                     </p>
-                    <p className="mt-1">BYE, walkover, and doubles outcomes are excluded from ratings.</p>
+                    <p className="mt-1">BYE, walkover, void, and doubles outcomes are excluded from ratings.</p>
+                    <p className="mt-1">
+                      Snooker handicap is reviewed from Elo rather than moved automatically after every result. Negative values give start; positive values receive start.
+                    </p>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current</p>
+                      <p className="mt-2 text-2xl font-bold text-slate-900">{formatHandicap(player?.snooker_handicap)}</p>
+                      <p className="text-xs text-slate-500">after latest review</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Baseline</p>
+                      <p className="mt-2 text-2xl font-bold text-slate-900">{formatHandicap(player?.snooker_handicap_base)}</p>
+                      <p className="text-xs text-slate-500">original starting handicap</p>
+                    </div>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rated snooker matches</p>
+                      <p className="mt-2 text-2xl font-bold text-slate-900">{player?.rated_matches_snooker ?? 0}</p>
+                      <p className="text-xs text-slate-500">approved singles results only</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Elo to handicap guide</p>
+                        <p className="text-xs text-slate-500">Quick reference for how snooker Elo maps toward reviewed handicap.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!snookerHandicapExport) return;
+                          await navigator.clipboard.writeText(snookerHandicapExport);
+                          setInfoModal({ title: "Copied", description: "Snooker Elo and handicap summary copied for WhatsApp or email." });
+                        }}
+                        className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        Copy handicap summary
+                      </button>
+                    </div>
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead>
+                          <tr className="text-slate-500">
+                            <th className="py-2 pr-4 font-medium">Elo</th>
+                            <th className="py-2 pr-4 font-medium">Current</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {snookerHandicapGuide.map((row) => (
+                            <tr key={row.elo} className="border-t border-slate-100">
+                              <td className="py-2 pr-4 font-medium text-slate-900">{row.elo}</td>
+                              <td className="py-2 pr-4 text-slate-700">{formatHandicap(row.handicap)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </section>
               ) : null}
