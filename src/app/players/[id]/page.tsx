@@ -1293,8 +1293,7 @@ export default function PlayerProfilePage() {
                   </div>
                   <div className="space-y-3">
                     <div>
-                      <p className="text-2xl font-semibold text-slate-900">{playerName}</p>
-                      <p className="mt-1 text-sm text-slate-600">
+                      <p className="text-sm text-slate-600">
                         Match history, Elo-style ratings, recognition badges, and club profile details.
                       </p>
                     </div>
