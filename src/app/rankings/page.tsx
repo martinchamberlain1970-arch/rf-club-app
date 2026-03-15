@@ -88,6 +88,14 @@ export default function RankingsPage() {
   }, [discipline, locationFilter, players]);
   const disciplineMeta = getDisciplineMeta(discipline);
   const topPlayer = filteredPlayers[0] ?? null;
+  const highestPeak =
+    filteredPlayers.length > 0
+      ? Math.max(
+          ...filteredPlayers.map((player) =>
+            Math.round(discipline === "snooker" ? player.peak_rating_snooker ?? 1000 : player.peak_rating_pool ?? 1000)
+          )
+        )
+      : 0;
   const averageRating =
     filteredPlayers.length > 0
       ? Math.round(
@@ -120,18 +128,24 @@ export default function RankingsPage() {
               </div>
               <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Leaderboard size</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-900">{filteredPlayers.length}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Highest peak</p>
+                  <div className="mt-2 flex min-h-[2.5rem] items-end">
+                    <p className="text-2xl font-semibold leading-none text-slate-900">{filteredPlayers.length ? highestPeak : "—"}</p>
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Top rating</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-900">
-                    {topPlayer ? Math.round(discipline === "snooker" ? topPlayer.rating_snooker ?? 1000 : topPlayer.rating_pool ?? 1000) : "—"}
-                  </p>
+                  <div className="mt-2 flex min-h-[2.5rem] items-end">
+                    <p className="text-2xl font-semibold leading-none text-slate-900">
+                      {topPlayer ? Math.round(discipline === "snooker" ? topPlayer.rating_snooker ?? 1000 : topPlayer.rating_pool ?? 1000) : "—"}
+                    </p>
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Average rating</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-900">{filteredPlayers.length ? averageRating : "—"}</p>
+                  <div className="mt-2 flex min-h-[2.5rem] items-end">
+                    <p className="text-2xl font-semibold leading-none text-slate-900">{filteredPlayers.length ? averageRating : "—"}</p>
+                  </div>
                 </div>
               </div>
             </div>
