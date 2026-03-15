@@ -25,14 +25,10 @@ export default function LegalPage() {
                   </p>
                 </div>
               </div>
-              <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
+              <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Version</p>
                   <p className="mt-1 text-2xl font-semibold text-slate-900">1.0.0</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Support</p>
-                  <p className="mt-1 text-sm font-medium text-slate-900">rackandframe.app@gmail.com</p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Third-party notices</p>
@@ -75,6 +71,18 @@ export default function LegalPage() {
                     </a>
                   </p>
                 </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Support</p>
+                <p className="mt-3 text-slate-800">For support, bug reports, or questions about the product, contact:</p>
+                <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <a
+                    href="mailto:rackandframe.app@gmail.com"
+                    className="break-all font-medium text-teal-700 underline"
+                  >
+                    rackandframe.app@gmail.com
+                  </a>
+                </p>
               </div>
             </div>
           </section>
