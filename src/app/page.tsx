@@ -521,22 +521,24 @@ export default function HomePage() {
                 {admin.isSuper ? "Super User" : admin.isAdmin ? "Administrator" : "User"}
               </span>
             </div>
-            {userEmail ? <p className="text-sm text-slate-600">Logged in: {userEmail}</p> : null}
+            {userEmail ? <p className="mt-1 text-sm text-slate-600">Logged in: {userEmail}</p> : null}
             {admin.isSuper ? (
               <p className="mt-2 text-sm text-slate-700">
                 Focus: approvals, account governance, audit visibility, and system maintenance.
               </p>
             ) : null}
-            {!admin.isSuper && userPlayerId ? (
-              <Link href={`/players/${userPlayerId}`} className={actionLinkClass}>
-                View my profile
-              </Link>
-            ) : null}
-            {!admin.isAdmin && !userName ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {!admin.isSuper && userPlayerId ? (
+                <Link href={`/players/${userPlayerId}`} className={actionLinkClass}>
+                  View my profile
+                </Link>
+              ) : null}
+              {!admin.isAdmin && !userName ? (
                   <button type="button" onClick={() => setProfileModalOpen(true)} className={actionLinkClass}>
                     Link my player profile
                   </button>
-                ) : null}
+              ) : null}
+            </div>
             {!admin.isAdmin && !userName && pendingClaim ? (
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <p className="text-sm text-amber-700">Claim pending approval for {pendingClaim.name}.</p>
@@ -550,11 +552,9 @@ export default function HomePage() {
               </div>
             ) : null}
             {!admin.isAdmin ? (
-              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-sm font-semibold text-slate-900">Profile and account status</p>
-                <p className="text-xs text-slate-600">Use your player profile for account changes and access requests.</p>
+              <div className="mt-3 space-y-2">
                 {(pendingRequestsCount ?? 0) > 0 ? (
-                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                     You have {(pendingRequestsCount ?? 0)} pending request{(pendingRequestsCount ?? 0) === 1 ? "" : "s"}.
                     <Link href="/notifications" className="ml-2 underline underline-offset-2">
                       View status
@@ -562,7 +562,7 @@ export default function HomePage() {
                   </div>
                 ) : null}
                 {pendingResultSubmissionsCount > 0 ? (
-                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                     Result submission pending approval ({pendingResultSubmissionsCount}).
                     <Link href="/notifications" className="ml-2 underline underline-offset-2">
                       View status
@@ -576,13 +576,11 @@ export default function HomePage() {
                   </p>
                 ) : null}
                 {!pendingAdminRequest && userPlayerId ? (
-                  <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-700">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700">
                     <p className="font-semibold text-slate-900">Club admin is for organisers, not every player.</p>
-                    <p className="mt-1">
-                      Request this only if you help run competitions, review results, and manage player activity for your club.
-                    </p>
+                    <p className="mt-1">Request this only if you help run competitions, review results, and manage player activity for your club.</p>
                     <Link href={`/players/${userPlayerId}`} className={`${actionLinkClass} mt-3`}>
-                      Go to my profile to request club admin access
+                      Request club admin access
                     </Link>
                   </div>
                 ) : null}
@@ -593,26 +591,6 @@ export default function HomePage() {
 
           <section className="space-y-3">
             <div className="space-y-3">
-              {!admin.isSuper ? (
-                <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-4 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="max-w-2xl">
-                      <p className="text-sm font-semibold uppercase tracking-wide text-teal-700">Premium Access</p>
-                      <h2 className="mt-1 text-xl font-bold text-slate-900">Unlock the advanced extras</h2>
-                      <p className="mt-1 text-sm text-slate-700">
-                        See what Premium adds for players and Club Admin accounts, including doubles, stats, live overview, auto breaker, and enhanced competition tools.
-                      </p>
-                      <p className="mt-2 text-sm text-slate-600">
-                        Check the Premium page to see whether a free Premium trial is active on your account and when it expires.
-                      </p>
-                    </div>
-                    <Link href="/premium" className={actionLinkClass}>
-                      See plans and features
-                    </Link>
-                  </div>
-                </div>
-              ) : null}
-
               <div className={cardBaseClass}>
                 <p className="text-sm font-semibold text-slate-900">Club Play</p>
                 <p className="mt-1 text-sm text-slate-600">
@@ -677,6 +655,26 @@ export default function HomePage() {
                 </div>
               ) : null}
             </div>
+
+            {!admin.isSuper ? (
+              <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="max-w-2xl">
+                    <p className="text-sm font-semibold uppercase tracking-wide text-teal-700">Premium Access</p>
+                    <h2 className="mt-1 text-xl font-bold text-slate-900">Unlock the advanced extras</h2>
+                    <p className="mt-1 text-sm text-slate-700">
+                      See what Premium adds for players and Club Admin accounts, including doubles, stats, live overview, auto breaker, and enhanced competition tools.
+                    </p>
+                    <p className="mt-2 text-sm text-slate-600">
+                      Check the Premium page to see whether a free Premium trial is active on your account and when it expires.
+                    </p>
+                  </div>
+                  <Link href="/premium" className={actionLinkClass}>
+                    See plans and features
+                  </Link>
+                </div>
+              </div>
+            ) : null}
 
             {visibleSupportLinks.length ? (
               <div className={cardBaseClass}>
