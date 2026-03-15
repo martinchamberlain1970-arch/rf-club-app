@@ -41,6 +41,52 @@ function tabFromUrl(): Tab {
 
 const fmtDate = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
+function getRoleSummary(isSuper: boolean, isAdmin: boolean) {
+  if (isSuper) {
+    return {
+      label: "Super User",
+      description: "Review competitions across the system, monitor progress, and manage archived event history.",
+      accent: "from-amber-50 via-white to-teal-50",
+      badgeClass: "border-amber-200 bg-amber-50 text-amber-800",
+    };
+  }
+  if (isAdmin) {
+    return {
+      label: "Club Admin",
+      description: "Create competitions, monitor live progress, and manage completed or archived events for your club.",
+      accent: "from-sky-50 via-white to-emerald-50",
+      badgeClass: "border-sky-200 bg-sky-50 text-sky-800",
+    };
+  }
+  return {
+    label: "Player",
+    description: "Browse active, completed, and archived competitions for your club.",
+    accent: "from-indigo-50 via-white to-teal-50",
+    badgeClass: "border-indigo-200 bg-indigo-50 text-indigo-800",
+  };
+}
+
+function getSportMeta(sport: Competition["sport_type"]) {
+  switch (sport) {
+    case "pool_8_ball":
+      return {
+        label: "Pool (8-ball)",
+        cardClass: "border-cyan-200 bg-cyan-50 text-cyan-800",
+      };
+    case "pool_9_ball":
+      return {
+        label: "Pool (9-ball)",
+        cardClass: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800",
+      };
+    case "snooker":
+    default:
+      return {
+        label: "Snooker",
+        cardClass: "border-amber-200 bg-amber-50 text-amber-800",
+      };
+  }
+}
+
 export default function EventsPage() {
   const admin = useAdminStatus();
   const [rows, setRows] = useState<Competition[]>([]);
@@ -99,6 +145,7 @@ export default function EventsPage() {
   const completed = useMemo(() => rows.filter((r) => !r.is_archived && r.is_completed), [rows]);
   const archived = useMemo(() => rows.filter((r) => r.is_archived), [rows]);
   const activeRows = tab === "archived" ? archived : tab === "completed" ? completed : open;
+  const roleSummary = getRoleSummary(admin.isSuper, admin.isAdmin);
   const statsByComp = useMemo(() => {
     const map = new Map<string, { total: number; done: number; inProgress: number; lastUpdated: string | null }>();
     for (const m of matchRows) {
@@ -204,6 +251,31 @@ export default function EventsPage() {
         <RequireAuth>
           <ScreenHeader title="Events" eyebrow="Events" subtitle="Run, review, and manage club competitions." />
 
+          <section className={`rounded-3xl border border-slate-200 bg-gradient-to-r ${roleSummary.accent} p-5 shadow-sm`}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-2">
+                <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${roleSummary.badgeClass}`}>
+                  {roleSummary.label}
+                </span>
+                <p className="max-w-2xl text-sm text-slate-700">{roleSummary.description}</p>
+              </div>
+              <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Active</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900">{open.length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Completed</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900">{completed.length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Archived</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900">{archived.length}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <div className="flex items-center gap-2">
             {admin.isAdmin ? (
               <Link href="/events/new" className={buttonPrimaryClass}>
@@ -229,91 +301,131 @@ export default function EventsPage() {
                 {tab === "open" ? "No active competitions." : tab === "completed" ? "No completed competitions yet." : "No archived competitions."}
               </p>
             ) : null}
-            {activeRows.map((r) => (
-              <article key={r.id} className={cardBaseClass}>
-                <h2 className="text-xl font-semibold text-slate-900">{r.name}</h2>
-                <p className="mt-1 text-slate-700">
-                  {r.sport_type === "pool_8_ball" ? "Pool (8-ball)" : r.sport_type === "pool_9_ball" ? "Pool (9-ball)" : "Snooker"} · {r.competition_format === "knockout" ? "Knockout" : "League"}{r.is_practice ? " · Practice match" : ""}
-                </p>
-                <p className="mt-1 text-slate-700">Format: {r.match_mode === "doubles" ? "Doubles" : "Singles"}</p>
-                <p className="mt-1 text-slate-700">Best of {r.best_of}</p>
-                {statsByComp.get(r.id) ? (
-                  <p className="mt-1 text-sm text-slate-600">
-                    Progress: {statsByComp.get(r.id)!.done}/{statsByComp.get(r.id)!.total} matches complete
-                    {statsByComp.get(r.id)!.inProgress > 0 ? ` · ${statsByComp.get(r.id)!.inProgress} in progress` : ""}
-                  </p>
-                ) : null}
-                <p className="mt-1 text-sm text-slate-500">Created {fmtDate.format(new Date(r.created_at))}</p>
-                <Link href={`/competitions/${r.id}`} className={`${buttonPrimaryClass} mt-2 inline-flex`}>Open event</Link>
-                {admin.isAdmin && tab !== "archived" ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setConfirmModal({
-                          title: "Archive competition",
-                          description: `Archive "${r.name}"? This hides it from the main list but keeps the results and stats.`,
-                          confirmLabel: "Archive",
-                          onConfirm: async () => {
-                            await archiveEvent(r);
-                            setConfirmModal(null);
-                          },
-                        })
-                      }
-                      className={`ml-2 mt-2 ${actionSecondaryClass}`}
-                    >
-                      Archive
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setConfirmModal({
-                          title: "Delete competition permanently",
-                          description: "This will permanently remove the competition and its match data.",
-                          confirmLabel: "Delete permanently",
-                          tone: "danger",
-                          onConfirm: async () => {
-                            await deleteEvent(r);
-                            setConfirmModal(null);
-                          },
-                        })
-                      }
-                      className={`ml-2 mt-2 ${actionDangerClass}`}
-                    >
-                      Delete permanently
-                    </button>
-                  </>
-                ) : admin.isAdmin ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => restoreEvent(r)}
-                      className={`ml-2 mt-2 ${actionSuccessClass}`}
-                    >
-                      Restore
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setConfirmModal({
-                          title: "Delete competition permanently",
-                          description: "This will permanently remove the competition and its match data.",
-                          confirmLabel: "Delete permanently",
-                          tone: "danger",
-                          onConfirm: async () => {
-                            await deleteEvent(r);
-                            setConfirmModal(null);
-                          },
-                        })
-                      }
-                      className={`ml-2 mt-2 ${actionDangerClass}`}
-                    >
-                      Delete permanently
-                    </button>
-                  </>
-                ) : null}
-              </article>
-            ))}
+            <div className="grid gap-3">
+              {activeRows.map((r) => {
+                const sportMeta = getSportMeta(r.sport_type);
+                const competitionStats = statsByComp.get(r.id);
+                return (
+                  <article key={r.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-[240px] flex-1 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${sportMeta.cardClass}`}>
+                            {sportMeta.label}
+                          </span>
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                            {r.competition_format === "knockout" ? "Knockout" : "League"}
+                          </span>
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                            {r.match_mode === "doubles" ? "Doubles" : "Singles"}
+                          </span>
+                          {r.is_practice ? (
+                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                              Practice
+                            </span>
+                          ) : null}
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-semibold text-slate-900">{r.name}</h2>
+                          <p className="mt-1 text-sm text-slate-500">Created {fmtDate.format(new Date(r.created_at))}</p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Format</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900">{r.match_mode === "doubles" ? "Doubles" : "Singles"}</p>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Match length</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900">Best of {r.best_of}</p>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Progress</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900">
+                              {competitionStats ? `${competitionStats.done}/${competitionStats.total} complete` : "No matches yet"}
+                            </p>
+                          </div>
+                        </div>
+                        {competitionStats?.inProgress ? (
+                          <p className="text-sm text-slate-600">{competitionStats.inProgress} match(es) currently in progress.</p>
+                        ) : null}
+                      </div>
+                      <div className="flex min-w-[180px] flex-col items-start gap-3">
+                        <Link href={`/competitions/${r.id}`} className={buttonPrimaryClass}>
+                          Open event
+                        </Link>
+                        {admin.isAdmin && tab !== "archived" ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setConfirmModal({
+                                  title: "Archive competition",
+                                  description: `Archive "${r.name}"? This hides it from the main list but keeps the results and stats.`,
+                                  confirmLabel: "Archive",
+                                  onConfirm: async () => {
+                                    await archiveEvent(r);
+                                    setConfirmModal(null);
+                                  },
+                                })
+                              }
+                              className={actionSecondaryClass}
+                            >
+                              Archive
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setConfirmModal({
+                                  title: "Delete competition permanently",
+                                  description: "This will permanently remove the competition and its match data.",
+                                  confirmLabel: "Delete permanently",
+                                  tone: "danger",
+                                  onConfirm: async () => {
+                                    await deleteEvent(r);
+                                    setConfirmModal(null);
+                                  },
+                                })
+                              }
+                              className={actionDangerClass}
+                            >
+                              Delete permanently
+                            </button>
+                          </>
+                        ) : admin.isAdmin ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => restoreEvent(r)}
+                              className={actionSuccessClass}
+                            >
+                              Restore
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setConfirmModal({
+                                  title: "Delete competition permanently",
+                                  description: "This will permanently remove the competition and its match data.",
+                                  confirmLabel: "Delete permanently",
+                                  tone: "danger",
+                                  onConfirm: async () => {
+                                    await deleteEvent(r);
+                                    setConfirmModal(null);
+                                  },
+                                })
+                              }
+                              className={actionDangerClass}
+                            >
+                              Delete permanently
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </section>
         </RequireAuth>
         <InfoModal
