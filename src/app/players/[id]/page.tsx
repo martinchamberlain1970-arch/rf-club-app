@@ -219,17 +219,17 @@ export default function PlayerProfilePage() {
         } else {
           setLinkedEmail(null);
         }
-        setPlayers((allPlayersRes.data ?? []) as Player[]);
-        if (!usersRes.error && usersRes.data) setAppUsers(usersRes.data as AppUser[]);
-        setMatches((mRes.error ? [] : (mRes.data ?? [])) as MatchRow[]);
-        setCompetitions((cRes.error ? [] : (cRes.data ?? [])) as Competition[]);
-        setCompetitionEntries((ceRes.error ? [] : (ceRes.data ?? [])) as CompetitionEntry[]);
-        setFrames((fRes.error ? [] : (fRes.data ?? [])) as Frame[]);
-        setLeagueFixtures((lfRes.error ? [] : (lfRes.data ?? [])) as LeagueFixtureLite[]);
-        setLeagueTeams((ltRes.error ? [] : (ltRes.data ?? [])) as LeagueTeamLite[]);
-        setLeagueFrames((lfrRes.error ? [] : (lfrRes.data ?? [])) as LeagueFrameLite[]);
+        setPlayers(((allPlayersRes.data ?? []) as unknown) as Player[]);
+        if (!usersRes.error && usersRes.data) setAppUsers((usersRes.data as unknown) as AppUser[]);
+        setMatches(((mRes.error ? [] : (mRes.data ?? [])) as unknown) as MatchRow[]);
+        setCompetitions(((cRes.error ? [] : (cRes.data ?? [])) as unknown) as Competition[]);
+        setCompetitionEntries(((ceRes.error ? [] : (ceRes.data ?? [])) as unknown) as CompetitionEntry[]);
+        setFrames(((fRes.error ? [] : (fRes.data ?? [])) as unknown) as Frame[]);
+        setLeagueFixtures(((lfRes.error ? [] : (lfRes.data ?? [])) as unknown) as LeagueFixtureLite[]);
+        setLeagueTeams(((ltRes.error ? [] : (ltRes.data ?? [])) as unknown) as LeagueTeamLite[]);
+        setLeagueFrames(((lfrRes.error ? [] : (lfrRes.data ?? [])) as unknown) as LeagueFrameLite[]);
         if (!locRes.error && locRes.data) {
-          setLocations(locRes.data as Location[]);
+          setLocations((locRes.data as unknown) as Location[]);
         }
         setPendingUpdate(pendingRes.data?.[0] ?? null);
         setPendingDeleteRequest(pendingDeleteRes.data?.[0] ?? null);
