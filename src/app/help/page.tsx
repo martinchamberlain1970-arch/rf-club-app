@@ -157,7 +157,7 @@ export default function HelpPage() {
   const [tipResetMessage, setTipResetMessage] = useState<string | null>(null);
   const selectedRole: GuideRole = admin.isAdmin ? role : "player";
   const section = useMemo(() => guideSections[selectedRole][filter], [filter, selectedRole]);
-  const cardBaseClass = "rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm";
+  const cardBaseClass = "rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm";
   const pillBaseClass = "rounded-full border px-3 py-1 text-sm transition";
   const pillActiveClass = `${pillBaseClass} border-teal-700 bg-teal-700 text-white`;
   const pillInactiveClass = `${pillBaseClass} border-slate-300 bg-white text-slate-700 hover:bg-slate-50`;
@@ -183,13 +183,35 @@ export default function HelpPage() {
         <RequireAuth>
           <ScreenHeader title="Help & User Guide" eyebrow="Guide" subtitle="How to use Rack & Frame for quick matches, club competitions, player profiles, and results." />
 
-          <section className={`${cardBaseClass} space-y-3`}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-slate-700">Step-by-step guidance for players, club admins, and the Super User running Rack &amp; Frame in day-to-day club use.</p>
-              <Link href="/welcome-tour" className={buttonPrimaryClass}>
-                Open Welcome Tour
-              </Link>
+          <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-sky-50 via-white to-emerald-50 p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-3">
+                <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">
+                  Guide
+                </span>
+                <p className="max-w-2xl text-slate-700">
+                  Step-by-step guidance for players, club admins, and the Super User running Rack &amp; Frame in day-to-day club use.
+                </p>
+              </div>
+              <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Role</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">{selectedRole === "player" ? "Player" : "Club Admin"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Section</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">{section.title}</p>
+                </div>
+                <div className="flex items-center">
+                  <Link href="/welcome-tour" className={`${buttonPrimaryClass} w-full justify-center`}>
+                    Open Welcome Tour
+                  </Link>
+                </div>
+              </div>
             </div>
+          </section>
+
+          <section className={`${cardBaseClass} space-y-3`}>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -208,7 +230,7 @@ export default function HelpPage() {
                 </button>
               ) : null}
             </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-sm font-semibold text-slate-900">Role summary</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
                 {roleSummary[selectedRole].map((line) => (
@@ -216,7 +238,7 @@ export default function HelpPage() {
                 ))}
               </ul>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-sm font-semibold text-slate-900">Profile setup tip</p>
               <p className="mt-1 text-sm text-slate-700">
                 If needed, you can show the profile setup prompt again.
@@ -273,9 +295,11 @@ export default function HelpPage() {
 
           <section className={cardBaseClass}>
             <h2 className="text-xl font-semibold text-slate-900">{section.title}</h2>
-            <ul className="mt-2 list-disc space-y-2 pl-5 text-slate-700">
+            <ul className="mt-3 space-y-3 text-slate-700">
               {section.bullets.map((b) => (
-                <li key={b}>{b}</li>
+                <li key={b} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  {b}
+                </li>
               ))}
             </ul>
           </section>
