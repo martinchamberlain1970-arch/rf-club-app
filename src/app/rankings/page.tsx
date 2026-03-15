@@ -210,7 +210,7 @@ export default function RankingsPage() {
                         </td>
                         <td className="px-4 py-3 text-slate-600">{locationMap.get(player.location_id ?? "") ?? "Not set"}</td>
                         <td className="px-4 py-3 font-semibold text-slate-900">{Math.round(rating)}</td>
-                        <td className="px-4 py-3 text-slate-600">{Math.round(peak)}</td>
+                        <td className="px-4 py-3 text-slate-600">{ratedMatches > 0 ? Math.round(peak) : "Baseline"}</td>
                         <td className="px-4 py-3 text-slate-600">{ratedMatches}</td>
                       </tr>
                     );

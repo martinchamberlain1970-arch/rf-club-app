@@ -747,6 +747,8 @@ export default function PlayerProfilePage() {
       totalPlayers: players.length,
     };
   }, [player, players]);
+  const formatPeakLabel = (peak: number, ratedMatches: number) =>
+    ratedMatches > 0 ? `Peak ${Math.round(peak)}` : "Starting rating 1000";
   const canCreateChildProfile = Boolean(
     player &&
       (player.age_band ?? "18_plus") === "18_plus" &&
@@ -1369,14 +1371,14 @@ export default function PlayerProfilePage() {
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Snooker Elo</p>
                       <p className="mt-2 text-2xl font-bold text-slate-900">{rankingCard ? Math.round(rankingCard.snookerRating) : 1000}</p>
                       <p className="text-sm text-slate-600">
-                        Rank #{rankingCard?.snookerRank ?? "-"} · Peak {rankingCard ? Math.round(rankingCard.snookerPeak) : 1000}
+                        Rank #{rankingCard?.snookerRank ?? "-"} · {rankingCard ? formatPeakLabel(rankingCard.snookerPeak, rankingCard.snookerMatches) : "Starting rating 1000"}
                       </p>
                     </div>
                     <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pool Elo</p>
                       <p className="mt-2 text-2xl font-bold text-slate-900">{rankingCard ? Math.round(rankingCard.poolRating) : 1000}</p>
                       <p className="text-sm text-slate-600">
-                        Rank #{rankingCard?.poolRank ?? "-"} · Peak {rankingCard ? Math.round(rankingCard.poolPeak) : 1000}
+                        Rank #{rankingCard?.poolRank ?? "-"} · {rankingCard ? formatPeakLabel(rankingCard.poolPeak, rankingCard.poolMatches) : "Starting rating 1000"}
                       </p>
                     </div>
                   </div>
