@@ -104,6 +104,31 @@ type AppUser = {
 };
 type Location = { id: string; name: string };
 
+function getRoleSummary(isSuperAdmin: boolean, isAdmin: boolean, isStandardUser: boolean) {
+  if (isSuperAdmin) {
+    return {
+      label: "Super User",
+      description: "Manage player profiles, linking, account access, approvals, and archived profile cleanup across the system.",
+      accent: "from-amber-50 via-white to-teal-50",
+      badgeClass: "border-amber-200 bg-amber-50 text-amber-800",
+    };
+  }
+  if (isAdmin) {
+    return {
+      label: "Club Admin",
+      description: "Review claims, manage player profiles for your club, and keep roster information tidy and current.",
+      accent: "from-sky-50 via-white to-emerald-50",
+      badgeClass: "border-sky-200 bg-sky-50 text-sky-800",
+    };
+  }
+  return {
+    label: isStandardUser ? "Player" : "User",
+    description: "Link or create your player profile and follow any pending account or profile requests.",
+    accent: "from-indigo-50 via-white to-teal-50",
+    badgeClass: "border-indigo-200 bg-indigo-50 text-indigo-800",
+  };
+}
+
 export default function PlayersPage() {
   const admin = useAdminStatus();
   const [players, setPlayers] = useState<Player[]>([]);
@@ -161,6 +186,7 @@ export default function PlayersPage() {
   const buttonSecondarySmClass = "rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50";
   const buttonSecondaryClass = "rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50";
   const buttonDangerOutlineSmClass = "rounded-lg border border-rose-300 bg-white px-3 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50";
+  const roleSummary = getRoleSummary(isSuperAdmin, admin.isAdmin, isStandardUser);
 
   const activePlayers = useMemo(() => players.filter((p) => !p.is_archived), [players]);
   const pendingChildRequestPlayerIds = useMemo(
@@ -1394,8 +1420,36 @@ export default function PlayersPage() {
             title="Players"
             subtitle="Club roster, player profiles, and approval tasks."
           />
+          <section className={`rounded-3xl border border-slate-200 bg-gradient-to-r ${roleSummary.accent} p-5 shadow-sm`}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-2">
+                <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${roleSummary.badgeClass}`}>
+                  {roleSummary.label}
+                </span>
+                <p className="max-w-2xl text-sm text-slate-700">{roleSummary.description}</p>
+              </div>
+              <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Active profiles</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900">{activePlayers.length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Pending claims</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900">{pendingClaims.length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    {isSuperAdmin ? "Unlinked users" : "Archived"}
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900">
+                    {isSuperAdmin ? unlinkedUsers.length : archivedPlayers.length}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
           {isSuperAdmin ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm font-semibold text-slate-900">Admin tools</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Link href="/locations" className={pillInactiveClass}>
@@ -1406,7 +1460,7 @@ export default function PlayersPage() {
           ) : null}
 
           {isStandardUser && userId && !hasClaimedProfile ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
               <div>
                 <p className="text-sm font-semibold text-slate-900">Find or create your player profile</p>
                 <p className="text-sm text-slate-600">Send your player-profile request for approval.</p>
@@ -2005,7 +2059,7 @@ export default function PlayersPage() {
           ) : null}
 
           {!isStandardUser ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-slate-900">New sign-ups</h2>
                 <button
@@ -2018,15 +2072,15 @@ export default function PlayersPage() {
               </div>
                 <p className="mt-1 text-sm text-slate-600">Recent player-profile requests are shown here for quick review.</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Pending claims</p>
                   <p className="text-2xl font-semibold text-slate-900">{visibleClaims.length}</p>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Pending profile updates</p>
                   <p className="text-2xl font-semibold text-slate-900">{visibleUpdates.length}</p>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Unlinked users</p>
                   <p className="text-2xl font-semibold text-slate-900">{unlinkedUsers.length}</p>
                 </div>
@@ -2095,8 +2149,14 @@ export default function PlayersPage() {
           ) : null}
 
           {canRegisterPlayers || isSuperAdmin ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap gap-2">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Player workspace</p>
+                    <p className="text-sm text-slate-600">Switch between registration, profile review, archived profiles, and claim handling.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
                 {canRegisterPlayers ? (
                   <button
                     type="button"
@@ -2128,6 +2188,18 @@ export default function PlayersPage() {
                 >
                   Claim Requests ({pendingClaims.length})
                 </button>
+                  </div>
+                </div>
+                <div className="grid min-w-[220px] gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Profiles</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{activePlayers.length}</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Archived</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{archivedPlayers.length}</p>
+                  </div>
+                </div>
               </div>
               {admin.isAdmin && !isSuperAdmin ? (
                 <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
@@ -2141,7 +2213,7 @@ export default function PlayersPage() {
           <MessageModal message={message} onClose={() => setMessage(null)} />
 
           {visibleTab === "register" && canRegisterPlayers ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold text-slate-900">Register Player</h2>
               <form className="mt-3 flex flex-wrap gap-2" onSubmit={onRegister}>
                 <input
@@ -2183,7 +2255,7 @@ export default function PlayersPage() {
           ) : null}
 
           {visibleTab === "profiles" && !isStandardUser ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold text-slate-900">Player Profiles</h2>
               <p className="mt-1 text-sm text-slate-600">Open a player profile to view their individual stats and matchup history.</p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2262,7 +2334,7 @@ export default function PlayersPage() {
           ) : null}
 
           {visibleTab === "archived" && isSuperAdmin ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold text-slate-900">Archived ({archivedPlayers.length})</h2>
               <div className="mt-3 space-y-2">
                 {archivedPlayers.length === 0 ? <p className="text-sm text-slate-600">No archived players.</p> : null}
@@ -2303,7 +2375,7 @@ export default function PlayersPage() {
           ) : null}
 
           {visibleTab === "claims" && !isStandardUser ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold text-slate-900">Claim Requests</h2>
               <p className="mt-1 text-sm text-slate-600">
                 Only administrators can approve requests.
