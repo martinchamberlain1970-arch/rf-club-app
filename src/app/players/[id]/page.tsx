@@ -194,7 +194,9 @@ export default function PlayerProfilePage() {
           return;
         }
         setUserId(authRes.data.user?.id ?? null);
-        const loadedPlayer = (pRes.data as Player & { claimed_by?: string | null }) ?? null;
+        const loadedPlayer = pRes.data
+          ? ((pRes.data as unknown) as Player & { claimed_by?: string | null })
+          : null;
         setPlayer(loadedPlayer);
         setRequestName(loadedPlayer?.full_name ?? "");
         setRequestLocationId(loadedPlayer?.location_id ?? "");
