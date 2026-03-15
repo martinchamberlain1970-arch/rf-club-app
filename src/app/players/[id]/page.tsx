@@ -47,7 +47,14 @@ type MatchRow = {
   status: "pending" | "in_progress" | "complete" | "bye";
   updated_at: string | null;
 };
-type Competition = { id: string; sport_type: "snooker" | "pool_8_ball" | "pool_9_ball"; competition_format: "knockout" | "league" };
+type Competition = { id: string; name?: string | null; sport_type: "snooker" | "pool_8_ball" | "pool_9_ball"; competition_format: "knockout" | "league" };
+type CompetitionEntry = {
+  id: string;
+  competition_id: string;
+  player_id: string;
+  status: "pending" | "approved" | "rejected" | "withdrawn";
+  created_at: string | null;
+};
 type Frame = { match_id: string; winner_player_id: string | null; is_walkover_award: boolean };
 type LeagueFixtureLite = {
   id: string;
@@ -83,6 +90,7 @@ export default function PlayerProfilePage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [competitionEntries, setCompetitionEntries] = useState<CompetitionEntry[]>([]);
   const [frames, setFrames] = useState<Frame[]>([]);
   const [leagueFixtures, setLeagueFixtures] = useState<LeagueFixtureLite[]>([]);
   const [leagueTeams, setLeagueTeams] = useState<LeagueTeamLite[]>([]);
@@ -137,7 +145,7 @@ export default function PlayerProfilePage() {
     let active = true;
     const run = async () => {
       try {
-        const [authRes, pRes, allPlayersRes, mRes, cRes, fRes, locRes, pendingRes, usersRes, pendingDeleteRes, lfRes, ltRes, lfrRes] = await Promise.all([
+        const [authRes, pRes, allPlayersRes, mRes, cRes, ceRes, fRes, locRes, pendingRes, usersRes, pendingDeleteRes, lfRes, ltRes, lfrRes] = await Promise.all([
           client.auth.getUser(),
           client
             .from("players")
@@ -153,7 +161,8 @@ export default function PlayerProfilePage() {
             )
             .eq("is_archived", false),
           client.from("matches").select("id,competition_id,match_mode,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,status,updated_at"),
-          client.from("competitions").select("id,sport_type,competition_format"),
+          client.from("competitions").select("id,name,sport_type,competition_format"),
+          client.from("competition_entries").select("id,competition_id,player_id,status,created_at").eq("player_id", id).order("created_at", { ascending: false }),
           client.from("frames").select("match_id,winner_player_id,is_walkover_award"),
           client.from("locations").select("id,name").order("name"),
           client.from("player_update_requests").select("id,created_at").eq("player_id", id).eq("status", "pending").order("created_at", { ascending: false }).limit(1),
@@ -208,6 +217,7 @@ export default function PlayerProfilePage() {
         if (!usersRes.error && usersRes.data) setAppUsers(usersRes.data as AppUser[]);
         setMatches((mRes.error ? [] : (mRes.data ?? [])) as MatchRow[]);
         setCompetitions((cRes.error ? [] : (cRes.data ?? [])) as Competition[]);
+        setCompetitionEntries((ceRes.error ? [] : (ceRes.data ?? [])) as CompetitionEntry[]);
         setFrames((fRes.error ? [] : (fRes.data ?? [])) as Frame[]);
         setLeagueFixtures((lfRes.error ? [] : (lfRes.data ?? [])) as LeagueFixtureLite[]);
         setLeagueTeams((ltRes.error ? [] : (ltRes.data ?? [])) as LeagueTeamLite[]);
@@ -1166,7 +1176,9 @@ export default function PlayerProfilePage() {
     const linkedRole = (linkedAccount?.role ?? "").toLowerCase();
 
     if (effectiveSummary.played >= 10) items.push("Quick Match Regular");
-    if (relevant.some((match) => Boolean(match.competition_id))) items.push("Competition Player");
+    if (relevant.some((match) => Boolean(match.competition_id)) || competitionEntries.some((entry) => entry.status === "approved" || entry.status === "pending")) {
+      items.push("Competition Player");
+    }
     if (disciplineBreakdown.find((row) => row.label === "Snooker" && row.played >= 5)) items.push("Snooker Specialist");
     if (disciplineBreakdown.find((row) => row.label === "8-ball Pool" && row.played >= 5)) items.push("8-ball Regular");
     if (disciplineBreakdown.find((row) => row.label === "9-ball Pool" && row.played >= 5)) items.push("9-ball Regular");
@@ -1183,10 +1195,37 @@ export default function PlayerProfilePage() {
     currentProfileLinkedUserId,
     disciplineBreakdown,
     effectiveSummary.played,
+    competitionEntries,
     player?.age_band,
     recentFormItems,
     relevant,
   ]);
+  const competitionById = useMemo(() => new Map(competitions.map((competition) => [competition.id, competition])), [competitions]);
+  const playerCompetitionEntries = useMemo(
+    () =>
+      competitionEntries
+        .filter((entry) => entry.status !== "rejected" && entry.status !== "withdrawn")
+        .map((entry) => {
+          const competition = competitionById.get(entry.competition_id) ?? null;
+          return { entry, competition };
+        }),
+    [competitionEntries, competitionById]
+  );
+  const approvedCompetitionEntryCount = useMemo(
+    () => playerCompetitionEntries.filter(({ entry }) => entry.status === "approved").length,
+    [playerCompetitionEntries]
+  );
+  const pendingCompetitionEntryCount = useMemo(
+    () => playerCompetitionEntries.filter(({ entry }) => entry.status === "pending").length,
+    [playerCompetitionEntries]
+  );
+
+  const competitionSportLabel = (sportType: Competition["sport_type"] | null | undefined) => {
+    if (sportType === "snooker") return "Snooker";
+    if (sportType === "pool_8_ball") return "8-ball Pool";
+    if (sportType === "pool_9_ball") return "9-ball Pool";
+    return "Competition";
+  };
 
   const leagueHistory = useMemo(() => {
     return leagueRelevant
@@ -1842,6 +1881,52 @@ export default function PlayerProfilePage() {
                     </div>
                   ) : (
                     <p className="mt-2 text-sm text-slate-600">Recognition badges will appear as this profile builds up activity.</p>
+                  )}
+                </div>
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Competition entries</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Approved: {approvedCompetitionEntryCount} · Pending: {pendingCompetitionEntryCount}
+                      </p>
+                    </div>
+                    {playerCompetitionEntries.length ? (
+                      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-800">
+                        {playerCompetitionEntries.length} active entr{playerCompetitionEntries.length === 1 ? "y" : "ies"}
+                      </span>
+                    ) : null}
+                  </div>
+                  {playerCompetitionEntries.length ? (
+                    <div className="mt-3 space-y-2">
+                      {playerCompetitionEntries.slice(0, 5).map(({ entry, competition }) => (
+                        <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">
+                              {competition?.name?.trim()
+                                ? competition.name
+                                : competition
+                                  ? `${competitionSportLabel(competition.sport_type)} ${competition.competition_format}`
+                                  : "Competition entry"}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {entry.created_at ? `Entered ${new Date(entry.created_at).toLocaleString()}` : "Entry recorded"}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                              entry.status === "approved"
+                                ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                                : "border border-amber-200 bg-amber-50 text-amber-900"
+                            }`}
+                          >
+                            {entry.status === "approved" ? "Approved" : "Pending"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-600">No competition entries recorded yet.</p>
                   )}
                 </div>
               </section>
