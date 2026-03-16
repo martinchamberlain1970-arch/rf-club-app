@@ -573,7 +573,9 @@ export default function LeaguePage() {
     let playerRows = playersRes.data ?? [];
     let playerErrorMessage = playersRes.error?.message ?? null;
     if (playersRes.error && playersRes.error.message.toLowerCase().includes("is_archived")) {
-      const fallbackPlayers = await client.from("players").select("id,display_name,full_name,location_id");
+      const fallbackPlayers = await client
+        .from("players")
+        .select("id,display_name,full_name,location_id,snooker_handicap,snooker_handicap_base");
       if (!fallbackPlayers.error) {
         playerRows = fallbackPlayers.data ?? [];
         playerErrorMessage = null;
