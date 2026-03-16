@@ -304,6 +304,25 @@ function generateLeagueRounds(playerIds: string[], meetings: number) {
   return rounds;
 }
 
+function getLeagueFixtureWindow(scheduledFor: string | null | undefined) {
+  if (!scheduledFor) return null;
+  const [year, month, day] = scheduledFor.split("-").map((value) => Number.parseInt(value, 10));
+  if (!year || !month || !day) return null;
+  const opensAt = new Date(year, month - 1, day, 0, 1, 0, 0);
+  const dueAt = new Date(year, month - 1, day + 6, 21, 0, 0, 0);
+  return { opensAt, dueAt };
+}
+
+function formatLeagueFixtureDeadline(scheduledFor: string | null | undefined) {
+  const window = getLeagueFixtureWindow(scheduledFor);
+  if (!window) return null;
+  return window.dueAt.toLocaleString("en-GB", {
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default function CompetitionPage() {
   const params = useParams();
   const id = String(params.id ?? "");
@@ -649,6 +668,7 @@ export default function CompetitionPage() {
         label: string;
         status: string;
         isBye: boolean;
+        deadlineLabel: string | null;
         chip: {
           label: string;
           className: string;
@@ -684,6 +704,9 @@ export default function CompetitionPage() {
             const ownLatestSubmission = currentUserId
               ? resultSubmissions.find((submission) => submission.match_id === match.id && submission.submitted_by_user_id === currentUserId) ?? null
               : null;
+            const window = getLeagueFixtureWindow(match.scheduled_for);
+            const now = new Date();
+            const isWeekOpenForPlayer = !window ? true : now >= window.opensAt && now <= window.dueAt;
             let chip = {
               label: getStatusLabel(match),
               className: "border-slate-200 bg-slate-50 text-slate-600",
@@ -695,6 +718,11 @@ export default function CompetitionPage() {
                 chip = { label: "Submitted", className: "border-amber-200 bg-amber-50 text-amber-700" };
               } else if (ownLatestSubmission?.status === "rejected") {
                 chip = { label: "Update needed", className: "border-rose-200 bg-rose-50 text-rose-700" };
+              } else if (isParticipant && !isWeekOpenForPlayer) {
+                chip = {
+                  label: window && now < window.opensAt ? "Locked" : "Window closed",
+                  className: "border-slate-200 bg-slate-100 text-slate-600",
+                };
               } else if (isParticipant) {
                 chip = { label: "Pending", className: "border-amber-200 bg-amber-50 text-amber-700" };
               } else {
@@ -706,6 +734,7 @@ export default function CompetitionPage() {
               label: getMatchLabel(match, fullMap),
               status: getStatusLabel(match),
               isBye: match.status === "bye",
+              deadlineLabel: formatLeagueFixtureDeadline(match.scheduled_for),
               chip,
             };
           }),
@@ -1123,7 +1152,14 @@ export default function CompetitionPage() {
                                     href={`/matches/${match.id}`}
                                     className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 transition hover:border-teal-300 hover:bg-teal-50"
                                   >
-                                    <span>{match.label}</span>
+                                    <span>
+                                      <span className="block">{match.label}</span>
+                                      {match.deadlineLabel ? (
+                                        <span className="block text-xs text-slate-500">
+                                          Play by {match.deadlineLabel}. If no result is submitted by then, the fixture is normally void with no points awarded. Request a walkover only for a genuine no-show.
+                                        </span>
+                                      ) : null}
+                                    </span>
                                     <span className={`rounded-full border px-2 py-0.5 text-xs ${match.chip.className}`}>
                                       {match.chip.label}
                                     </span>

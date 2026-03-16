@@ -47,6 +47,7 @@ export default function CompetitionSignupPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [linkedPlayerId, setLinkedPlayerId] = useState<string | null>(null);
   const [busyCompetitionId, setBusyCompetitionId] = useState<string | null>(null);
+  const [expandedCompetitionIds, setExpandedCompetitionIds] = useState<string[]>([]);
 
   const playerNameById = useMemo(
     () => new Map(players.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name])),
@@ -208,6 +209,12 @@ export default function CompetitionSignupPage() {
     await load();
   };
 
+  const toggleCompetitionField = (competitionId: string) => {
+    setExpandedCompetitionIds((prev) =>
+      prev.includes(competitionId) ? prev.filter((id) => id !== competitionId) : [...prev, competitionId]
+    );
+  };
+
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <div className="mx-auto max-w-5xl space-y-4">
@@ -239,6 +246,7 @@ export default function CompetitionSignupPage() {
               const deadlinePassed = Boolean(
                 competition.signup_deadline && new Date(competition.signup_deadline).getTime() < Date.now()
               );
+              const fieldExpanded = expandedCompetitionIds.includes(competition.id);
 
               return (
                 <div key={competition.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -321,26 +329,37 @@ export default function CompetitionSignupPage() {
                         </span>
                       ) : null}
                     </div>
-                    {visibleEntries.length ? (
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        {visibleEntries.map((entry) => (
-                          <div key={entry.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                            <span className="font-medium text-slate-900">{playerNameById.get(entry.player_id) ?? entry.player_id}</span>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                entry.status === "approved"
-                                  ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
-                                  : "border border-amber-200 bg-amber-50 text-amber-900"
-                              }`}
-                            >
-                              {entry.status}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-xs text-slate-500">No entries yet.</p>
-                    )}
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleCompetitionField(competition.id)}
+                        className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                      >
+                        {fieldExpanded ? "Hide field" : `Show field${visibleEntries.length ? ` (${visibleEntries.length})` : ""}`}
+                      </button>
+                    </div>
+                    {fieldExpanded ? (
+                      visibleEntries.length ? (
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          {visibleEntries.map((entry) => (
+                            <div key={entry.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                              <span className="font-medium text-slate-900">{playerNameById.get(entry.player_id) ?? entry.player_id}</span>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                  entry.status === "approved"
+                                    ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                                    : "border border-amber-200 bg-amber-50 text-amber-900"
+                                }`}
+                              >
+                                {entry.status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs text-slate-500">No entries yet.</p>
+                      )
+                    ) : null}
                   </div>
                 </div>
               );

@@ -31,6 +31,7 @@ type Match = {
   winner_player_id: string | null;
   opening_break_player_id?: string | null;
   rating_applied_at?: string | null;
+  scheduled_for?: string | null;
 };
 
 type Player = {
@@ -194,6 +195,15 @@ function stableIndexFromSeed(seed: string, size: number): number {
   return hash % size;
 }
 
+function getLeagueFixtureWindow(scheduledFor: string | null | undefined) {
+  if (!scheduledFor) return null;
+  const [year, month, day] = scheduledFor.split("-").map((value) => Number.parseInt(value, 10));
+  if (!year || !month || !day) return null;
+  const opensAt = new Date(year, month - 1, day, 0, 1, 0, 0);
+  const dueAt = new Date(year, month - 1, day + 6, 21, 0, 0, 0);
+  return { opensAt, dueAt };
+}
+
 function kFactor(avgRating: number, avgMatches: number) {
   if (avgMatches < 30) return 32;
   if (avgRating >= 1800) return 16;
@@ -315,7 +325,7 @@ export default function MatchPage() {
 
       const mRes = await client
         .from("matches")
-        .select("id,competition_id,round_no,match_no,best_of,status,match_mode,is_archived,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,rating_applied_at")
+        .select("id,competition_id,round_no,match_no,best_of,status,match_mode,is_archived,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,rating_applied_at,scheduled_for")
         .eq("id", matchId)
         .maybeSingle();
 
@@ -489,8 +499,25 @@ export default function MatchPage() {
       match.team2_player2_id,
     ].includes(viewerLinkedPlayerId);
   }, [match, viewerLinkedPlayerId]);
+  const leagueFixtureWindow = useMemo(() => {
+    if (!match || competition?.competition_format !== "league") return null;
+    return getLeagueFixtureWindow(match.scheduled_for);
+  }, [competition?.competition_format, match]);
+  const playerLeagueWindowOpen = useMemo(() => {
+    if (!leagueFixtureWindow) return true;
+    const now = new Date();
+    return now >= leagueFixtureWindow.opensAt && now <= leagueFixtureWindow.dueAt;
+  }, [leagueFixtureWindow]);
   const canAdminEditFrames = Boolean(!isByeMatch && !isArchived && admin.isAdmin && !adminReviewOnly);
-  const canParticipantEditFrames = Boolean(!admin.loading && !admin.isAdmin && viewerCanEditThisMatch && !userSubmissionLocked && !isByeMatch && !isArchived);
+  const canParticipantEditFrames = Boolean(
+    !admin.loading &&
+      !admin.isAdmin &&
+      viewerCanEditThisMatch &&
+      !userSubmissionLocked &&
+      !isByeMatch &&
+      !isArchived &&
+      playerLeagueWindowOpen
+  );
   const canEditFrames = canAdminEditFrames || canParticipantEditFrames;
 
   const assignOpeningBreaker = async (playerId: string) => {
@@ -1300,6 +1327,14 @@ export default function MatchPage() {
       showSubmitModal("You can only submit the full result for your own fixture. Other fixtures are view only.");
       return;
     }
+    if (!playerLeagueWindowOpen) {
+      showSubmitModal(
+        leagueFixtureWindow
+          ? `This weekly fixture is only live from ${leagueFixtureWindow.opensAt.toLocaleString()} until ${leagueFixtureWindow.dueAt.toLocaleString()}.`
+          : "This fixture is not currently open for result entry."
+      );
+      return;
+    }
     if (match.status === "complete") {
       showSubmitModal("This match is already complete and locked.");
       return;
@@ -1988,6 +2023,13 @@ export default function MatchPage() {
                   {!viewerCanEditThisMatch ? (
                     <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
                       View only. You can only submit the full result for your own fixture.
+                    </div>
+                  ) : !playerLeagueWindowOpen ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                      This fixture is locked outside its live window.
+                      {leagueFixtureWindow
+                        ? ` It opens ${leagueFixtureWindow.opensAt.toLocaleString()} and closes ${leagueFixtureWindow.dueAt.toLocaleString()}.`
+                        : ""}
                     </div>
                   ) : !userPendingSubmission && !userApprovedSubmission ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
