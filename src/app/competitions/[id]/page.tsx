@@ -371,6 +371,7 @@ export default function CompetitionPage() {
   const [generatingLeagueFixtures, setGeneratingLeagueFixtures] = useState(false);
   const [refreshingFutureHandicaps, setRefreshingFutureHandicaps] = useState(false);
   const [confirmLeagueGenerationOpen, setConfirmLeagueGenerationOpen] = useState(false);
+  const [entriesExpanded, setEntriesExpanded] = useState(false);
 
   const openBracketDisplay = () => {
     if (!id) return;
@@ -1177,35 +1178,46 @@ export default function CompetitionPage() {
                   </div>
                 ) : null}
                 {entries.length > 0 ? (
-                  <div className="mt-3 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    {entries.map((entry) => (
-                      <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                        <p className="text-sm text-slate-800">
-                          {fullMap.get(entry.player_id) ?? shortMap.get(entry.player_id) ?? "Unknown player"}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">{entry.status}</span>
-                          {admin.isAdmin && entry.status === "pending" ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => void reviewEntry(entry.id, "approved")}
-                                className="rounded-lg bg-emerald-700 px-2 py-1 text-xs text-white"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void reviewEntry(entry.id, "rejected")}
-                                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
-                              >
-                                Reject
-                              </button>
-                            </>
-                          ) : null}
-                        </div>
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <button
+                      type="button"
+                      onClick={() => setEntriesExpanded((current) => !current)}
+                      className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                    >
+                      {entriesExpanded ? "Hide entrants" : `Show entrants (${entries.length})`}
+                    </button>
+                    {entriesExpanded ? (
+                      <div className="mt-3 space-y-2">
+                        {entries.map((entry) => (
+                          <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <p className="text-sm text-slate-800">
+                              {fullMap.get(entry.player_id) ?? shortMap.get(entry.player_id) ?? "Unknown player"}
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">{entry.status}</span>
+                              {admin.isAdmin && entry.status === "pending" ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void reviewEntry(entry.id, "approved")}
+                                    className="rounded-lg bg-emerald-700 px-2 py-1 text-xs text-white"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void reviewEntry(entry.id, "rejected")}
+                                    className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    ) : null}
                   </div>
                 ) : (
                   <p className="mt-2 text-sm text-slate-600">No entries yet.</p>
