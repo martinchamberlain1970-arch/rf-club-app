@@ -1165,6 +1165,11 @@ export default function CompetitionPage() {
                               Week {week.week}
                               {week.scheduledFor ? ` · ${week.scheduledFor}` : ""}
                             </p>
+                            {week.matches.some((match) => Boolean(match.deadlineLabel)) ? (
+                              <p className="mt-1 text-xs text-slate-500">
+                                Play by {week.matches.find((match) => match.deadlineLabel)?.deadlineLabel}. If no result is submitted by then, the fixture is normally void with no points awarded. Request a walkover only for a genuine no-show.
+                              </p>
+                            ) : null}
                             <div className="mt-2 space-y-2">
                               {week.matches.map((match) =>
                                 match.isBye ? (
@@ -1180,14 +1185,7 @@ export default function CompetitionPage() {
                                     href={`/matches/${match.id}`}
                                     className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 transition hover:border-teal-300 hover:bg-teal-50"
                                   >
-                                    <span>
-                                      <span className="block">{match.label}</span>
-                                      {match.deadlineLabel ? (
-                                        <span className="block text-xs text-slate-500">
-                                          Play by {match.deadlineLabel}. If no result is submitted by then, the fixture is normally void with no points awarded. Request a walkover only for a genuine no-show.
-                                        </span>
-                                      ) : null}
-                                    </span>
+                                    <span>{match.label}</span>
                                     <span className={`rounded-full border px-2 py-0.5 text-xs ${match.chip.className}`}>
                                       {match.chip.label}
                                     </span>
