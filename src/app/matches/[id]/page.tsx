@@ -246,6 +246,13 @@ function getMatchStatusLabel(match: Match | null) {
   return match.status.replace("_", " ");
 }
 
+function normalizeAvatarUrl(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("/")) return trimmed;
+  return null;
+}
+
 function kFactor(avgRating: number, avgMatches: number) {
   if (avgMatches < 30) return 32;
   if (avgRating >= 1800) return 16;
@@ -551,7 +558,7 @@ export default function MatchPage() {
   }, [matchId, admin.loading, admin.isSuper]);
 
   const nameMap = useMemo(() => new Map(players.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name])), [players]);
-  const avatarMap = useMemo(() => new Map(players.map((p) => [p.id, p.avatar_url ?? null])), [players]);
+  const avatarMap = useMemo(() => new Map(players.map((p) => [p.id, normalizeAvatarUrl(p.avatar_url)])), [players]);
   const teams = useMemo(() => (match ? getTeamInfo(match, nameMap) : null), [match, nameMap]);
   const isSnooker = competition?.sport_type === "snooker";
   const isHandicappedSnookerMatch = Boolean(isSnooker && competition?.handicap_enabled && match?.match_mode === "singles");
