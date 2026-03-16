@@ -955,7 +955,7 @@ export default function CompetitionPage() {
           title="Generate weekly league fixtures?"
           description={
             projectedLeagueFixtureCount > 0
-              ? `This will generate ${projectedLeagueFixtureCount} weekly fixture${projectedLeagueFixtureCount === 1 ? "" : "s"} for the approved league field.`
+              ? `This will generate ${projectedLeagueFixtureCount} weekly fixture${projectedLeagueFixtureCount === 1 ? "" : "s"} over ${projectedLeagueRounds.length} week${projectedLeagueRounds.length === 1 ? "" : "s"} for the approved league field.`
               : "This will generate weekly fixtures for the approved league field."
           }
           confirmLabel="Generate Fixtures"
