@@ -404,8 +404,8 @@ export default function MatchPage() {
       }
 
       let effectiveMatch = loadedMatch;
-      let effectiveFrameRows = (framesRes.data ?? []) as FrameRow[];
-      let effectiveSubmissionRows = (submissionsRes.data ?? []) as ResultSubmission[];
+      let effectiveFrameRows = ((framesRes.data ?? []) as unknown) as FrameRow[];
+      let effectiveSubmissionRows = ((submissionsRes.data ?? []) as unknown) as ResultSubmission[];
       const sessionRes = await client.auth.getSession();
       const accessToken = sessionRes.data.session?.access_token ?? null;
       if (accessToken && competitionRes.data.competition_format === "league") {
@@ -436,12 +436,12 @@ export default function MatchPage() {
             .eq("match_id", matchId)
             .order("submitted_at", { ascending: false }),
         ]);
-        if (refreshedMatchRes.data) effectiveMatch = refreshedMatchRes.data as Match;
-        if (!refreshedFramesRes.error) effectiveFrameRows = (refreshedFramesRes.data ?? []) as FrameRow[];
-        if (!refreshedSubmissionsRes.error) effectiveSubmissionRows = (refreshedSubmissionsRes.data ?? []) as ResultSubmission[];
+        if (refreshedMatchRes.data) effectiveMatch = (refreshedMatchRes.data as unknown) as Match;
+        if (!refreshedFramesRes.error) effectiveFrameRows = ((refreshedFramesRes.data ?? []) as unknown) as FrameRow[];
+        if (!refreshedSubmissionsRes.error) effectiveSubmissionRows = ((refreshedSubmissionsRes.data ?? []) as unknown) as ResultSubmission[];
       }
 
-      const loadedPlayers = playersRes.data as Player[];
+      const loadedPlayers = (playersRes.data as unknown) as Player[];
       const names = new Map(loadedPlayers.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name]));
       const teams = getTeamInfo(effectiveMatch, names);
 
@@ -471,7 +471,7 @@ export default function MatchPage() {
       setPlayers(loadedPlayers);
       setAdminLocationId(adminLocRes ?? null);
       setViewerLinkedPlayerId(linkedPlayerId);
-      setCompetition(competitionRes.data as CompetitionSettings);
+      setCompetition((competitionRes.data as unknown) as CompetitionSettings);
       setFrames(existing.length > 0 ? existing : [createEmptyFrame(1)]);
       setSubmissions(effectiveSubmissionRows);
       setLoading(false);

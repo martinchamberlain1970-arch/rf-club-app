@@ -417,7 +417,7 @@ export default function CompetitionPage() {
         setMessage(cRes.error?.message ?? "Failed to load competition.");
         return;
       }
-      const comp = cRes.data as Competition;
+      const comp = (cRes.data as unknown) as Competition;
       const sessionRes = await client.auth.getSession();
       const accessToken = sessionRes.data.session?.access_token ?? null;
       if (accessToken && comp.competition_format === "league") {
@@ -437,9 +437,9 @@ export default function CompetitionPage() {
         .eq("is_archived", false)
         .order("round_no")
         .order("match_no");
-      let loadedMatches = (mRes.data ?? []) as Match[];
+      let loadedMatches = ((mRes.data ?? []) as unknown) as Match[];
       if (refreshedMatchRes.data) {
-        loadedMatches = refreshedMatchRes.data as Match[];
+        loadedMatches = (refreshedMatchRes.data as unknown) as Match[];
       }
       setCompetition(comp);
       setCurrentUserId(signedInUserId);
@@ -456,15 +456,15 @@ export default function CompetitionPage() {
         if (refreshed.data) loadedMatches = refreshed.data as Match[];
       }
       setMatches(loadedMatches);
-      setPlayers((pRes.data ?? []) as Player[]);
-      setFrames((fRes.data ?? []) as Frame[]);
+      setPlayers(((pRes.data ?? []) as unknown) as Player[]);
+      setFrames(((fRes.data ?? []) as unknown) as Frame[]);
       const entryRes = await client
         .from("competition_entries")
         .select("id,competition_id,requester_user_id,player_id,status,created_at")
         .eq("competition_id", id)
         .neq("status", "withdrawn")
         .order("created_at", { ascending: false });
-      if (entryRes.data) setEntries(entryRes.data as Entry[]);
+      if (entryRes.data) setEntries((entryRes.data as unknown) as Entry[]);
       const submissionRes = loadedMatches.length
         ? await client
             .from("result_submissions")
@@ -472,7 +472,7 @@ export default function CompetitionPage() {
             .in("match_id", loadedMatches.map((m) => m.id))
             .order("submitted_at", { ascending: false })
         : { data: [] as ResultSubmission[] };
-      if ("data" in submissionRes && submissionRes.data) setResultSubmissions(submissionRes.data as ResultSubmission[]);
+      if ("data" in submissionRes && submissionRes.data) setResultSubmissions((submissionRes.data as unknown) as ResultSubmission[]);
       setSignupDeadlineInput(comp.signup_deadline ? new Date(comp.signup_deadline).toISOString().slice(0, 16) : "");
       setSignupMaxEntriesInput(comp.max_entries ? String(comp.max_entries) : "");
       setLeagueMeetingsInput(String(comp.league_meetings ?? 2));
