@@ -649,6 +649,10 @@ export default function CompetitionPage() {
         label: string;
         status: string;
         isBye: boolean;
+        chip: {
+          label: string;
+          className: string;
+        };
       }>;
     }>;
     const grouped = new Map<number, Match[]>();
