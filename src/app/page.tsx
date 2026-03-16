@@ -37,6 +37,7 @@ const adminToolLinks = [
 const systemToolLinks = [
   { href: "/locations", title: "Locations", desc: "Review and tidy club and venue records." },
   { href: "/signup-requests", title: "Signup Requests", desc: "Review pending access, profile, and child requests." },
+  { href: "/snooker-handicap-exceptions", title: "Handicap Exceptions", desc: "Set first-time snooker handicaps and seed starting Elo." },
   { href: "/reschedules", title: "Reschedules", desc: "Review one-week league reschedule requests." },
   { href: "/backup", title: "Data Management", desc: "Run maintenance and data cleanup tools." },
   { href: "/audit", title: "Audit Log", desc: "Check important account and system actions." },
