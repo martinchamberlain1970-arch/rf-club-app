@@ -586,6 +586,7 @@ export default function MatchPage() {
     if (!admin.userId) return null;
     return submissions.find((s) => s.submitted_by_user_id === admin.userId && s.status === "pending") ?? null;
   }, [admin.userId, submissions]);
+  const canAdminManageMatch = admin.isAdmin || admin.isSuper;
   const hasPendingSubmission = useMemo(() => submissions.some((s) => s.status === "pending"), [submissions]);
   const pendingSubmissionForReview = useMemo(() => submissions.find((s) => s.status === "pending") ?? null, [submissions]);
   const adminReviewOnly = Boolean(canAdminManageMatch && hasPendingSubmission && !isArchived && !isByeMatch && match?.status !== "complete");
@@ -618,7 +619,6 @@ export default function MatchPage() {
     if (!match || competition?.competition_format !== "league") return null;
     return getLeagueFixtureWindow(match.scheduled_for);
   }, [competition?.competition_format, match]);
-  const canAdminManageMatch = admin.isAdmin || admin.isSuper;
   const playerLeagueWindowOpen = useMemo(() => {
     if (!leagueFixtureWindow) return true;
     const now = new Date();
