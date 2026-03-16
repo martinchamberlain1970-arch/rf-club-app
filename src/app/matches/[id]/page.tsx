@@ -2525,6 +2525,39 @@ export default function MatchPage() {
                       <p className="text-sm text-slate-700">
                         Score: {teams.team1Label} {s.team1_score} - {s.team2_score} {teams.team2Label}
                       </p>
+                      {isSnooker && s.status === "pending" && frames.length ? (
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-sm font-semibold text-slate-900">Submitted frame detail</p>
+                          <div className="mt-2 space-y-2">
+                            {frames.map((frame) => {
+                              const winnerLabel =
+                                frame.winner_side === 1
+                                  ? teams.team1Label
+                                  : frame.winner_side === 2
+                                    ? teams.team2Label
+                                    : "No winner set";
+                              return (
+                                <div key={frame.frame_number} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="font-medium text-slate-900">Frame {frame.frame_number}</p>
+                                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
+                                      {winnerLabel}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 text-slate-700">
+                                    {teams.team1Label} {frame.team1_points} - {frame.team2_points} {teams.team2Label}
+                                  </p>
+                                  {(frame.breaks_over_30_team1_values_text || frame.breaks_over_30_team2_values_text) ? (
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      Breaks over 30: {teams.team1Label} {frame.breaks_over_30_team1_values_text || "—"} · {teams.team2Label} {frame.breaks_over_30_team2_values_text || "—"}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
                       {!isSnooker ? (
                         <>
                           <p className="text-xs text-slate-500">
