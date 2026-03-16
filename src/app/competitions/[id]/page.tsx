@@ -54,6 +54,10 @@ type Entry = {
   status: "pending" | "approved" | "rejected" | "withdrawn";
   created_at: string;
 };
+type Frame = {
+  match_id: string;
+  winner_player_id: string | null;
+};
 type LeaguePairing = {
   player1: string;
   player2: string | null;
@@ -301,6 +305,7 @@ export default function CompetitionPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [frames, setFrames] = useState<Frame[]>([]);
   const [signupDeadlineInput, setSignupDeadlineInput] = useState("");
   const [signupMaxEntriesInput, setSignupMaxEntriesInput] = useState("");
   const [leagueMeetingsInput, setLeagueMeetingsInput] = useState("2");
@@ -355,7 +360,7 @@ export default function CompetitionPage() {
     if (!client) return;
     let active = true;
     const load = async () => {
-      const [cRes, mRes, pRes] = await Promise.all([
+      const [cRes, mRes, pRes, fRes] = await Promise.all([
         client
           .from("competitions")
           .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,league_meetings,league_start_date")
@@ -369,6 +374,7 @@ export default function CompetitionPage() {
           .order("round_no")
           .order("match_no"),
         client.from("players").select("id,display_name,full_name"),
+        client.from("frames").select("match_id,winner_player_id"),
       ]);
       if (!active) return;
       if (cRes.error || !cRes.data) {
@@ -391,6 +397,7 @@ export default function CompetitionPage() {
       }
       setMatches(loadedMatches);
       setPlayers((pRes.data ?? []) as Player[]);
+      setFrames((fRes.data ?? []) as Frame[]);
       const entryRes = await client
         .from("competition_entries")
         .select("id,competition_id,requester_user_id,player_id,status,created_at")
@@ -522,6 +529,8 @@ export default function CompetitionPage() {
       .order("round_no")
       .order("match_no");
     if (reload.data) setMatches(reload.data as Match[]);
+    const frameReload = await client.from("frames").select("match_id,winner_player_id");
+    if (frameReload.data) setFrames(frameReload.data as Frame[]);
   };
 
   const bracketRounds = useMemo(() => {
@@ -646,8 +655,9 @@ export default function CompetitionPage() {
       lost: number;
       voided: number;
       byes: number;
-      points: number;
-    }>;
+        points: number;
+        framesFor: number;
+      }>;
     const stats = new Map<string, {
       playerId: string;
       playerName: string;
@@ -657,6 +667,7 @@ export default function CompetitionPage() {
       voided: number;
       byes: number;
       points: number;
+      framesFor: number;
     }>();
     const ensureRow = (playerId: string) => {
       const existing = stats.get(playerId);
@@ -670,12 +681,20 @@ export default function CompetitionPage() {
         voided: 0,
         byes: 0,
         points: 0,
+        framesFor: 0,
       };
       stats.set(playerId, row);
       return row;
     };
 
     approvedLeaguePlayerIds.forEach((playerId) => ensureRow(playerId));
+
+    const framesByMatch = new Map<string, Frame[]>();
+    frames.forEach((frame) => {
+      const prev = framesByMatch.get(frame.match_id) ?? [];
+      prev.push(frame);
+      framesByMatch.set(frame.match_id, prev);
+    });
 
     matches.forEach((match) => {
       if (!match.player1_id) return;
@@ -688,6 +707,23 @@ export default function CompetitionPage() {
       if (match.status !== "complete") return;
       row1.played += 1;
       if (row2) row2.played += 1;
+      const matchFrames = framesByMatch.get(match.id) ?? [];
+      let player1Frames = 0;
+      let player2Frames = 0;
+      for (const frame of matchFrames) {
+        if (frame.winner_player_id === match.player1_id) player1Frames += 1;
+        if (row2 && frame.winner_player_id === match.player2_id) player2Frames += 1;
+      }
+      if (!matchFrames.length && match.winner_player_id) {
+        if (match.winner_player_id === match.player1_id) player1Frames = 1;
+        if (row2 && match.winner_player_id === match.player2_id) player2Frames = 1;
+      }
+      row1.framesFor += player1Frames;
+      row1.points += player1Frames;
+      if (row2) {
+        row2.framesFor += player2Frames;
+        row2.points += player2Frames;
+      }
       if (!match.winner_player_id) {
         row1.voided += 1;
         if (row2) row2.voided += 1;
@@ -695,11 +731,9 @@ export default function CompetitionPage() {
       }
       if (match.winner_player_id === match.player1_id) {
         row1.won += 1;
-        row1.points += 1;
         if (row2) row2.lost += 1;
       } else if (row2 && match.winner_player_id === match.player2_id) {
         row2.won += 1;
-        row2.points += 1;
         row1.lost += 1;
       }
     });
@@ -710,7 +744,7 @@ export default function CompetitionPage() {
       a.lost - b.lost ||
       a.playerName.localeCompare(b.playerName)
     );
-  }, [competition, matches, approvedLeaguePlayerIds, fullMap, shortMap]);
+  }, [competition, matches, frames, approvedLeaguePlayerIds, fullMap, shortMap]);
   const totalBracketRounds = bracketRounds.length;
   const matchesByKey = useMemo(() => {
     const m = new Map<string, Match>();
@@ -970,31 +1004,32 @@ export default function CompetitionPage() {
                     <div className="mt-4 space-y-4">
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p className="text-sm font-semibold text-slate-900">League table</p>
+                        <p className="mt-1 text-xs text-slate-500">Points are based on frames or racks won. Completed void fixtures score no points.</p>
                         <div className="mt-3 overflow-x-auto">
                           <table className="min-w-full text-sm">
-                            <thead className="text-left text-slate-500">
+                            <thead className="text-slate-500">
                               <tr>
-                                <th className="px-2 py-2">#</th>
-                                <th className="px-2 py-2">Player</th>
-                                <th className="px-2 py-2 text-right">P</th>
-                                <th className="px-2 py-2 text-right">W</th>
-                                <th className="px-2 py-2 text-right">L</th>
-                                <th className="px-2 py-2 text-right">Void</th>
-                                <th className="px-2 py-2 text-right">Bye</th>
-                                <th className="px-2 py-2 text-right">Pts</th>
+                                <th className="px-2 py-2 text-center">#</th>
+                                <th className="px-2 py-2 text-left">Player</th>
+                                <th className="px-2 py-2 text-center">P</th>
+                                <th className="px-2 py-2 text-center">W</th>
+                                <th className="px-2 py-2 text-center">L</th>
+                                <th className="px-2 py-2 text-center">Void</th>
+                                <th className="px-2 py-2 text-center">Bye</th>
+                                <th className="px-2 py-2 text-center">Pts</th>
                               </tr>
                             </thead>
                             <tbody>
                               {leagueTableRows.map((row, index) => (
                                 <tr key={row.playerId} className="border-t border-slate-200 text-slate-800">
-                                  <td className="px-2 py-2">{index + 1}</td>
+                                  <td className="px-2 py-2 text-center tabular-nums">{index + 1}</td>
                                   <td className="px-2 py-2 font-medium">{row.playerName}</td>
-                                  <td className="px-2 py-2 text-right">{row.played}</td>
-                                  <td className="px-2 py-2 text-right">{row.won}</td>
-                                  <td className="px-2 py-2 text-right">{row.lost}</td>
-                                  <td className="px-2 py-2 text-right">{row.voided}</td>
-                                  <td className="px-2 py-2 text-right">{row.byes}</td>
-                                  <td className="px-2 py-2 text-right font-semibold">{row.points}</td>
+                                  <td className="px-2 py-2 text-center tabular-nums">{row.played}</td>
+                                  <td className="px-2 py-2 text-center tabular-nums">{row.won}</td>
+                                  <td className="px-2 py-2 text-center tabular-nums">{row.lost}</td>
+                                  <td className="px-2 py-2 text-center tabular-nums">{row.voided}</td>
+                                  <td className="px-2 py-2 text-center tabular-nums">{row.byes}</td>
+                                  <td className="px-2 py-2 text-center font-semibold tabular-nums">{row.points}</td>
                                 </tr>
                               ))}
                             </tbody>

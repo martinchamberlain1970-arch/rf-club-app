@@ -8,7 +8,7 @@ import ScreenHeader from "@/components/ScreenHeader";
 import useAdminStatus from "@/components/useAdminStatus";
 import MessageModal from "@/components/MessageModal";
 
-type FormatFilter = "all" | "knockout";
+type FormatFilter = "all" | "knockout" | "league";
 type SportFilter = "all" | "pool_8_ball" | "pool_9_ball" | "snooker";
 type ModeFilter = "singles" | "doubles";
 type ViewFilter = "table" | "head_to_head" | "predictor";
@@ -1016,7 +1016,7 @@ export default function StatsPage() {
     {
       label: "Sport",
       value: sport === "all" ? "All sports" : sport === "snooker" ? "Snooker" : sport === "pool_9_ball" ? "Pool (9-ball)" : "Pool (8-ball)",
-      sub: format === "all" ? "all formats" : "knockout",
+      sub: format === "all" ? "all formats" : format === "league" ? "league" : "knockout",
     },
   ];
 
@@ -1072,6 +1072,7 @@ export default function StatsPage() {
                         <select className={fieldClass} value={format} onChange={(e) => setFormat(e.target.value as FormatFilter)}>
                           <option value="all">All formats</option>
                           <option value="knockout">Knockout</option>
+                          <option value="league">League</option>
                         </select>
                       </div>
                       <div className={filterItemClass}>
