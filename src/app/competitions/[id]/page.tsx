@@ -853,6 +853,7 @@ export default function CompetitionPage() {
               }
             }
             let handicapLabel: string | null = null;
+            if (!match.status || match.status !== "bye") {
             if (competition.handicap_enabled && competition.sport_type === "snooker" && (competition.match_mode ?? "singles") !== "doubles") {
               const team1Start = match.team1_handicap_start ?? 0;
               const team2Start = match.team2_handicap_start ?? 0;
@@ -863,6 +864,7 @@ export default function CompetitionPage() {
               } else {
                 handicapLabel = "Level start";
               }
+            }
             }
             return {
               id: match.id,
