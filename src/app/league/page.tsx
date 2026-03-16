@@ -445,7 +445,7 @@ export default function LeaguePage() {
     [submissions]
   );
   const activeKnockoutSignups = useMemo(
-    () => knockoutSignups.filter((s) => s.status === "entered"),
+    () => knockoutSignups.filter((s) => s.status === "approved" || s.status === "pending"),
     [knockoutSignups]
   );
   const myKnockoutSignupByEventId = useMemo(() => {
@@ -1870,14 +1870,14 @@ export default function LeaguePage() {
       return;
     }
     const existing = knockoutSignups.find((s) => s.event_id === eventId && s.user_id === currentUserId);
-    if (existing && existing.status === "entered") {
+    if (existing && (existing.status === "approved" || existing.status === "pending")) {
       setMessage("You are already entered for this knockout competition.");
       return;
     }
     if (existing) {
       const { error } = await client
         .from("league_knockout_signups")
-        .update({ status: "entered", player_id: currentUserPlayerId })
+        .update({ status: "approved", player_id: currentUserPlayerId })
         .eq("id", existing.id);
       if (error) {
         setMessage(error.message);
@@ -1888,7 +1888,7 @@ export default function LeaguePage() {
         event_id: eventId,
         user_id: currentUserId,
         player_id: currentUserPlayerId,
-        status: "entered",
+        status: "approved",
       });
       if (error) {
         setMessage(error.message);
@@ -1902,7 +1902,9 @@ export default function LeaguePage() {
   const withdrawKnockout = async (eventId: string) => {
     const client = supabase;
     if (!client || !currentUserId) return;
-    const existing = knockoutSignups.find((s) => s.event_id === eventId && s.user_id === currentUserId && s.status === "entered");
+    const existing = knockoutSignups.find(
+      (s) => s.event_id === eventId && s.user_id === currentUserId && (s.status === "approved" || s.status === "pending")
+    );
     if (!existing) return;
     const { error } = await client.from("league_knockout_signups").update({ status: "withdrawn" }).eq("id", existing.id);
     if (error) {
