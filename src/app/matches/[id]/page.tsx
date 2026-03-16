@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
@@ -2066,14 +2065,22 @@ export default function MatchPage() {
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-3xl font-semibold text-slate-900">
                   <div className="flex items-center gap-2">
                     {teams.team1Rep && avatarMap.get(teams.team1Rep) ? (
-                      <Image src={avatarMap.get(teams.team1Rep) ?? ""} alt={teams.team1Label} width={32} height={32} className="h-8 w-8 rounded-full object-cover" />
+                      <img
+                        src={avatarMap.get(teams.team1Rep) ?? ""}
+                        alt={teams.team1Label}
+                        className="h-8 w-8 rounded-full object-cover"
+                      />
                     ) : null}
                     <span>{teams.team1Label}</span>
                   </div>
                   <span>vs</span>
                   <div className="flex items-center gap-2">
                     {teams.team2Rep && avatarMap.get(teams.team2Rep) ? (
-                      <Image src={avatarMap.get(teams.team2Rep) ?? ""} alt={teams.team2Label} width={32} height={32} className="h-8 w-8 rounded-full object-cover" />
+                      <img
+                        src={avatarMap.get(teams.team2Rep) ?? ""}
+                        alt={teams.team2Label}
+                        className="h-8 w-8 rounded-full object-cover"
+                      />
                     ) : null}
                     <span>{teams.team2Label}</span>
                   </div>
