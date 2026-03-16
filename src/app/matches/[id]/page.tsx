@@ -404,8 +404,8 @@ export default function MatchPage() {
       }
 
       let effectiveMatch = loadedMatch;
-      let effectiveFramesRes = framesRes;
-      let effectiveSubmissionsRes = submissionsRes;
+      let effectiveFrameRows = (framesRes.data ?? []) as FrameRow[];
+      let effectiveSubmissionRows = (submissionsRes.data ?? []) as ResultSubmission[];
       const sessionRes = await client.auth.getSession();
       const accessToken = sessionRes.data.session?.access_token ?? null;
       if (accessToken && competitionRes.data.competition_format === "league") {
@@ -437,15 +437,15 @@ export default function MatchPage() {
             .order("submitted_at", { ascending: false }),
         ]);
         if (refreshedMatchRes.data) effectiveMatch = refreshedMatchRes.data as Match;
-        effectiveFramesRes = refreshedFramesRes;
-        effectiveSubmissionsRes = refreshedSubmissionsRes;
+        if (!refreshedFramesRes.error) effectiveFrameRows = (refreshedFramesRes.data ?? []) as FrameRow[];
+        if (!refreshedSubmissionsRes.error) effectiveSubmissionRows = (refreshedSubmissionsRes.data ?? []) as ResultSubmission[];
       }
 
       const loadedPlayers = playersRes.data as Player[];
       const names = new Map(loadedPlayers.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name]));
       const teams = getTeamInfo(effectiveMatch, names);
 
-      const existing = ((effectiveFramesRes.data ?? []) as FrameRow[])
+      const existing = effectiveFrameRows
         .filter((x) => !x.is_walkover_award)
         .map((x) => ({
           frame_number: x.frame_number,
@@ -473,7 +473,7 @@ export default function MatchPage() {
       setViewerLinkedPlayerId(linkedPlayerId);
       setCompetition(competitionRes.data as CompetitionSettings);
       setFrames(existing.length > 0 ? existing : [createEmptyFrame(1)]);
-      setSubmissions(((effectiveSubmissionsRes.data ?? []) as ResultSubmission[]));
+      setSubmissions(effectiveSubmissionRows);
       setLoading(false);
     };
 
