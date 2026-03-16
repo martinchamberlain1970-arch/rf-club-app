@@ -274,12 +274,7 @@ export default function MatchPage() {
   const [confirmEditComplete, setConfirmEditComplete] = useState(false);
   const [submissions, setSubmissions] = useState<ResultSubmission[]>([]);
   const [adminLocationId, setAdminLocationId] = useState<string | null>(null);
-  const [submitScoreA, setSubmitScoreA] = useState("0");
-  const [submitScoreB, setSubmitScoreB] = useState("0");
-  const [submitBreakRunA, setSubmitBreakRunA] = useState(0);
-  const [submitBreakRunB, setSubmitBreakRunB] = useState(0);
-  const [submitRunOutA, setSubmitRunOutA] = useState(0);
-  const [submitRunOutB, setSubmitRunOutB] = useState(0);
+  const [viewerLinkedPlayerId, setViewerLinkedPlayerId] = useState<string | null>(null);
   const [assigningBreaker, setAssigningBreaker] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
@@ -333,16 +328,19 @@ export default function MatchPage() {
       const loadedMatch = mRes.data as Match;
       setMatch(loadedMatch);
       setConfirmEditComplete(loadedMatch.status !== "complete");
-      setSubmitScoreA(String(firstToWin(loadedMatch.best_of)));
-      setSubmitScoreB("0");
+
+      const authRes = await client.auth.getUser();
+      const signedInUserId = authRes.data.user?.id ?? null;
+      let linkedPlayerId: string | null = null;
+      if (signedInUserId) {
+        const linkRes = await client.from("app_users").select("linked_player_id").eq("id", signedInUserId).maybeSingle();
+        linkedPlayerId = (linkRes.data?.linked_player_id as string | null) ?? null;
+      }
 
       const [adminLocRes, playersRes, competitionRes, framesRes, submissionsRes] = await Promise.all([
         (async () => {
-          const u = await client.auth.getUser();
-          const uid = u.data.user?.id;
-          if (!uid || admin.isSuper) return null;
-          const appRes = await client.from("app_users").select("linked_player_id").eq("id", uid).maybeSingle();
-          const linked = appRes.data?.linked_player_id;
+          if (!signedInUserId || admin.isSuper || !admin.isAdmin) return null;
+          const linked = linkedPlayerId;
           if (!linked) return null;
           const p = await client.from("players").select("location_id").eq("id", linked).maybeSingle();
           return (p.data?.location_id as string | null) ?? null;
@@ -416,6 +414,7 @@ export default function MatchPage() {
 
       setPlayers(loadedPlayers);
       setAdminLocationId(adminLocRes ?? null);
+      setViewerLinkedPlayerId(linkedPlayerId);
       setCompetition(competitionRes.data as CompetitionSettings);
       setFrames(existing.length > 0 ? existing : [createEmptyFrame(1)]);
       setSubmissions((submissionsRes.data ?? []) as ResultSubmission[]);
@@ -438,13 +437,6 @@ export default function MatchPage() {
     [match]
   );
   const isArchived = Boolean(match?.is_archived);
-  const submitScoreAValue = Number(submitScoreA) || 0;
-  const submitScoreBValue = Number(submitScoreB) || 0;
-  const submitTotal = Math.max(0, submitScoreAValue) + Math.max(0, submitScoreBValue);
-  const submitMaxA = Math.max(0, submitScoreAValue);
-  const submitMaxB = Math.max(0, submitScoreBValue);
-  const submitWinnerTarget = match ? firstToWin(match.best_of) : 0;
-  const submitScoreOptions = Array.from({ length: submitWinnerTarget + 1 }, (_, i) => i);
 
   const wins = useMemo(() => {
     return {
@@ -485,32 +477,21 @@ export default function MatchPage() {
     );
   }, [admin.userId, submissions]);
   const userSubmissionLocked = Boolean(userPendingSubmission || userApprovedSubmission || match?.status === "complete");
-
-  const handleSubmitScoreAChange = (raw: string) => {
-    const target = submitWinnerTarget;
-    if (target <= 0) {
-      setSubmitScoreA(raw);
-      return;
+  const viewerCanEditThisMatch = useMemo(() => {
+    if (!match || !viewerLinkedPlayerId) return false;
+    if (match.match_mode === "singles") {
+      return match.player1_id === viewerLinkedPlayerId || match.player2_id === viewerLinkedPlayerId;
     }
-    const nextA = Math.max(0, Math.min(target, Number(raw) || 0));
-    const currentB = Math.max(0, Math.min(target, Number(submitScoreB) || 0));
-    const nextB = nextA === target ? Math.min(currentB, target - 1) : target;
-    setSubmitScoreA(String(nextA));
-    setSubmitScoreB(String(nextB));
-  };
-
-  const handleSubmitScoreBChange = (raw: string) => {
-    const target = submitWinnerTarget;
-    if (target <= 0) {
-      setSubmitScoreB(raw);
-      return;
-    }
-    const nextB = Math.max(0, Math.min(target, Number(raw) || 0));
-    const currentA = Math.max(0, Math.min(target, Number(submitScoreA) || 0));
-    const nextA = nextB === target ? Math.min(currentA, target - 1) : target;
-    setSubmitScoreA(String(nextA));
-    setSubmitScoreB(String(nextB));
-  };
+    return [
+      match.team1_player1_id,
+      match.team1_player2_id,
+      match.team2_player1_id,
+      match.team2_player2_id,
+    ].includes(viewerLinkedPlayerId);
+  }, [match, viewerLinkedPlayerId]);
+  const canAdminEditFrames = Boolean(!isByeMatch && !isArchived && admin.isAdmin && !adminReviewOnly);
+  const canParticipantEditFrames = Boolean(!admin.loading && !admin.isAdmin && viewerCanEditThisMatch && !userSubmissionLocked && !isByeMatch && !isArchived);
+  const canEditFrames = canAdminEditFrames || canParticipantEditFrames;
 
   const assignOpeningBreaker = async (playerId: string) => {
     const client = supabase;
@@ -645,6 +626,79 @@ export default function MatchPage() {
   const clearFrames = () => {
     if (isByeMatch || isArchived) return;
     setFrames([createEmptyFrame(1)]);
+  };
+
+  const buildFullResultRows = () => {
+    if (!match || !teams) return { ok: false as const, error: "Match is not ready." };
+    let rows: Array<{
+      match_id: string;
+      frame_number: number;
+      winner_player_id: string | null;
+      break_and_run: boolean;
+      run_out_against_break: boolean;
+      is_walkover_award: boolean;
+      team1_points: number;
+      team2_points: number;
+      breaks_over_30_team1_values: number[];
+      breaks_over_30_team2_values: number[];
+      breaks_over_30_team1: number;
+      breaks_over_30_team2: number;
+      high_break_team1: number;
+      high_break_team2: number;
+    }> = [];
+    let breakRunTeam1 = 0;
+    let breakRunTeam2 = 0;
+    let runOutTeam1 = 0;
+    let runOutTeam2 = 0;
+
+    for (const f of frames) {
+      if (f.winner_side === 0) continue;
+      const parsed1 = parseBreakValues(f.breaks_over_30_team1_values_text);
+      if (!parsed1.ok) return { ok: false as const, error: parsed1.error };
+      const parsed2 = parseBreakValues(f.breaks_over_30_team2_values_text);
+      if (!parsed2.ok) return { ok: false as const, error: parsed2.error };
+      const valid1 = validateBreaksAgainstPoints(teams.team1Label, f.team1_points, parsed1.values);
+      if (!valid1.ok) return { ok: false as const, error: valid1.error };
+      const valid2 = validateBreaksAgainstPoints(teams.team2Label, f.team2_points, parsed2.values);
+      if (!valid2.ok) return { ok: false as const, error: valid2.error };
+      if (f.break_and_run) {
+        if (f.winner_side === 1) breakRunTeam1 += 1;
+        if (f.winner_side === 2) breakRunTeam2 += 1;
+      }
+      if (f.run_out_against_break) {
+        if (f.winner_side === 1) runOutTeam1 += 1;
+        if (f.winner_side === 2) runOutTeam2 += 1;
+      }
+      rows.push({
+        match_id: match.id,
+        frame_number: f.frame_number,
+        winner_player_id: f.winner_side === 1 ? teams.team1Rep : f.winner_side === 2 ? teams.team2Rep : null,
+        break_and_run: isSnooker ? false : f.break_and_run,
+        run_out_against_break: isSnooker ? false : f.run_out_against_break,
+        is_walkover_award: false,
+        team1_points: isSnooker ? f.team1_points : 0,
+        team2_points: isSnooker ? f.team2_points : 0,
+        breaks_over_30_team1_values: isSnooker ? parsed1.values : [],
+        breaks_over_30_team2_values: isSnooker ? parsed2.values : [],
+        breaks_over_30_team1: isSnooker ? parsed1.values.length : 0,
+        breaks_over_30_team2: isSnooker ? parsed2.values.length : 0,
+        high_break_team1: isSnooker && parsed1.values.length ? Math.max(...parsed1.values) : 0,
+        high_break_team2: isSnooker && parsed2.values.length ? Math.max(...parsed2.values) : 0,
+      });
+    }
+
+    return {
+      ok: true as const,
+      rows,
+      summary: {
+        team1Score: rows.filter((r) => r.winner_player_id === teams.team1Rep).length,
+        team2Score: rows.filter((r) => r.winner_player_id === teams.team2Rep).length,
+        breakRunTeam1,
+        breakRunTeam2,
+        runOutTeam1,
+        runOutTeam2,
+      },
+    };
   };
 
   const persistFrames = async (
@@ -1238,10 +1292,14 @@ export default function MatchPage() {
     router.push(`/competitions/${match.competition_id}`);
   };
 
-  const submitResult = async () => {
+  const submitDetailedResult = async () => {
     const showSubmitModal = (description: string, title = "Submit Result") => setInfoModal({ title, description });
     if (admin.isAdmin) return;
     if (!match || !teams) return;
+    if (!viewerCanEditThisMatch) {
+      showSubmitModal("You can only submit the full result for your own fixture. Other fixtures are view only.");
+      return;
+    }
     if (match.status === "complete") {
       showSubmitModal("This match is already complete and locked.");
       return;
@@ -1254,50 +1312,28 @@ export default function MatchPage() {
       showSubmitModal("Your submitted result has already been approved. This match is locked.");
       return;
     }
-    const a = Number(submitScoreA);
-    const b = Number(submitScoreB);
-    if (Number.isNaN(a) || Number.isNaN(b) || !Number.isInteger(a) || !Number.isInteger(b)) {
-      showSubmitModal("Enter whole-number scores.");
+    if (!canSaveResult) {
+      showSubmitModal(`Best of ${match.best_of}: first to ${firstToWin(match.best_of)} wins.`);
       return;
     }
-    const target = firstToWin(match.best_of);
-    if (a < 0 || b < 0 || a + b === 0) {
-      showSubmitModal("Enter a valid score.");
+    const built = buildFullResultRows();
+    if (!built.ok) {
+      showSubmitModal(built.error, "Invalid Result");
       return;
-    }
-    if (a + b > match.best_of) {
-      showSubmitModal(`Total score cannot exceed best of ${match.best_of}.`);
-      return;
-    }
-    const validFinalScore = (a === target && b < target) || (b === target && a < target);
-    if (!validFinalScore) {
-      showSubmitModal("Select the final score using the dropdowns.");
-      return;
-    }
-    const maxA = Math.max(0, Math.min(a, target));
-    const maxB = Math.max(0, Math.min(b, target));
-    const totalMax = maxA + maxB;
-    const brA = isSnooker ? 0 : Math.min(submitBreakRunA, maxA);
-    const brB = isSnooker ? 0 : Math.min(submitBreakRunB, maxB);
-    const roA = isSnooker ? 0 : Math.min(submitRunOutA, maxA);
-    const roB = isSnooker ? 0 : Math.min(submitRunOutB, maxB);
-    if (!isSnooker) {
-      if (brA + brB + roA + roB > totalMax) {
-        showSubmitModal(`Break & Run / Run Out counts cannot exceed total racks/frames played (${totalMax}).`);
-        return;
-      }
-      if (brA > 0 && roA > 0) {
-        showSubmitModal("Team 1 cannot have both Break & Run and Run Out counts.");
-        return;
-      }
-      if (brB > 0 && roB > 0) {
-        showSubmitModal("Team 2 cannot have both Break & Run and Run Out counts.");
-        return;
-      }
     }
     const client = supabase;
     if (!client || !admin.userId) {
       showSubmitModal("You must be signed in.");
+      return;
+    }
+    const save = await persistFrames(built.rows);
+    if (!save.ok) {
+      showSubmitModal(save.error);
+      return;
+    }
+    const update = await client.from("matches").update({ status: "in_progress", winner_player_id: null }).eq("id", match.id);
+    if (update.error) {
+      showSubmitModal(update.error.message || "Unable to save the submitted result.");
       return;
     }
     const res = await client
@@ -1305,14 +1341,14 @@ export default function MatchPage() {
       .insert({
         match_id: match.id,
         submitted_by_user_id: admin.userId,
-        team1_score: a,
-        team2_score: b,
-        break_and_run: brA + brB > 0,
-        run_out_against_break: roA + roB > 0,
-        break_and_run_team1: brA,
-        break_and_run_team2: brB,
-        run_out_against_break_team1: roA,
-        run_out_against_break_team2: roB,
+        team1_score: built.summary.team1Score,
+        team2_score: built.summary.team2Score,
+        break_and_run: built.summary.breakRunTeam1 + built.summary.breakRunTeam2 > 0,
+        run_out_against_break: built.summary.runOutTeam1 + built.summary.runOutTeam2 > 0,
+        break_and_run_team1: built.summary.breakRunTeam1,
+        break_and_run_team2: built.summary.breakRunTeam2,
+        run_out_against_break_team1: built.summary.runOutTeam1,
+        run_out_against_break_team2: built.summary.runOutTeam2,
         status: "pending",
       })
       .select("*")
@@ -1325,17 +1361,11 @@ export default function MatchPage() {
     await logAudit("result_submitted_for_approval", {
       entityType: "match",
       entityId: match.id,
-      summary: `Result submitted ${teams.team1Label} ${a}-${b} ${teams.team2Label}.`,
+      summary: `Full result submitted ${teams.team1Label} ${built.summary.team1Score}-${built.summary.team2Score} ${teams.team2Label}.`,
       meta: { competitionId: match.competition_id },
     });
     setRedirectAfterInfo(true);
-    showSubmitModal("Result submitted for approval.", "Submitted");
-    setSubmitScoreA("0");
-    setSubmitScoreB("0");
-    setSubmitBreakRunA(0);
-    setSubmitBreakRunB(0);
-    setSubmitRunOutA(0);
-    setSubmitRunOutB(0);
+    showSubmitModal("Full result submitted for approval.", "Submitted");
   };
 
   const applySubmission = async (submission: ResultSubmission) => {
@@ -1357,7 +1387,17 @@ export default function MatchPage() {
       showReviewModal("Unable to resolve winner.");
       return;
     }
-    const rows: Array<{
+    const existingFrameRows = await client
+      .from("frames")
+      .select("frame_number,winner_player_id,is_walkover_award")
+      .eq("match_id", match.id)
+      .order("frame_number", { ascending: true });
+    if (existingFrameRows.error) {
+      showReviewModal(existingFrameRows.error.message || "Unable to read submitted frame detail.");
+      return;
+    }
+    const existingFrames = (existingFrameRows.data ?? []).filter((r) => !r.is_walkover_award);
+    let rows: Array<{
       match_id: string;
       frame_number: number;
       winner_player_id: string | null;
@@ -1373,18 +1413,60 @@ export default function MatchPage() {
       high_break_team1: number;
       high_break_team2: number;
     }> = [];
-    let idx = 1;
-    const br1 = Math.min(submission.break_and_run_team1 ?? 0, submission.team1_score);
-    const br2 = Math.min(submission.break_and_run_team2 ?? 0, submission.team2_score);
-    const ro1 = Math.min(submission.run_out_against_break_team1 ?? 0, submission.team1_score);
-    const ro2 = Math.min(submission.run_out_against_break_team2 ?? 0, submission.team2_score);
-    for (let i = 0; i < submission.team1_score; i += 1) {
-      rows.push({
+    if (!existingFrames.length) {
+      let idx = 1;
+      const br1 = Math.min(submission.break_and_run_team1 ?? 0, submission.team1_score);
+      const br2 = Math.min(submission.break_and_run_team2 ?? 0, submission.team2_score);
+      const ro1 = Math.min(submission.run_out_against_break_team1 ?? 0, submission.team1_score);
+      const ro2 = Math.min(submission.run_out_against_break_team2 ?? 0, submission.team2_score);
+      for (let i = 0; i < submission.team1_score; i += 1) {
+        rows.push({
+          match_id: match.id,
+          frame_number: idx++,
+          winner_player_id: teams.team1Rep,
+          break_and_run: isSnooker ? false : i < br1,
+          run_out_against_break: isSnooker ? false : i < ro1,
+          is_walkover_award: false,
+          team1_points: 0,
+          team2_points: 0,
+          breaks_over_30_team1_values: [],
+          breaks_over_30_team2_values: [],
+          breaks_over_30_team1: 0,
+          breaks_over_30_team2: 0,
+          high_break_team1: 0,
+          high_break_team2: 0,
+        });
+      }
+      for (let i = 0; i < submission.team2_score; i += 1) {
+        rows.push({
+          match_id: match.id,
+          frame_number: idx++,
+          winner_player_id: teams.team2Rep,
+          break_and_run: isSnooker ? false : i < br2,
+          run_out_against_break: isSnooker ? false : i < ro2,
+          is_walkover_award: false,
+          team1_points: 0,
+          team2_points: 0,
+          breaks_over_30_team1_values: [],
+          breaks_over_30_team2_values: [],
+          breaks_over_30_team1: 0,
+          breaks_over_30_team2: 0,
+          high_break_team1: 0,
+          high_break_team2: 0,
+        });
+      }
+      const save = await persistFrames(rows);
+      if (!save.ok) {
+        showReviewModal(save.error);
+        return;
+      }
+    } else {
+      rows = existingFrames.map((r) => ({
         match_id: match.id,
-        frame_number: idx++,
-        winner_player_id: teams.team1Rep,
-        break_and_run: isSnooker ? false : i < br1,
-        run_out_against_break: isSnooker ? false : i < ro1,
+        frame_number: r.frame_number,
+        winner_player_id: r.winner_player_id,
+        break_and_run: false,
+        run_out_against_break: false,
         is_walkover_award: false,
         team1_points: 0,
         team2_points: 0,
@@ -1394,30 +1476,7 @@ export default function MatchPage() {
         breaks_over_30_team2: 0,
         high_break_team1: 0,
         high_break_team2: 0,
-      });
-    }
-    for (let i = 0; i < submission.team2_score; i += 1) {
-      rows.push({
-        match_id: match.id,
-        frame_number: idx++,
-        winner_player_id: teams.team2Rep,
-        break_and_run: isSnooker ? false : i < br2,
-        run_out_against_break: isSnooker ? false : i < ro2,
-        is_walkover_award: false,
-        team1_points: 0,
-        team2_points: 0,
-        breaks_over_30_team1_values: [],
-        breaks_over_30_team2_values: [],
-        breaks_over_30_team1: 0,
-        breaks_over_30_team2: 0,
-        high_break_team1: 0,
-        high_break_team2: 0,
-      });
-    }
-    const save = await persistFrames(rows);
-    if (!save.ok) {
-      showReviewModal(save.error);
-      return;
+      }));
     }
     const update = await client
       .from("matches")
@@ -1460,18 +1519,20 @@ export default function MatchPage() {
     await applyRatingsIfNeeded(winnerSide);
     if (winnerId) await advanceKnockoutWinner(winnerId);
     await refreshCompetitionCompletion();
-    setFrames(
-      rows.map((r) => ({
-        frame_number: r.frame_number,
-        winner_side: r.winner_player_id === teams.team1Rep ? 1 : r.winner_player_id === teams.team2Rep ? 2 : 0,
-        break_and_run: r.break_and_run,
-        run_out_against_break: r.run_out_against_break,
-        team1_points: r.team1_points,
-        team2_points: r.team2_points,
-        breaks_over_30_team1_values_text: (r.breaks_over_30_team1_values ?? []).join(", "),
-        breaks_over_30_team2_values_text: (r.breaks_over_30_team2_values ?? []).join(", "),
-      }))
-    );
+    if (!existingFrames.length) {
+      setFrames(
+        rows.map((r) => ({
+          frame_number: r.frame_number,
+          winner_side: r.winner_player_id === teams.team1Rep ? 1 : r.winner_player_id === teams.team2Rep ? 2 : 0,
+          break_and_run: r.break_and_run,
+          run_out_against_break: r.run_out_against_break,
+          team1_points: r.team1_points,
+          team2_points: r.team2_points,
+          breaks_over_30_team1_values_text: (r.breaks_over_30_team1_values ?? []).join(", "),
+          breaks_over_30_team2_values_text: (r.breaks_over_30_team2_values ?? []).join(", "),
+        }))
+      );
+    }
     setMatch((prev) => (prev ? { ...prev, status: "complete", winner_player_id: winnerId } : prev));
     setSubmissions((prev) => prev.map((s) => (s.id === submission.id ? { ...s, status: "approved" } : s)));
     await logAudit("result_approved", {
@@ -1530,7 +1591,7 @@ export default function MatchPage() {
             title="Match"
             eyebrow="Match"
             subtitle="Live scoring and result submission."
-            warnOnNavigate={!isByeMatch && !isArchived && !(!admin.isAdmin && userSubmissionLocked)}
+            warnOnNavigate={!isByeMatch && !isArchived && canEditFrames}
             warnMessage="Progress may be lost if not saved. Leave this match anyway?"
             actions={
               <button
@@ -1706,7 +1767,7 @@ export default function MatchPage() {
                 ) : null}
               </section>
 
-              {!isByeMatch && !isArchived && admin.isAdmin && !adminReviewOnly ? (
+              {canEditFrames ? (
                 <>
                   {matchWinnerLabel ? (
                     <p className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-emerald-900">
@@ -1825,51 +1886,74 @@ export default function MatchPage() {
                     <button type="button" onClick={addFrame} className={buttonSecondaryClass}>
                       Add {competition.sport_type === "snooker" ? "frame" : "rack"}
                     </button>
-                    <button type="button" onClick={() => saveProgress(false)} disabled={saving} className={buttonSecondaryClass}>
-                      Save
-                    </button>
-                    <button type="button" onClick={() => saveProgress(true)} disabled={saving} className={buttonSecondaryClass}>
-                      Save &amp; Back
-                    </button>
-                    <button type="button" onClick={saveResult} disabled={saving || !canSaveResult} className={buttonSuccessClass}>
-                      {saving ? "Saving..." : "Save result"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setConfirmModal({
-                          title: "Award Walkover",
-                          description: `Award walkover to ${teams.team1Label}?`,
-                          confirmLabel: "Award",
-                          onConfirm: async () => {
-                            await awardWalkover(1);
-                            setConfirmModal(null);
-                          },
-                        })
-                      }
-                      disabled={saving}
-                      className={buttonSecondaryClass}
-                    >
-                      Award walkover ({teams.team1Label})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setConfirmModal({
-                          title: "Award Walkover",
-                          description: `Award walkover to ${teams.team2Label}?`,
-                          confirmLabel: "Award",
-                          onConfirm: async () => {
-                            await awardWalkover(2);
-                            setConfirmModal(null);
-                          },
-                        })
-                      }
-                      disabled={saving}
-                      className={buttonSecondaryClass}
-                    >
-                      Award walkover ({teams.team2Label})
-                    </button>
+                    {admin.isAdmin ? (
+                      <>
+                        <button type="button" onClick={() => saveProgress(false)} disabled={saving} className={buttonSecondaryClass}>
+                          Save
+                        </button>
+                        <button type="button" onClick={() => saveProgress(true)} disabled={saving} className={buttonSecondaryClass}>
+                          Save &amp; Back
+                        </button>
+                        <button type="button" onClick={saveResult} disabled={saving || !canSaveResult} className={buttonSuccessClass}>
+                          {saving ? "Saving..." : "Save result"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConfirmModal({
+                              title: "Award Walkover",
+                              description: `Award walkover to ${teams.team1Label}?`,
+                              confirmLabel: "Award",
+                              onConfirm: async () => {
+                                await awardWalkover(1);
+                                setConfirmModal(null);
+                              },
+                            })
+                          }
+                          disabled={saving}
+                          className={buttonSecondaryClass}
+                        >
+                          Award walkover ({teams.team1Label})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConfirmModal({
+                              title: "Award Walkover",
+                              description: `Award walkover to ${teams.team2Label}?`,
+                              confirmLabel: "Award",
+                              onConfirm: async () => {
+                                await awardWalkover(2);
+                                setConfirmModal(null);
+                              },
+                            })
+                          }
+                          disabled={saving}
+                          className={buttonSecondaryClass}
+                        >
+                          Award walkover ({teams.team2Label})
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setConfirmModal({
+                            title: "Submit Full Result For Approval",
+                            description: `Submit the full ${competition.sport_type === "snooker" ? "frame" : "rack"} result for ${teams.team1Label} vs ${teams.team2Label}? This will lock the fixture until an administrator reviews it.`,
+                            confirmLabel: "Submit result",
+                            onConfirm: async () => {
+                              setConfirmModal(null);
+                              await submitDetailedResult();
+                            },
+                          })
+                        }
+                        disabled={saving || !canSaveResult}
+                        className={buttonSuccessClass}
+                      >
+                        Submit full result for approval
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() =>
@@ -1900,18 +1984,24 @@ export default function MatchPage() {
               ) : null}
               {!admin.loading && !admin.isAdmin && !isByeMatch && !isArchived ? (
                 <section className={`${cardClass} space-y-3`}>
-                  <h3 className="text-xl font-semibold text-slate-900">Submit result</h3>
-                  <p className="text-sm text-slate-600">
-                    Submit the final score for approval. This will not update stats until approved by an administrator.
-                  </p>
+                  <h3 className="text-xl font-semibold text-slate-900">Fixture access</h3>
+                  {!viewerCanEditThisMatch ? (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+                      View only. You can only submit the full result for your own fixture.
+                    </div>
+                  ) : !userPendingSubmission && !userApprovedSubmission ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      Pending. Enter the full {competition.sport_type === "snooker" ? "frame" : "rack"} result above, then submit it for approval.
+                    </div>
+                  ) : null}
                   {userPendingSubmission ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                      Submission pending review since {new Date(userPendingSubmission.submitted_at).toLocaleString()}. Match is locked until reviewed.
+                      Submitted. Pending review since {new Date(userPendingSubmission.submitted_at).toLocaleString()}. Match is locked until reviewed.
                     </div>
                   ) : null}
                   {userApprovedSubmission ? (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-                      Submission approved on {userApprovedSubmission.reviewed_at ? new Date(userApprovedSubmission.reviewed_at).toLocaleString() : "review"}. Match is locked.
+                      Approved. Submission approved on {userApprovedSubmission.reviewed_at ? new Date(userApprovedSubmission.reviewed_at).toLocaleString() : "review"}. Match is locked.
                     </div>
                   ) : null}
                   {!userSubmissionLocked && userLatestRejectedSubmission ? (
@@ -1921,93 +2011,6 @@ export default function MatchPage() {
                       {" "}Please correct and resubmit.
                     </div>
                   ) : null}
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <label className="text-sm text-slate-700">
-                    {teams.team1Label} {isSnooker ? "frames won" : "score"}
-                    <select
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
-                      value={submitScoreA}
-                      onChange={(e) => handleSubmitScoreAChange(e.target.value)}
-                      disabled={userSubmissionLocked}
-                    >
-                      {submitScoreOptions.map((i) => (
-                        <option key={`score-a-${i}`} value={i}>
-                          {i}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-sm text-slate-700">
-                    {teams.team2Label} {isSnooker ? "frames won" : "score"}
-                    <select
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
-                      value={submitScoreB}
-                      onChange={(e) => handleSubmitScoreBChange(e.target.value)}
-                      disabled={userSubmissionLocked}
-                    >
-                      {submitScoreOptions.map((i) => (
-                        <option key={`score-b-${i}`} value={i}>
-                          {i}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                {!isSnooker ? (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
-                    <span>{teams.team1Label} Break &amp; Run</span>
-                    <select className="rounded-lg border border-slate-300 bg-white px-2 py-1" value={submitBreakRunA} onChange={(e) => setSubmitBreakRunA(Number(e.target.value))} disabled={userSubmissionLocked}>
-                      {Array.from({ length: Math.max(0, Math.min(submitMaxA, submitTotal - submitBreakRunB - submitRunOutA - submitRunOutB)) + 1 }, (_, i) => (
-                        <option key={`br-a-${i}`} value={i}>{i}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
-                    <span>{teams.team2Label} Break &amp; Run</span>
-                    <select className="rounded-lg border border-slate-300 bg-white px-2 py-1" value={submitBreakRunB} onChange={(e) => setSubmitBreakRunB(Number(e.target.value))} disabled={userSubmissionLocked}>
-                      {Array.from({ length: Math.max(0, Math.min(submitMaxB, submitTotal - submitBreakRunA - submitRunOutA - submitRunOutB)) + 1 }, (_, i) => (
-                        <option key={`br-b-${i}`} value={i}>{i}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
-                    <span>{teams.team1Label} Run Out</span>
-                    <select className="rounded-lg border border-slate-300 bg-white px-2 py-1" value={submitRunOutA} onChange={(e) => setSubmitRunOutA(Number(e.target.value))} disabled={userSubmissionLocked}>
-                      {Array.from({ length: Math.max(0, Math.min(submitMaxA, submitTotal - submitBreakRunA - submitBreakRunB - submitRunOutB)) + 1 }, (_, i) => (
-                        <option key={`ro-a-${i}`} value={i}>{i}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
-                    <span>{teams.team2Label} Run Out</span>
-                    <select className="rounded-lg border border-slate-300 bg-white px-2 py-1" value={submitRunOutB} onChange={(e) => setSubmitRunOutB(Number(e.target.value))} disabled={userSubmissionLocked}>
-                      {Array.from({ length: Math.max(0, Math.min(submitMaxB, submitTotal - submitBreakRunA - submitBreakRunB - submitRunOutA)) + 1 }, (_, i) => (
-                        <option key={`ro-b-${i}`} value={i}>{i}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                ) : null}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!teams) return;
-                      setConfirmModal({
-                        title: "Submit Result For Approval",
-                        description: `Please confirm the final score: ${teams.team1Label} ${submitScoreA || "0"} - ${submitScoreB || "0"} ${teams.team2Label}.`,
-                        confirmLabel: "Confirm submit",
-                        onConfirm: async () => {
-                          setConfirmModal(null);
-                          await submitResult();
-                        },
-                      });
-                    }}
-                    className={buttonSuccessClass}
-                    disabled={userSubmissionLocked}
-                  >
-                    Submit for approval
-                  </button>
                 </section>
               ) : null}
               {admin.isAdmin && submissions.length ? (

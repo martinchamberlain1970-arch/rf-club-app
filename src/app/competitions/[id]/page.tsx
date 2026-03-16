@@ -54,6 +54,13 @@ type Entry = {
   status: "pending" | "approved" | "rejected" | "withdrawn";
   created_at: string;
 };
+type ResultSubmission = {
+  id: string;
+  match_id: string;
+  submitted_by_user_id: string;
+  status: "pending" | "approved" | "rejected";
+  submitted_at: string;
+};
 type Frame = {
   match_id: string;
   winner_player_id: string | null;
@@ -306,6 +313,9 @@ export default function CompetitionPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [frames, setFrames] = useState<Frame[]>([]);
+  const [resultSubmissions, setResultSubmissions] = useState<ResultSubmission[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [viewerLinkedPlayerId, setViewerLinkedPlayerId] = useState<string | null>(null);
   const [signupDeadlineInput, setSignupDeadlineInput] = useState("");
   const [signupMaxEntriesInput, setSignupMaxEntriesInput] = useState("");
   const [leagueMeetingsInput, setLeagueMeetingsInput] = useState("2");
@@ -360,6 +370,13 @@ export default function CompetitionPage() {
     if (!client) return;
     let active = true;
     const load = async () => {
+      const authRes = await client.auth.getUser();
+      const signedInUserId = authRes.data.user?.id ?? null;
+      let linkedPlayerId: string | null = null;
+      if (signedInUserId) {
+        const linkedRes = await client.from("app_users").select("linked_player_id").eq("id", signedInUserId).maybeSingle();
+        linkedPlayerId = (linkedRes.data?.linked_player_id as string | null) ?? null;
+      }
       const [cRes, mRes, pRes, fRes] = await Promise.all([
         client
           .from("competitions")
@@ -384,6 +401,8 @@ export default function CompetitionPage() {
       const comp = cRes.data as Competition;
       let loadedMatches = (mRes.data ?? []) as Match[];
       setCompetition(comp);
+      setCurrentUserId(signedInUserId);
+      setViewerLinkedPlayerId(linkedPlayerId);
       const changed = await ensureKnockoutNextRoundMatches(client, comp, loadedMatches);
       if (changed) {
         const refreshed = await client
@@ -405,6 +424,14 @@ export default function CompetitionPage() {
         .neq("status", "withdrawn")
         .order("created_at", { ascending: false });
       if (entryRes.data) setEntries(entryRes.data as Entry[]);
+      const submissionRes = loadedMatches.length
+        ? await client
+            .from("result_submissions")
+            .select("id,match_id,submitted_by_user_id,status,submitted_at")
+            .in("match_id", loadedMatches.map((m) => m.id))
+            .order("submitted_at", { ascending: false })
+        : { data: [] as ResultSubmission[] };
+      if ("data" in submissionRes && submissionRes.data) setResultSubmissions(submissionRes.data as ResultSubmission[]);
       setSignupDeadlineInput(comp.signup_deadline ? new Date(comp.signup_deadline).toISOString().slice(0, 16) : "");
       setSignupMaxEntriesInput(comp.max_entries ? String(comp.max_entries) : "");
       setLeagueMeetingsInput(String(comp.league_meetings ?? 2));
@@ -638,14 +665,48 @@ export default function CompetitionPage() {
         scheduledFor: weekMatches[0]?.scheduled_for ?? null,
         matches: weekMatches
           .sort((a, b) => (a.match_no ?? 0) - (b.match_no ?? 0))
-          .map((match) => ({
-            id: match.id,
-            label: getMatchLabel(match, fullMap),
-            status: getStatusLabel(match),
-            isBye: match.status === "bye",
-          })),
+          .map((match) => {
+            const isParticipant = Boolean(
+              viewerLinkedPlayerId &&
+                (
+                  match.player1_id === viewerLinkedPlayerId ||
+                  match.player2_id === viewerLinkedPlayerId ||
+                  match.team1_player1_id === viewerLinkedPlayerId ||
+                  match.team1_player2_id === viewerLinkedPlayerId ||
+                  match.team2_player1_id === viewerLinkedPlayerId ||
+                  match.team2_player2_id === viewerLinkedPlayerId
+                )
+            );
+            const ownLatestSubmission = currentUserId
+              ? resultSubmissions.find((submission) => submission.match_id === match.id && submission.submitted_by_user_id === currentUserId) ?? null
+              : null;
+            let chip = {
+              label: getStatusLabel(match),
+              className: "border-slate-200 bg-slate-50 text-slate-600",
+            };
+            if (!admin.isAdmin) {
+              if (match.status === "complete" || ownLatestSubmission?.status === "approved") {
+                chip = { label: "Approved", className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+              } else if (ownLatestSubmission?.status === "pending") {
+                chip = { label: "Submitted", className: "border-amber-200 bg-amber-50 text-amber-700" };
+              } else if (ownLatestSubmission?.status === "rejected") {
+                chip = { label: "Update needed", className: "border-rose-200 bg-rose-50 text-rose-700" };
+              } else if (isParticipant) {
+                chip = { label: "Pending", className: "border-amber-200 bg-amber-50 text-amber-700" };
+              } else {
+                chip = { label: "View only", className: "border-rose-200 bg-rose-50 text-rose-700" };
+              }
+            }
+            return {
+              id: match.id,
+              label: getMatchLabel(match, fullMap),
+              status: getStatusLabel(match),
+              isBye: match.status === "bye",
+              chip,
+            };
+          }),
       }));
-  }, [competition, matches, fullMap]);
+  }, [competition, matches, fullMap, viewerLinkedPlayerId, currentUserId, resultSubmissions, admin.isAdmin]);
   const leagueTableRows = useMemo(() => {
     if (!competition || competition.competition_format !== "league") return [] as Array<{
       playerId: string;
@@ -1059,8 +1120,8 @@ export default function CompetitionPage() {
                                     className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 transition hover:border-teal-300 hover:bg-teal-50"
                                   >
                                     <span>{match.label}</span>
-                                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
-                                      {match.status}
+                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${match.chip.className}`}>
+                                      {match.chip.label}
                                     </span>
                                   </Link>
                                 )
