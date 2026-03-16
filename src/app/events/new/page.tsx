@@ -441,7 +441,7 @@ export default function NewEventPage() {
   const cardClass = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm";
   const fieldClass = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900";
   const mutedCardClass = "rounded-xl border border-slate-200 bg-slate-50 p-3";
-  const pillBaseClass = "rounded-xl px-3 py-1.5 text-sm font-medium transition";
+  const pillBaseClass = "inline-flex min-h-[44px] items-center justify-center rounded-xl px-3 py-1.5 text-sm font-medium transition";
   const pillActiveClass = `${pillBaseClass} border border-teal-700 bg-teal-700 text-white`;
   const pillIdleClass = `${pillBaseClass} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`;
   const primaryButtonClass = "rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60";
