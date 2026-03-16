@@ -204,6 +204,13 @@ function getLeagueFixtureWindow(scheduledFor: string | null | undefined) {
   return { opensAt, dueAt };
 }
 
+function getMatchStatusLabel(match: Match | null) {
+  if (!match) return "";
+  if (match.status === "bye") return "Locked";
+  if (match.status === "complete" && !match.winner_player_id) return "Void";
+  return match.status.replace("_", " ");
+}
+
 function kFactor(avgRating: number, avgMatches: number) {
   if (avgMatches < 30) return 32;
   if (avgRating >= 1800) return 16;
@@ -396,11 +403,49 @@ export default function MatchPage() {
         return;
       }
 
+      let effectiveMatch = loadedMatch;
+      let effectiveFramesRes = framesRes;
+      let effectiveSubmissionsRes = submissionsRes;
+      const sessionRes = await client.auth.getSession();
+      const accessToken = sessionRes.data.session?.access_token ?? null;
+      if (accessToken && competitionRes.data.competition_format === "league") {
+        await fetch("/api/admin/auto-void-league-fixtures", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ competitionId: loadedMatch.competition_id }),
+        }).catch(() => null);
+        const [refreshedMatchRes, refreshedFramesRes, refreshedSubmissionsRes] = await Promise.all([
+          client
+            .from("matches")
+            .select("id,competition_id,round_no,match_no,best_of,status,match_mode,is_archived,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,rating_applied_at,scheduled_for")
+            .eq("id", matchId)
+            .maybeSingle(),
+          client
+            .from("frames")
+            .select(
+              "frame_number,winner_player_id,break_and_run,run_out_against_break,is_walkover_award,team1_points,team2_points,breaks_over_30_team1_values,breaks_over_30_team2_values,high_break_team1,high_break_team2"
+            )
+            .eq("match_id", matchId)
+            .order("frame_number", { ascending: true }),
+          client
+            .from("result_submissions")
+            .select("id,match_id,submitted_by_user_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status,reviewed_by_user_id,reviewed_at,note")
+            .eq("match_id", matchId)
+            .order("submitted_at", { ascending: false }),
+        ]);
+        if (refreshedMatchRes.data) effectiveMatch = refreshedMatchRes.data as Match;
+        effectiveFramesRes = refreshedFramesRes;
+        effectiveSubmissionsRes = refreshedSubmissionsRes;
+      }
+
       const loadedPlayers = playersRes.data as Player[];
       const names = new Map(loadedPlayers.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name]));
-      const teams = getTeamInfo(loadedMatch, names);
+      const teams = getTeamInfo(effectiveMatch, names);
 
-      const existing = (framesRes.data as FrameRow[])
+      const existing = ((effectiveFramesRes.data ?? []) as FrameRow[])
         .filter((x) => !x.is_walkover_award)
         .map((x) => ({
           frame_number: x.frame_number,
@@ -422,12 +467,13 @@ export default function MatchPage() {
           breaks_over_30_team2_values_text: (x.breaks_over_30_team2_values ?? []).join(", "),
         }));
 
+      setMatch(effectiveMatch);
       setPlayers(loadedPlayers);
       setAdminLocationId(adminLocRes ?? null);
       setViewerLinkedPlayerId(linkedPlayerId);
       setCompetition(competitionRes.data as CompetitionSettings);
       setFrames(existing.length > 0 ? existing : [createEmptyFrame(1)]);
-      setSubmissions((submissionsRes.data ?? []) as ResultSubmission[]);
+      setSubmissions(((effectiveSubmissionsRes.data ?? []) as ResultSubmission[]));
       setLoading(false);
     };
 
@@ -447,6 +493,7 @@ export default function MatchPage() {
     [match]
   );
   const isArchived = Boolean(match?.is_archived);
+  const isVoidedMatch = Boolean(match?.status === "complete" && !match?.winner_player_id);
 
   const wins = useMemo(() => {
     return {
@@ -1254,6 +1301,121 @@ export default function MatchPage() {
     router.push(`/competitions/${match.competition_id}`);
   };
 
+  const voidFixtureAsSuperUser = async () => {
+    const client = supabase;
+    if (!client || !match || !admin.isSuper || !admin.userId) return;
+    setSaving(true);
+    setMessage(null);
+    const wipeFrames = await client.from("frames").delete().eq("match_id", match.id);
+    if (wipeFrames.error) {
+      setSaving(false);
+      setMessage(wipeFrames.error.message);
+      return;
+    }
+    const rejectSubmissions = await client
+      .from("result_submissions")
+      .update({
+        status: "rejected",
+        reviewed_by_user_id: admin.userId,
+        reviewed_at: new Date().toISOString(),
+        note: "Fixture voided by Super User override.",
+      })
+      .eq("match_id", match.id)
+      .neq("status", "rejected");
+    if (rejectSubmissions.error) {
+      setSaving(false);
+      setMessage(rejectSubmissions.error.message);
+      return;
+    }
+    const update = await client.from("matches").update({ status: "complete", winner_player_id: null }).eq("id", match.id);
+    if (update.error) {
+      setSaving(false);
+      setMessage(update.error.message);
+      return;
+    }
+    await logAudit("match_voided_by_super_user", {
+      entityType: "match",
+      entityId: match.id,
+      summary: "Fixture voided by Super User override.",
+      meta: { competitionId: match.competition_id },
+    });
+    setFrames([createEmptyFrame(1)]);
+    setSubmissions((prev) =>
+      prev.map((submission) =>
+        submission.status === "rejected"
+          ? submission
+          : {
+              ...submission,
+              status: "rejected",
+              reviewed_by_user_id: admin.userId,
+              reviewed_at: new Date().toISOString(),
+              note: "Fixture voided by Super User override.",
+            }
+      )
+    );
+    setMatch((prev) => (prev ? { ...prev, status: "complete", winner_player_id: null } : prev));
+    setSaving(false);
+    setInfoModal({ title: "Fixture Voided", description: "This fixture has been marked void. No points are awarded." });
+  };
+
+  const reopenFixtureAsSuperUser = async () => {
+    const client = supabase;
+    if (!client || !match || !admin.isSuper || !admin.userId) return;
+    setSaving(true);
+    setMessage(null);
+    const wipeFrames = await client.from("frames").delete().eq("match_id", match.id);
+    if (wipeFrames.error) {
+      setSaving(false);
+      setMessage(wipeFrames.error.message);
+      return;
+    }
+    const rejectSubmissions = await client
+      .from("result_submissions")
+      .update({
+        status: "rejected",
+        reviewed_by_user_id: admin.userId,
+        reviewed_at: new Date().toISOString(),
+        note: "Fixture reopened by Super User override.",
+      })
+      .eq("match_id", match.id)
+      .neq("status", "rejected");
+    if (rejectSubmissions.error) {
+      setSaving(false);
+      setMessage(rejectSubmissions.error.message);
+      return;
+    }
+    const update = await client.from("matches").update({ status: "pending", winner_player_id: null }).eq("id", match.id);
+    if (update.error) {
+      setSaving(false);
+      setMessage(update.error.message);
+      return;
+    }
+    await logAudit("match_reopened_by_super_user", {
+      entityType: "match",
+      entityId: match.id,
+      summary: "Fixture reopened by Super User override.",
+      meta: { competitionId: match.competition_id },
+    });
+    setFrames([createEmptyFrame(1)]);
+    setSubmissions((prev) =>
+      prev.map((submission) =>
+        submission.status === "rejected"
+          ? submission
+          : {
+              ...submission,
+              status: "rejected",
+              reviewed_by_user_id: admin.userId,
+              reviewed_at: new Date().toISOString(),
+              note: "Fixture reopened by Super User override.",
+            }
+      )
+    );
+    setMatch((prev) => (prev ? { ...prev, status: "pending", winner_player_id: null } : prev));
+    setConfirmEditComplete(true);
+    setSaving(false);
+    setInfoModal({ title: "Fixture Reopened", description: "This fixture has been reopened for correction." });
+  };
+
   const archiveMatch = async () => {
     const client = supabase;
     if (!client || !match) return;
@@ -1754,7 +1916,7 @@ export default function MatchPage() {
                   </div>
                 </div>
                 <p className="mt-1 text-slate-700">Best of {match.best_of} {competition.sport_type === "snooker" ? "frames" : "racks"}</p>
-                <p className="mt-1 text-slate-700">Status: {isByeMatch ? "Locked" : match.status.replace("_", " ")}</p>
+                <p className="mt-1 text-slate-700">Status: {getMatchStatusLabel(match)}</p>
                 {competition.app_assign_opening_break || openingBreakerName ? (
                   <p className="mt-1 text-slate-700">
                     Opening breaker: {openingBreakerName ? `${openingBreakerName} *` : "App assigned"}
@@ -1798,6 +1960,11 @@ export default function MatchPage() {
                 {adminReviewOnly ? (
                   <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                     Review mode: this match has a pending submission. Approve or reject below. Match scoring is locked.
+                  </p>
+                ) : null}
+                {isVoidedMatch ? (
+                  <p className="mt-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                    This fixture is void. No points are awarded unless the Super User reopens or overrides it.
                   </p>
                 ) : null}
               </section>
@@ -2010,6 +2177,54 @@ export default function MatchPage() {
                     </button>
                   </div>
 
+                  {admin.isSuper ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-sm font-semibold text-slate-900">Super User override</p>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Override an incorrect approval, reopen a voided fixture, or mark a fixture void in error cases.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConfirmModal({
+                              title: isVoidedMatch ? "Reopen Voided Fixture" : "Reopen Fixture",
+                              description: "This will clear stored frames, reject any existing submissions, and reopen the fixture for correction.",
+                              confirmLabel: "Reopen fixture",
+                              onConfirm: async () => {
+                                setConfirmModal(null);
+                                await reopenFixtureAsSuperUser();
+                              },
+                            })
+                          }
+                          disabled={saving}
+                          className={buttonSecondaryClass}
+                        >
+                          Reopen fixture
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConfirmModal({
+                              title: "Void Fixture",
+                              description: "This will void the fixture, clear frames, and reject any submissions. No points will be awarded.",
+                              confirmLabel: "Void fixture",
+                              tone: "danger",
+                              onConfirm: async () => {
+                                setConfirmModal(null);
+                                await voidFixtureAsSuperUser();
+                              },
+                            })
+                          }
+                          disabled={saving}
+                          className={buttonDangerClass}
+                        >
+                          Void fixture
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
                   {!canSaveResult ? (
                     <p className="text-sm text-slate-600">
                       Best of {match.best_of}: first to {firstToWin(match.best_of)} wins.
@@ -2041,7 +2256,12 @@ export default function MatchPage() {
                       Submitted. Pending review since {new Date(userPendingSubmission.submitted_at).toLocaleString()}. Match is locked until reviewed.
                     </div>
                   ) : null}
-                  {userApprovedSubmission ? (
+                  {isVoidedMatch ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                      Void. This fixture was not completed in time or was voided by an administrator. No points are awarded.
+                    </div>
+                  ) : null}
+                  {!isVoidedMatch && userApprovedSubmission ? (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
                       Approved. Submission approved on {userApprovedSubmission.reviewed_at ? new Date(userApprovedSubmission.reviewed_at).toLocaleString() : "review"}. Match is locked.
                     </div>

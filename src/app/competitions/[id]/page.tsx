@@ -418,7 +418,29 @@ export default function CompetitionPage() {
         return;
       }
       const comp = cRes.data as Competition;
+      const sessionRes = await client.auth.getSession();
+      const accessToken = sessionRes.data.session?.access_token ?? null;
+      if (accessToken && comp.competition_format === "league") {
+        await fetch("/api/admin/auto-void-league-fixtures", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ competitionId: id }),
+        }).catch(() => null);
+      }
+      const refreshedMatchRes = await client
+        .from("matches")
+        .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for")
+        .eq("competition_id", id)
+        .eq("is_archived", false)
+        .order("round_no")
+        .order("match_no");
       let loadedMatches = (mRes.data ?? []) as Match[];
+      if (refreshedMatchRes.data) {
+        loadedMatches = refreshedMatchRes.data as Match[];
+      }
       setCompetition(comp);
       setCurrentUserId(signedInUserId);
       setViewerLinkedPlayerId(linkedPlayerId);
@@ -658,7 +680,11 @@ export default function CompetitionPage() {
     }
     return out;
   }, [competition, matches, shortMap, round1MatchCount]);
-  const getStatusLabel = (m: Match) => (m.status === "bye" ? "Locked" : m.status.replace("_", " "));
+  const getStatusLabel = (m: Match) => {
+    if (m.status === "bye") return "Locked";
+    if (m.status === "complete" && !m.winner_player_id) return "Void";
+    return m.status.replace("_", " ");
+  };
   const leagueFixturesByWeek = useMemo(() => {
     if (!competition || competition.competition_format !== "league") return [] as Array<{
       week: number;
@@ -712,7 +738,9 @@ export default function CompetitionPage() {
               className: "border-slate-200 bg-slate-50 text-slate-600",
             };
             if (!admin.isAdmin) {
-              if (match.status === "complete" || ownLatestSubmission?.status === "approved") {
+              if (match.status === "complete" && !match.winner_player_id) {
+                chip = { label: "Void", className: "border-slate-200 bg-slate-100 text-slate-600" };
+              } else if (match.status === "complete" || ownLatestSubmission?.status === "approved") {
                 chip = { label: "Approved", className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
               } else if (ownLatestSubmission?.status === "pending") {
                 chip = { label: "Submitted", className: "border-amber-200 bg-amber-50 text-amber-700" };
