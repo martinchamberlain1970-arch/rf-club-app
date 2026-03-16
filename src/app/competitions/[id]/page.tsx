@@ -729,6 +729,7 @@ export default function CompetitionPage() {
         status: string;
         isBye: boolean;
         deadlineLabel: string | null;
+        handicapLabel: string | null;
         chip: {
           label: string;
           className: string;
@@ -791,17 +792,30 @@ export default function CompetitionPage() {
                 chip = { label: "View only", className: "border-rose-200 bg-rose-50 text-rose-700" };
               }
             }
+            let handicapLabel: string | null = null;
+            if (competition.handicap_enabled && competition.sport_type === "snooker" && match.match_mode !== "doubles") {
+              const team1Start = match.team1_handicap_start ?? 0;
+              const team2Start = match.team2_handicap_start ?? 0;
+              if (team1Start > team2Start) {
+                handicapLabel = `${fullMap.get(match.player1_id ?? "") ?? shortMap.get(match.player1_id ?? "") ?? "Player 1"} receives ${team1Start} start`;
+              } else if (team2Start > team1Start) {
+                handicapLabel = `${fullMap.get(match.player2_id ?? "") ?? shortMap.get(match.player2_id ?? "") ?? "Player 2"} receives ${team2Start} start`;
+              } else {
+                handicapLabel = "Level start";
+              }
+            }
             return {
               id: match.id,
               label: getMatchLabel(match, fullMap),
               status: getStatusLabel(match),
               isBye: match.status === "bye",
               deadlineLabel: formatLeagueFixtureDeadline(match.scheduled_for),
+              handicapLabel,
               chip,
             };
           }),
       }));
-  }, [competition, matches, fullMap, viewerLinkedPlayerId, currentUserId, resultSubmissions, admin.isAdmin]);
+  }, [competition, matches, fullMap, shortMap, viewerLinkedPlayerId, currentUserId, resultSubmissions, admin.isAdmin]);
   const leagueFixtureWeekOptions = useMemo(
     () => leagueFixturesByWeek.map((week) => ({ value: String(week.week), label: `Week ${week.week}` })),
     [leagueFixturesByWeek]
@@ -1295,11 +1309,14 @@ export default function CompetitionPage() {
                             <div className="mt-2 space-y-2">
                               {week.matches.map((match) =>
                                 match.isBye ? (
-                                  <div
+                                <div
                                     key={`${week.week}-${match.id}`}
                                     className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
                                   >
-                                    {match.label.replace(" vs BYE", " vs BYE week")}
+                                    <div>{match.label.replace(" vs BYE", " vs BYE week")}</div>
+                                    {match.handicapLabel ? (
+                                      <p className="mt-1 text-xs text-sky-700">{match.handicapLabel}</p>
+                                    ) : null}
                                   </div>
                                 ) : (
                                   <Link
@@ -1307,7 +1324,12 @@ export default function CompetitionPage() {
                                     href={`/matches/${match.id}`}
                                     className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 transition hover:border-teal-300 hover:bg-teal-50"
                                   >
-                                    <span>{match.label}</span>
+                                    <span>
+                                      <span className="block">{match.label}</span>
+                                      {match.handicapLabel ? (
+                                        <span className="mt-1 block text-xs text-sky-700">{match.handicapLabel}</span>
+                                      ) : null}
+                                    </span>
                                     <span className={`rounded-full border px-2 py-0.5 text-xs ${match.chip.className}`}>
                                       {match.chip.label}
                                     </span>

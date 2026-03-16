@@ -2070,7 +2070,7 @@ export default function MatchPage() {
                 <p className="mt-1 text-slate-700">Status: {getMatchStatusLabel(match)}</p>
                 {isHandicappedSnookerMatch ? (
                   <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-                    Handicapped fixture. Start each frame at {teams.team1Label} {match.team1_handicap_start ?? 0} - {match.team2_handicap_start ?? 0} {teams.team2Label}. Enter final adjusted frame scores including that start.
+                    Handicapped fixture. Each frame starts at {teams.team1Label} {match.team1_handicap_start ?? 0} - {match.team2_handicap_start ?? 0} {teams.team2Label}. Enter the final adjusted frame scores including that handicap start, not the raw points scored from scratch.
                   </div>
                 ) : null}
                 {competition.app_assign_opening_break || openingBreakerName ? (
@@ -2405,6 +2405,7 @@ export default function MatchPage() {
                   ) : !userPendingSubmission && !userApprovedSubmission ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                       Pending. Enter the full {competition.sport_type === "snooker" ? "frame" : "rack"} result above, then submit it for approval.
+                      {isHandicappedSnookerMatch ? " Use the final adjusted score including the handicap start shown on this fixture." : ""}
                     </div>
                   ) : null}
                   {userPendingSubmission ? (
