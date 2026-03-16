@@ -561,9 +561,14 @@ export default function NewEventPage() {
                     onClick={() => premium.unlocked && competitionFormat === "knockout" && setMode("doubles")}
                     disabled={!premium.unlocked || competitionFormat === "league"}
                   >
-                    Doubles{competitionFormat === "league" ? " (Knockout only)" : premium.unlocked ? "" : " (Premium)"}
+                    Doubles
                   </button>
                 </div>
+                {competitionFormat === "league" ? (
+                  <p className="mt-1 text-xs text-slate-500">Doubles is available for knockout competitions only.</p>
+                ) : !premium.loading && !premium.unlocked ? (
+                  <p className="mt-1 text-xs text-amber-700">Doubles is a Premium feature.</p>
+                ) : null}
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Match length</label>
