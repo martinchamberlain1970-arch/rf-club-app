@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import RequireAuth from "@/components/RequireAuth";
-import ScreenHeader from "@/components/ScreenHeader";
+import PageNav from "@/components/PageNav";
 import { supabase } from "@/lib/supabase";
 
 type WeekFilter = "last" | "this" | "next";
@@ -62,6 +62,7 @@ export default function MyFixturesPage() {
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [filter, setFilter] = useState<WeekFilter>("this");
   const [message, setMessage] = useState<string | null>(null);
+  const cardClass = "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm";
 
   useEffect(() => {
     const run = async () => {
@@ -170,10 +171,21 @@ export default function MyFixturesPage() {
     <main className="min-h-screen bg-slate-100 p-6">
       <div className="mx-auto max-w-5xl space-y-4">
         <RequireAuth>
-          <ScreenHeader title="My Fixtures" eyebrow="Player" subtitle="Your recent, current, and upcoming fixtures by week." />
+          <section className="rounded-2xl border border-slate-200 bg-gradient-to-r from-teal-50 via-slate-50 to-amber-50 p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Player</p>
+                <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">My Fixtures</h1>
+                <p className="mt-1 text-sm text-slate-600">Your recent, current, and upcoming fixtures by week.</p>
+              </div>
+              <PageNav />
+            </div>
+          </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap gap-2">
+          <section className={cardClass}>
+            <p className="text-sm font-semibold text-slate-900">Fixture Window</p>
+            <p className="mt-1 text-sm text-slate-600">Switch between last week, this week, and next week to focus on the current playing window.</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {([
                 ["last", "Last Week"],
                 ["this", "This Week"],
@@ -183,21 +195,28 @@ export default function MyFixturesPage() {
                   key={value}
                   type="button"
                   onClick={() => setFilter(value)}
-                  className={`rounded-full border px-3 py-1 text-sm ${
-                    filter === value ? "border-teal-700 bg-teal-700 text-white" : "border-slate-300 bg-white text-slate-700"
+                  className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                    filter === value
+                      ? "border-teal-700 bg-teal-700 text-white shadow-sm"
+                      : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-white"
                   }`}
                 >
-                  {label}
+                  <span className="block font-semibold">{label}</span>
+                  <span className={`mt-1 block text-xs ${filter === value ? "text-teal-50" : "text-slate-500"}`}>
+                    {value === "last" ? "Review last week's results and deadlines." : value === "this" ? "Check the current live playing week." : "See the next upcoming fixtures."}
+                  </span>
                 </button>
               ))}
             </div>
-            <p className="mt-3 text-sm text-slate-600">{range.label}</p>
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              Showing fixtures for <span className="font-semibold text-slate-900">{range.label}</span>
+            </div>
           </section>
 
-          {message ? <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900">{message}</section> : null}
+          {message ? <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm">{message}</section> : null}
 
           {!linkedPlayerId ? (
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
               No linked player profile found for this account yet.
             </section>
           ) : fixtureRows.length ? (
@@ -206,12 +225,18 @@ export default function MyFixturesPage() {
                 <Link
                   key={match.id}
                   href={`/matches/${match.id}`}
-                  className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:bg-slate-50"
+                  className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-semibold text-slate-900">{competition?.name ?? "Competition fixture"}</p>
-                    <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
-                      {match.status === "in_progress" ? "Live" : match.status}
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-xs ${
+                        match.status === "in_progress"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-slate-300 bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      {match.status === "in_progress" ? "Live" : match.status === "bye" ? "BYE" : "Scheduled"}
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-slate-700">{myLabel} vs {opponentLabel}</p>
@@ -219,6 +244,7 @@ export default function MyFixturesPage() {
                     {competition?.competition_format === "league" ? `Week ${match.round_no ?? 1}` : `Round ${match.round_no ?? 1} · Match ${match.match_no ?? 1}`}
                     {match.scheduled_for ? ` · Plays by ${new Date(`${match.scheduled_for}T21:00:00`).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}` : ""}
                   </p>
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open fixture</p>
                 </Link>
               ))}
             </section>
