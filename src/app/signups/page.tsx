@@ -258,6 +258,11 @@ export default function CompetitionSignupPage() {
                           Deadline: {new Date(competition.signup_deadline).toLocaleString()}
                         </p>
                       ) : null}
+                      {competition.competition_format === "league" ? (
+                        <p className="mt-1 text-xs text-slate-600">
+                          Weekly fixtures are expected to be completed by 21:00 on Sunday. Unplayed fixtures are normally voided, with admins only awarding a frame or rack for a genuine no-show.
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 text-xs">

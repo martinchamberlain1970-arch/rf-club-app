@@ -26,6 +26,8 @@ type Competition = {
   signup_open?: boolean;
   signup_deadline?: string | null;
   max_entries?: number | null;
+  league_meetings?: number | null;
+  league_start_date?: string | null;
 };
 type Match = {
   id: string;
@@ -40,6 +42,7 @@ type Match = {
   team2_player1_id?: string | null;
   team2_player2_id?: string | null;
   winner_player_id: string | null;
+  scheduled_for?: string | null;
 };
 type Player = { id: string; display_name: string; full_name: string | null };
 type Entry = {
@@ -229,6 +232,43 @@ function getMatchLabel(m: Match, shortMap: Map<string, string>) {
   return `${shortMap.get(m.player1_id ?? "") ?? "TBC"} vs ${shortMap.get(m.player2_id ?? "") ?? "TBC"}`;
 }
 
+function generateLeagueRounds(playerIds: string[], meetings: number) {
+  if (playerIds.length < 2) return [] as Array<Array<{ player1: string; player2: string }>>;
+  let rotation = [...playerIds];
+  let hasBye = false;
+  if (rotation.length % 2 === 1) {
+    rotation = [...rotation, "__BYE__"];
+    hasBye = true;
+  }
+
+  const rounds: Array<Array<{ player1: string; player2: string }>> = [];
+  const roundCount = rotation.length - 1;
+
+  for (let cycle = 0; cycle < meetings; cycle += 1) {
+    let order = [...rotation];
+    for (let round = 0; round < roundCount; round += 1) {
+      const pairings: Array<{ player1: string; player2: string }> = [];
+      for (let i = 0; i < order.length / 2; i += 1) {
+        const a = order[i];
+        const b = order[order.length - 1 - i];
+        if (hasBye && (a === "__BYE__" || b === "__BYE__")) continue;
+        if ((cycle + round) % 2 === 0) {
+          pairings.push({ player1: a, player2: b });
+        } else {
+          pairings.push({ player1: b, player2: a });
+        }
+      }
+      rounds.push(pairings);
+      const fixed = order[0];
+      const rest = order.slice(1);
+      rest.unshift(rest.pop() as string);
+      order = [fixed, ...rest];
+    }
+  }
+
+  return rounds;
+}
+
 export default function CompetitionPage() {
   const params = useParams();
   const id = String(params.id ?? "");
@@ -239,8 +279,11 @@ export default function CompetitionPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [signupDeadlineInput, setSignupDeadlineInput] = useState("");
   const [signupMaxEntriesInput, setSignupMaxEntriesInput] = useState("");
+  const [leagueMeetingsInput, setLeagueMeetingsInput] = useState("2");
+  const [leagueStartDateInput, setLeagueStartDateInput] = useState("");
   const [view, setView] = useState<View>("fixtures");
   const [message, setMessage] = useState<string | null>(null);
+  const [generatingLeagueFixtures, setGeneratingLeagueFixtures] = useState(false);
 
   const openBracketDisplay = () => {
     if (!id) return;
@@ -290,12 +333,12 @@ export default function CompetitionPage() {
       const [cRes, mRes, pRes] = await Promise.all([
         client
           .from("competitions")
-          .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries")
+          .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,league_meetings,league_start_date")
           .eq("id", id)
           .single(),
         client
           .from("matches")
-          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id")
+          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for")
           .eq("competition_id", id)
           .eq("is_archived", false)
           .order("round_no")
@@ -314,7 +357,7 @@ export default function CompetitionPage() {
       if (changed) {
         const refreshed = await client
           .from("matches")
-          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id")
+          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for")
           .eq("competition_id", id)
           .eq("is_archived", false)
           .order("round_no")
@@ -332,6 +375,8 @@ export default function CompetitionPage() {
       if (entryRes.data) setEntries(entryRes.data as Entry[]);
       setSignupDeadlineInput(comp.signup_deadline ? new Date(comp.signup_deadline).toISOString().slice(0, 16) : "");
       setSignupMaxEntriesInput(comp.max_entries ? String(comp.max_entries) : "");
+      setLeagueMeetingsInput(String(comp.league_meetings ?? 2));
+      setLeagueStartDateInput(comp.league_start_date ? String(comp.league_start_date) : "");
     };
     load();
     return () => {
@@ -350,6 +395,88 @@ export default function CompetitionPage() {
   );
   const pendingEntries = useMemo(() => entries.filter((e) => e.status === "pending"), [entries]);
   const approvedEntries = useMemo(() => entries.filter((e) => e.status === "approved"), [entries]);
+  const approvedLeaguePlayerIds = useMemo(() => approvedEntries.map((entry) => entry.player_id), [approvedEntries]);
+
+  const generateLeagueFixtures = async () => {
+    const client = supabase;
+    if (!client || !competition || competition.competition_format !== "league") return;
+    if (!admin.isAdmin) return;
+    if (matches.length > 0) {
+      setMessage("League fixtures have already been generated for this competition.");
+      return;
+    }
+    if (approvedLeaguePlayerIds.length < 2) {
+      setMessage("Approve at least 2 player entries before generating league fixtures.");
+      return;
+    }
+    const meetings = Number.parseInt(leagueMeetingsInput, 10);
+    if (!Number.isInteger(meetings) || meetings < 1 || meetings > 4) {
+      setMessage("Meet each opponent must be between 1 and 4.");
+      return;
+    }
+    if (!leagueStartDateInput) {
+      setMessage("Choose a start date before generating weekly fixtures.");
+      return;
+    }
+
+    const rounds = generateLeagueRounds(approvedLeaguePlayerIds, meetings);
+    const start = new Date(`${leagueStartDateInput}T12:00:00`);
+    if (Number.isNaN(start.getTime())) {
+      setMessage("Choose a valid start date.");
+      return;
+    }
+
+    const fixtureRows = rounds.flatMap((round, roundIndex) =>
+      round.map((pairing, matchIndex) => {
+        const scheduled = new Date(start);
+        scheduled.setDate(start.getDate() + (roundIndex * 7));
+        return {
+          competition_id: competition.id,
+          round_no: roundIndex + 1,
+          match_no: matchIndex + 1,
+          best_of: competition.best_of,
+          status: "pending" as const,
+          match_mode: "singles" as const,
+          player1_id: pairing.player1,
+          player2_id: pairing.player2,
+          winner_player_id: null,
+          opening_break_player_id: null,
+          scheduled_for: scheduled.toISOString().slice(0, 10),
+        };
+      })
+    );
+
+    setGeneratingLeagueFixtures(true);
+    const updateRes = await client
+      .from("competitions")
+      .update({
+        league_meetings: meetings,
+        league_start_date: leagueStartDateInput,
+      })
+      .eq("id", competition.id);
+    if (updateRes.error) {
+      setGeneratingLeagueFixtures(false);
+      setMessage(updateRes.error.message);
+      return;
+    }
+
+    const insertRes = await client.from("matches").insert(fixtureRows);
+    setGeneratingLeagueFixtures(false);
+    if (insertRes.error) {
+      setMessage(insertRes.error.message);
+      return;
+    }
+    setMessage(`League fixtures generated for ${rounds.length} week${rounds.length === 1 ? "" : "s"}.`);
+    setCompetition({ ...competition, league_meetings: meetings, league_start_date: leagueStartDateInput });
+    const reload = await client
+      .from("matches")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for")
+      .eq("competition_id", competition.id)
+      .eq("is_archived", false)
+      .order("round_no")
+      .order("match_no");
+    if (reload.data) setMatches(reload.data as Match[]);
+  };
 
   const bracketRounds = useMemo(() => {
     if (!competition || competition.competition_format !== "knockout") return [];
@@ -536,9 +663,15 @@ export default function CompetitionPage() {
                 <p className="mt-1 text-slate-700">Format: {competition.competition_format}</p>
                 <p className="mt-1 text-slate-700">Best of {competition.best_of}</p>
                 {competition.competition_format === "league" ? (
-                  <p className="mt-2 text-sm text-slate-600">
-                    This is a club league competition. Use sign-ups and approved entries to manage the field.
-                  </p>
+                  <>
+                    <p className="mt-2 text-sm text-slate-600">
+                      This is a club league competition. Use sign-ups and approved entries to manage the field.
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {competition.league_meetings ? `Each opponent: ${competition.league_meetings} time${competition.league_meetings === 1 ? "" : "s"}` : "Fixtures not generated yet."}
+                      {competition.league_start_date ? ` · Start date: ${competition.league_start_date}` : ""}
+                    </p>
+                  </>
                 ) : null}
               </section>
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -636,6 +769,66 @@ export default function CompetitionPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     Approved and pending player entries are shown above. Knockout-only bracket and fixture views are not used for league competitions.
                   </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Weekly fixtures should be played by 21:00 on Sunday. If a fixture is not played in time it should normally be voided, with admin awarding the frame or rack only for a genuine no-show.
+                  </p>
+                  {admin.isAdmin ? (
+                    <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]">
+                      <label className="flex flex-col gap-1 text-sm text-slate-700">
+                        Meet each opponent
+                        <select
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                          value={leagueMeetingsInput}
+                          onChange={(e) => setLeagueMeetingsInput(e.target.value)}
+                        >
+                          {[1, 2, 3, 4].map((value) => (
+                            <option key={value} value={value}>
+                              {value} time{value === 1 ? "" : "s"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1 text-sm text-slate-700">
+                        First week start date
+                        <input
+                          type="date"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                          value={leagueStartDateInput}
+                          onChange={(e) => setLeagueStartDateInput(e.target.value)}
+                        />
+                      </label>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => void generateLeagueFixtures()}
+                          disabled={generatingLeagueFixtures || matches.length > 0}
+                          className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-60"
+                        >
+                          {generatingLeagueFixtures ? "Generating..." : matches.length > 0 ? "Fixtures Generated" : "Create Weekly Fixtures"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {matches.length ? (
+                    <div className="mt-4 space-y-2">
+                      {matches.map((match) => (
+                        <article key={match.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                          <p className="text-sm font-semibold text-slate-900">
+                            Week {match.round_no ?? "?"} · Match {match.match_no ?? "?"}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-700">{getMatchLabel(match, shortMap)}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {match.scheduled_for ? `Scheduled for ${match.scheduled_for}` : "Weekly fixture"} · {match.status.replace("_", " ")}
+                          </p>
+                          <Link href={`/matches/${match.id}`} className="mt-2 inline-block text-sm font-medium text-teal-700 underline">
+                            {admin.isAdmin ? (match.status === "complete" ? "Edit match" : "Open match") : "Submit result"}
+                          </Link>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-600">No weekly fixtures generated yet.</p>
+                  )}
                 </section>
               ) : (
               <section className="space-y-2">
