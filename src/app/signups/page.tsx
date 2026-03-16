@@ -14,6 +14,7 @@ type Competition = {
   sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   competition_format: "knockout" | "league";
   match_mode: "singles" | "doubles";
+  handicap_enabled?: boolean;
   signup_open: boolean;
   signup_deadline: string | null;
   max_entries: number | null;
@@ -88,7 +89,7 @@ export default function CompetitionSignupPage() {
     const [competitionRes, entryRes, appUserRes, playerRes] = await Promise.all([
       client
         .from("competitions")
-        .select("id,name,venue,sport_type,competition_format,match_mode,signup_open,signup_deadline,max_entries,created_at")
+        .select("id,name,venue,sport_type,competition_format,match_mode,handicap_enabled,signup_open,signup_deadline,max_entries,created_at")
         .eq("signup_open", true)
         .eq("is_archived", false)
         .eq("is_completed", false)
@@ -255,6 +256,7 @@ export default function CompetitionSignupPage() {
                       <p className="text-lg font-semibold text-slate-900">{competition.name}</p>
                       <p className="text-sm text-slate-600">
                         {sportLabel[competition.sport_type]} · {competition.competition_format} · {competition.match_mode}
+                        {competition.handicap_enabled ? " · handicapped" : ""}
                         {competition.venue ? ` · ${competition.venue}` : ""}
                       </p>
                       <p className="text-xs text-slate-500">

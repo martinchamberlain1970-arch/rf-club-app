@@ -15,7 +15,7 @@ import MessageModal from "@/components/MessageModal";
 type Sport = "snooker" | "pool_8_ball" | "pool_9_ball";
 type Mode = "singles" | "doubles";
 type CompetitionFormat = "knockout" | "league";
-type Player = { id: string; display_name: string; full_name?: string | null };
+type Player = { id: string; display_name: string; full_name?: string | null; snooker_handicap?: number | null };
 type TeamPick = { player1: string; player2: string };
 type Location = { id: string; name: string };
 const BEST_OF_OPTIONS = [1, 3, 5, 7, 9, 11, 13, 15];
@@ -24,6 +24,16 @@ function nextPowerOfTwo(n: number): number {
   let p = 1;
   while (p < n) p *= 2;
   return p;
+}
+
+function calculateSnookerHandicapStarts(playerOneHandicap: number | null | undefined, playerTwoHandicap: number | null | undefined) {
+  const h1 = playerOneHandicap ?? 0;
+  const h2 = playerTwoHandicap ?? 0;
+  const baseline = Math.min(h1, h2);
+  return {
+    team1: h1 - baseline,
+    team2: h2 - baseline,
+  };
 }
 
 export default function NewEventPage() {
@@ -55,6 +65,7 @@ export default function NewEventPage() {
   const [signupOpen, setSignupOpen] = useState(false);
   const [signupDeadline, setSignupDeadline] = useState("");
   const [signupMaxEntries, setSignupMaxEntries] = useState("");
+  const [handicapEnabled, setHandicapEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
@@ -73,6 +84,7 @@ export default function NewEventPage() {
     competitionFormat !== "knockout" ||
     mode !== "singles" ||
     appAssignOpeningBreak ||
+    handicapEnabled ||
     signupOpen ||
     signupDeadline ||
     signupMaxEntries
@@ -84,7 +96,7 @@ export default function NewEventPage() {
     let active = true;
     const load = async () => {
       const [{ data, error }, locRes, authRes] = await Promise.all([
-        client.from("players").select("id,display_name,full_name").eq("is_archived", false).order("display_name"),
+        client.from("players").select("id,display_name,full_name,snooker_handicap").eq("is_archived", false).order("display_name"),
         client.from("locations").select("id,name").order("name"),
         client.auth.getUser(),
       ]);
@@ -125,6 +137,13 @@ export default function NewEventPage() {
     () => teams.flatMap((t) => [t.player1, t.player2]).filter(Boolean),
     [teams]
   );
+  const selectedPlayerById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+  const handicapAllowed = sport === "snooker" && mode === "singles";
+
+  useEffect(() => {
+    if (!handicapAllowed && handicapEnabled) setHandicapEnabled(false);
+  }, [handicapAllowed, handicapEnabled]);
+
   const isTeamPlayerTakenElsewhere = (
     candidateId: string,
     teamIndex: number,
@@ -154,7 +173,7 @@ export default function NewEventPage() {
     setTeams((prev) => (prev.length <= 2 ? prev : prev.filter((_, i) => i !== idx)));
   };
 
-  const createKnockoutMatches = (competitionId: string, best: number, ids: string[], appBreak: boolean) => {
+  const createKnockoutMatches = (competitionId: string, best: number, ids: string[], appBreak: boolean, handicap: boolean) => {
     const bracketSize = nextPowerOfTwo(ids.length);
     const byeCount = bracketSize - ids.length;
     const rows: Array<{
@@ -168,6 +187,8 @@ export default function NewEventPage() {
       player2_id: string;
       opening_break_player_id: string | null;
       winner_player_id: string | null;
+      team1_handicap_start: number;
+      team2_handicap_start: number;
     }> = [];
     let matchNo = 1;
 
@@ -186,11 +207,19 @@ export default function NewEventPage() {
         player2_id: playerId,
         opening_break_player_id: null,
         winner_player_id: playerId,
+        team1_handicap_start: 0,
+        team2_handicap_start: 0,
       });
     }
 
     const remaining = ids.slice(byeCount);
     for (let i = 0; i < remaining.length; i += 2) {
+      const starts = handicap
+        ? calculateSnookerHandicapStarts(
+            selectedPlayerById.get(remaining[i])?.snooker_handicap,
+            selectedPlayerById.get(remaining[i + 1])?.snooker_handicap
+          )
+        : { team1: 0, team2: 0 };
       rows.push({
         competition_id: competitionId,
         round_no: 1,
@@ -204,6 +233,8 @@ export default function NewEventPage() {
           ? (Math.random() < 0.5 ? remaining[i] : remaining[i + 1])
           : null,
         winner_player_id: null,
+        team1_handicap_start: starts.team1,
+        team2_handicap_start: starts.team2,
       });
     }
 
@@ -224,6 +255,8 @@ export default function NewEventPage() {
       team2_player2_id: string;
       opening_break_player_id: string | null;
       winner_player_id: string | null;
+      team1_handicap_start: number;
+      team2_handicap_start: number;
     }> = [];
     for (let i = 0; i < picks.length; i += 2) {
       const a = picks[i];
@@ -242,6 +275,8 @@ export default function NewEventPage() {
         team2_player2_id: b.player2,
         opening_break_player_id: appBreak ? breakChoices[Math.floor(Math.random() * breakChoices.length)] : null,
         winner_player_id: null,
+        team1_handicap_start: 0,
+        team2_handicap_start: 0,
       });
     }
     return rows;
@@ -300,6 +335,10 @@ export default function NewEventPage() {
 
     if (competitionFormat === "league" && mode === "doubles") {
       setMessage("League competition currently supports singles only.");
+      return;
+    }
+    if (handicapEnabled && !handicapAllowed) {
+      setMessage("Handicapped competitions currently support snooker singles only.");
       return;
     }
     if (!signupOpen && mode === "singles" && selected.length < 2) {
@@ -362,6 +401,7 @@ export default function NewEventPage() {
         is_practice: false,
         include_in_stats: true,
         app_assign_opening_break: appAssignOpeningBreak,
+        handicap_enabled: handicapEnabled && handicapAllowed,
         knockout_round_best_of: knockoutRoundBestOf,
         signup_open: signupOpen,
         signup_deadline: signupDeadline ? new Date(signupDeadline).toISOString() : null,
@@ -383,7 +423,7 @@ export default function NewEventPage() {
     const matches =
       competitionFormat === "knockout"
         ? (mode === "singles"
-            ? (singlesReady ? createKnockoutMatches(competitionId, best, selected, appAssignOpeningBreak) : [])
+            ? (singlesReady ? createKnockoutMatches(competitionId, best, selected, appAssignOpeningBreak, handicapEnabled && handicapAllowed) : [])
             : (doublesReady ? createKnockoutDoubles(competitionId, best, validTeams, appAssignOpeningBreak) : []))
         : [];
 
@@ -433,6 +473,7 @@ export default function NewEventPage() {
         sport,
         format: competitionFormat,
         mode,
+        handicapEnabled: handicapEnabled && handicapAllowed,
         bestOf: best,
         roundSpecificBestOf: roundBestOfEnabled ? { semi: semi, final: final } : null,
         locationId,
@@ -465,6 +506,7 @@ export default function NewEventPage() {
     { label: "Sport", value: sport === "snooker" ? "Snooker" : sport === "pool_9_ball" ? "Pool (9-ball)" : "Pool (8-ball)" },
     { label: "Competition", value: competitionFormat === "knockout" ? "Knockout" : "League" },
     { label: "Format", value: mode === "singles" ? "Singles" : "Doubles" },
+    { label: "Scoring", value: handicapEnabled && handicapAllowed ? "Handicapped" : "Scratch" },
     { label: "Opening round", value: `Best of ${bestOf}` },
     { label: "Entries", value: mode === "singles" ? `${selected.length} selected` : `${teams.filter((t) => t.player1 && t.player2).length} teams` },
   ];
@@ -666,6 +708,26 @@ export default function NewEventPage() {
                 </p>
               </div>
             )}
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <span className="text-sm font-medium text-slate-700">
+                Handicapped scoring
+                {!handicapAllowed ? <span className="ml-2 text-xs text-slate-500">(snooker singles only)</span> : null}
+              </span>
+              <input
+                type="checkbox"
+                checked={handicapEnabled && handicapAllowed}
+                disabled={!handicapAllowed}
+                onChange={(e) => setHandicapEnabled(e.target.checked)}
+              />
+            </label>
+            {handicapEnabled && handicapAllowed ? (
+              <div className={mutedCardClass}>
+                <p className="text-sm font-medium text-slate-700">Handicap mode</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Match starts will use each player&apos;s current snooker handicap. Frame scores should be entered with the handicap start included in the final adjusted total.
+                </p>
+              </div>
+            ) : null}
             <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <span className="text-sm font-medium text-slate-700">
                 Auto-select opening breaker

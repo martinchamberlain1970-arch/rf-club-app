@@ -32,6 +32,8 @@ type Match = {
   opening_break_player_id?: string | null;
   rating_applied_at?: string | null;
   scheduled_for?: string | null;
+  team1_handicap_start?: number | null;
+  team2_handicap_start?: number | null;
 };
 
 type Player = {
@@ -45,6 +47,7 @@ type Player = {
   peak_rating_snooker?: number | null;
   rated_matches_pool?: number | null;
   rated_matches_snooker?: number | null;
+  snooker_handicap?: number | null;
 };
 type KnockoutRoundBestOf = {
   round1?: number;
@@ -60,6 +63,7 @@ type CompetitionSettings = {
   competition_format: "knockout" | "league";
   app_assign_opening_break: boolean;
   knockout_round_best_of: KnockoutRoundBestOf | null;
+  handicap_enabled?: boolean;
 };
 
 type FrameRow = {
@@ -225,6 +229,16 @@ function addDaysToIsoDate(isoDate: string, days: number) {
   return next.toISOString().slice(0, 10);
 }
 
+function calculateSnookerHandicapStarts(playerOneHandicap: number | null | undefined, playerTwoHandicap: number | null | undefined) {
+  const h1 = playerOneHandicap ?? 0;
+  const h2 = playerTwoHandicap ?? 0;
+  const baseline = Math.min(h1, h2);
+  return {
+    team1: h1 - baseline,
+    team2: h2 - baseline,
+  };
+}
+
 function getMatchStatusLabel(match: Match | null) {
   if (!match) return "";
   if (match.status === "bye") return "Locked";
@@ -356,7 +370,7 @@ export default function MatchPage() {
 
       const mRes = await client
         .from("matches")
-        .select("id,competition_id,round_no,match_no,best_of,status,match_mode,is_archived,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,rating_applied_at,scheduled_for")
+        .select("id,competition_id,round_no,match_no,best_of,status,match_mode,is_archived,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,rating_applied_at,scheduled_for,team1_handicap_start,team2_handicap_start")
         .eq("id", matchId)
         .maybeSingle();
 
@@ -388,10 +402,10 @@ export default function MatchPage() {
         })(),
         client
           .from("players")
-          .select("id,display_name,full_name,avatar_url,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker"),
+          .select("id,display_name,full_name,avatar_url,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker,snooker_handicap"),
         client
           .from("competitions")
-          .select("id,name,sport_type,location_id,competition_format,app_assign_opening_break,knockout_round_best_of")
+          .select("id,name,sport_type,location_id,competition_format,app_assign_opening_break,knockout_round_best_of,handicap_enabled")
           .eq("id", loadedMatch.competition_id)
           .maybeSingle(),
         client
@@ -446,7 +460,7 @@ export default function MatchPage() {
         const [refreshedMatchRes, refreshedFramesRes, refreshedSubmissionsRes] = await Promise.all([
           client
             .from("matches")
-            .select("id,competition_id,round_no,match_no,best_of,status,match_mode,is_archived,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,rating_applied_at,scheduled_for")
+            .select("id,competition_id,round_no,match_no,best_of,status,match_mode,is_archived,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,rating_applied_at,scheduled_for,team1_handicap_start,team2_handicap_start")
             .eq("id", matchId)
             .maybeSingle(),
           client
@@ -540,6 +554,7 @@ export default function MatchPage() {
   const avatarMap = useMemo(() => new Map(players.map((p) => [p.id, p.avatar_url ?? null])), [players]);
   const teams = useMemo(() => (match ? getTeamInfo(match, nameMap) : null), [match, nameMap]);
   const isSnooker = competition?.sport_type === "snooker";
+  const isHandicappedSnookerMatch = Boolean(isSnooker && competition?.handicap_enabled && match?.match_mode === "singles");
   const openingBreakerName = match?.opening_break_player_id ? nameMap.get(match.opening_break_player_id) ?? null : null;
   const isByeMatch = useMemo(
     () => !!(match && match.match_mode === "singles" && match.status === "bye" && match.player1_id && match.player1_id === match.player2_id),
@@ -1005,6 +1020,12 @@ export default function MatchPage() {
     const openingBreaker = competition.app_assign_opening_break && openingBreakerCandidates.length
       ? openingBreakerCandidates[stableIndexFromSeed(openingBreakSeed, openingBreakerCandidates.length)] ?? null
       : null;
+    const handicapStarts = competition.handicap_enabled && competition.sport_type === "snooker" && singlesA && singlesB
+      ? calculateSnookerHandicapStarts(
+          players.find((player) => player.id === singlesA)?.snooker_handicap,
+          players.find((player) => player.id === singlesB)?.snooker_handicap
+        )
+      : { team1: 0, team2: 0 };
 
     const nextRowPayload = match.match_mode === "doubles"
       ? {
@@ -1022,6 +1043,8 @@ export default function MatchPage() {
           team2_player2_id: teamB.p2,
           winner_player_id: null,
           opening_break_player_id: openingBreaker,
+          team1_handicap_start: 0,
+          team2_handicap_start: 0,
         }
       : {
           competition_id: match.competition_id,
@@ -1038,6 +1061,8 @@ export default function MatchPage() {
           team2_player2_id: null,
           winner_player_id: null,
           opening_break_player_id: openingBreaker,
+          team1_handicap_start: handicapStarts.team1,
+          team2_handicap_start: handicapStarts.team2,
         };
 
     const existingRes = await client
@@ -2043,6 +2068,11 @@ export default function MatchPage() {
                 </div>
                 <p className="mt-1 text-slate-700">Best of {match.best_of} {competition.sport_type === "snooker" ? "frames" : "racks"}</p>
                 <p className="mt-1 text-slate-700">Status: {getMatchStatusLabel(match)}</p>
+                {isHandicappedSnookerMatch ? (
+                  <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+                    Handicapped fixture. Start each frame at {teams.team1Label} {match.team1_handicap_start ?? 0} - {match.team2_handicap_start ?? 0} {teams.team2Label}. Enter final adjusted frame scores including that start.
+                  </div>
+                ) : null}
                 {competition.app_assign_opening_break || openingBreakerName ? (
                   <p className="mt-1 text-slate-700">
                     Opening breaker: {openingBreakerName ? `${openingBreakerName} *` : "App assigned"}

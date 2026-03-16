@@ -20,10 +20,12 @@ type Match = {
   team2_player2_id: string | null;
   winner_player_id: string | null;
   opening_break_player_id: string | null;
+  team1_handicap_start?: number | null;
+  team2_handicap_start?: number | null;
 };
 
 type Player = { id: string; display_name: string; full_name: string | null; avatar_url?: string | null };
-type Competition = { id: string; name: string; sport_type: "snooker" | "pool_8_ball" | "pool_9_ball"; competition_format: "knockout" | "league" };
+type Competition = { id: string; name: string; sport_type: "snooker" | "pool_8_ball" | "pool_9_ball"; competition_format: "knockout" | "league"; handicap_enabled?: boolean };
 type FrameRow = {
   frame_number: number;
   winner_player_id: string | null;
@@ -82,7 +84,7 @@ export default function QuickDisplayPage() {
     setLoading(true);
     const mRes = await client
       .from("matches")
-      .select("id,competition_id,round_no,match_no,best_of,status,match_mode,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id")
+      .select("id,competition_id,round_no,match_no,best_of,status,match_mode,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,team1_handicap_start,team2_handicap_start")
       .eq("id", matchId)
       .single();
     if (mRes.error || !mRes.data) {
@@ -95,7 +97,7 @@ export default function QuickDisplayPage() {
 
     const [pRes, cRes, fRes] = await Promise.all([
       client.from("players").select("id,display_name,full_name,avatar_url"),
-      client.from("competitions").select("id,name,sport_type,competition_format").eq("id", loadedMatch.competition_id).single(),
+      client.from("competitions").select("id,name,sport_type,competition_format,handicap_enabled").eq("id", loadedMatch.competition_id).single(),
       client
         .from("frames")
         .select("frame_number,winner_player_id,is_walkover_award")
@@ -179,6 +181,7 @@ export default function QuickDisplayPage() {
   }, [match?.opening_break_player_id, teams, names, frames]);
 
   const winnerName = match?.winner_player_id && teams ? (names.get(match.winner_player_id) ?? null) : null;
+  const isHandicappedSnookerMatch = Boolean(competition?.sport_type === "snooker" && competition?.handicap_enabled && match?.match_mode === "singles");
   const score = useMemo(() => {
     if (!match || !teams) return { team1: 0, team2: 0 };
     const relevant = frames.filter((f) => !f.is_walkover_award);
@@ -200,6 +203,11 @@ export default function QuickDisplayPage() {
               <h1 className="text-3xl font-semibold">
                 {competition?.name ?? "Quick Match"}
               </h1>
+              {isHandicappedSnookerMatch ? (
+                <p className="mt-2 text-sm text-sky-300">
+                  Handicap start: {teams?.team1Label ?? "Team 1"} {match?.team1_handicap_start ?? 0} - {match?.team2_handicap_start ?? 0} {teams?.team2Label ?? "Team 2"}
+                </p>
+              ) : null}
             </div>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setTvMode((v) => !v)} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200">

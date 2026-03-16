@@ -29,6 +29,7 @@ type Competition = {
   max_entries?: number | null;
   league_meetings?: number | null;
   league_start_date?: string | null;
+  handicap_enabled?: boolean;
 };
 type Match = {
   id: string;
@@ -44,8 +45,10 @@ type Match = {
   team2_player2_id?: string | null;
   winner_player_id: string | null;
   scheduled_for?: string | null;
+  team1_handicap_start?: number | null;
+  team2_handicap_start?: number | null;
 };
-type Player = { id: string; display_name: string; full_name: string | null };
+type Player = { id: string; display_name: string; full_name: string | null; snooker_handicap?: number | null };
 type Entry = {
   id: string;
   competition_id: string;
@@ -156,7 +159,8 @@ function getDoublesWinnerTeam(m: Match): { p1: string; p2: string } | null {
 async function ensureKnockoutNextRoundMatches(
   client: NonNullable<typeof supabase>,
   comp: Competition,
-  loadedMatches: Match[]
+  loadedMatches: Match[],
+  playerHandicapById: Map<string, number>
 ): Promise<boolean> {
   if (comp.competition_format !== "knockout") return false;
   const byKey = new Map<string, Match>();
@@ -200,6 +204,8 @@ async function ensureKnockoutNextRoundMatches(
           team2_player2_id: bTeam.p2,
           winner_player_id: null,
           opening_break_player_id: openingBreaker,
+          team1_handicap_start: 0,
+          team2_handicap_start: 0,
         };
         const ins = await client.from("matches").insert(payload).select("id").single();
         if (!ins.error && ins.data) {
@@ -211,6 +217,9 @@ async function ensureKnockoutNextRoundMatches(
         const bWinner = getSinglesWinner(feederB);
         if (!aWinner || !bWinner) continue;
         const openingBreaker = comp.app_assign_opening_break ? ((roundNo + nextMatchNo) % 2 === 0 ? aWinner : bWinner) : null;
+        const handicapStarts = comp.handicap_enabled && comp.sport_type === "snooker"
+          ? calculateSnookerHandicapStarts(playerHandicapById.get(aWinner), playerHandicapById.get(bWinner))
+          : { team1: 0, team2: 0 };
         const payload = {
           competition_id: comp.id,
           round_no: roundNo + 1,
@@ -226,6 +235,8 @@ async function ensureKnockoutNextRoundMatches(
           team2_player2_id: null,
           winner_player_id: null,
           opening_break_player_id: openingBreaker,
+          team1_handicap_start: handicapStarts.team1,
+          team2_handicap_start: handicapStarts.team2,
         };
         const ins = await client.from("matches").insert(payload).select("id").single();
         if (!ins.error && ins.data) {
@@ -250,6 +261,16 @@ function getMatchLabel(m: Match, shortMap: Map<string, string>) {
     return `${shortMap.get(m.player1_id) ?? "TBC"} vs BYE`;
   }
   return `${shortMap.get(m.player1_id ?? "") ?? "TBC"} vs ${shortMap.get(m.player2_id ?? "") ?? "TBC"}`;
+}
+
+function calculateSnookerHandicapStarts(playerOneHandicap: number | null | undefined, playerTwoHandicap: number | null | undefined) {
+  const h1 = playerOneHandicap ?? 0;
+  const h2 = playerTwoHandicap ?? 0;
+  const baseline = Math.min(h1, h2);
+  return {
+    team1: h1 - baseline,
+    team2: h2 - baseline,
+  };
 }
 
 function generateLeagueRounds(playerIds: string[], meetings: number) {
@@ -405,17 +426,17 @@ export default function CompetitionPage() {
       const [cRes, mRes, pRes, fRes] = await Promise.all([
         client
           .from("competitions")
-          .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,league_meetings,league_start_date")
+          .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,league_meetings,league_start_date,handicap_enabled")
           .eq("id", id)
           .single(),
         client
           .from("matches")
-          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for")
+          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
           .eq("competition_id", id)
           .eq("is_archived", false)
           .order("round_no")
           .order("match_no"),
-        client.from("players").select("id,display_name,full_name"),
+        client.from("players").select("id,display_name,full_name,snooker_handicap"),
         client.from("frames").select("match_id,winner_player_id"),
       ]);
       if (!active) return;
@@ -438,7 +459,7 @@ export default function CompetitionPage() {
       }
       const refreshedMatchRes = await client
         .from("matches")
-        .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for")
+        .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
         .eq("competition_id", id)
         .eq("is_archived", false)
         .order("round_no")
@@ -450,11 +471,12 @@ export default function CompetitionPage() {
       setCompetition(comp);
       setCurrentUserId(signedInUserId);
       setViewerLinkedPlayerId(linkedPlayerId);
-      const changed = await ensureKnockoutNextRoundMatches(client, comp, loadedMatches);
+      const playerHandicapById = new Map((((pRes.data ?? []) as unknown) as Player[]).map((player) => [player.id, player.snooker_handicap ?? 0]));
+      const changed = await ensureKnockoutNextRoundMatches(client, comp, loadedMatches, playerHandicapById);
       if (changed) {
         const refreshed = await client
           .from("matches")
-          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for")
+          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
           .eq("competition_id", id)
           .eq("is_archived", false)
           .order("round_no")
@@ -542,6 +564,7 @@ export default function CompetitionPage() {
     }
 
     const openingBreakBaseByPair = new Map<string, string>();
+    const playerHandicapById = new Map(players.map((player) => [player.id, player.snooker_handicap ?? 0]));
     const fixtureRows = rounds.flatMap((round, roundIndex) =>
       round.map((pairing, matchIndex) => {
         const scheduled = new Date(start);
@@ -557,6 +580,9 @@ export default function CompetitionPage() {
             ? baseBreaker
             : (baseBreaker === pairing.player1 ? pairing.player2 : pairing.player1);
         }
+        const handicapStarts = competition.handicap_enabled && competition.sport_type === "snooker"
+          ? calculateSnookerHandicapStarts(playerHandicapById.get(pairing.player1), playerHandicapById.get(pairing.player2 ?? ""))
+          : { team1: 0, team2: 0 };
         return {
           competition_id: competition.id,
           round_no: roundIndex + 1,
@@ -569,6 +595,8 @@ export default function CompetitionPage() {
           winner_player_id: pairing.isBye ? pairing.player1 : null,
           opening_break_player_id: openingBreaker,
           scheduled_for: scheduled.toISOString().slice(0, 10),
+          team1_handicap_start: handicapStarts.team1,
+          team2_handicap_start: handicapStarts.team2,
         };
       })
     );
@@ -1002,6 +1030,7 @@ export default function CompetitionPage() {
                 <h2 className="text-3xl font-semibold text-slate-900">{competition.name}</h2>
                 <p className="mt-1 text-slate-700">Venue: {competition.venue || "-"}</p>
                 <p className="mt-1 text-slate-700">Format: {competition.competition_format}</p>
+                <p className="mt-1 text-slate-700">Scoring: {competition.handicap_enabled ? "Handicapped" : "Scratch"}</p>
                 <p className="mt-1 text-slate-700">Best of {competition.best_of}</p>
                 {competition.competition_format === "league" ? (
                   <>

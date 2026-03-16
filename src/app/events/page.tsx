@@ -17,6 +17,7 @@ type Competition = {
   sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   competition_format: "knockout" | "league";
   match_mode: "singles" | "doubles";
+  handicap_enabled?: boolean;
   best_of: number;
   is_practice: boolean;
   is_archived: boolean;
@@ -119,7 +120,7 @@ export default function EventsPage() {
       const [compRes, matchesRes] = await Promise.all([
         client
           .from("competitions")
-          .select("id,name,sport_type,competition_format,match_mode,best_of,is_practice,is_archived,is_completed,created_at")
+          .select("id,name,sport_type,competition_format,match_mode,handicap_enabled,best_of,is_practice,is_archived,is_completed,created_at")
           .order("created_at", { ascending: false }),
         client
           .from("matches")
@@ -319,6 +320,11 @@ export default function EventsPage() {
                           <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
                             {r.match_mode === "doubles" ? "Doubles" : "Singles"}
                           </span>
+                          {r.handicap_enabled ? (
+                            <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+                              Handicapped
+                            </span>
+                          ) : null}
                           {r.is_practice ? (
                             <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
                               Practice
