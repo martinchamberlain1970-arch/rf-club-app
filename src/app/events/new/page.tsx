@@ -14,6 +14,7 @@ import MessageModal from "@/components/MessageModal";
 
 type Sport = "snooker" | "pool_8_ball" | "pool_9_ball";
 type Mode = "singles" | "doubles";
+type CompetitionFormat = "knockout" | "league";
 type Player = { id: string; display_name: string; full_name?: string | null };
 type TeamPick = { player1: string; player2: string };
 type Location = { id: string; name: string };
@@ -35,6 +36,7 @@ export default function NewEventPage() {
   const [locationId, setLocationId] = useState("");
   const [locations, setLocations] = useState<Location[]>([]);
   const [sport, setSport] = useState<Sport>("pool_8_ball");
+  const [competitionFormat, setCompetitionFormat] = useState<CompetitionFormat>("knockout");
   const [mode, setMode] = useState<Mode>("singles");
   const [bestOf, setBestOf] = useState("1");
   const [bestOfSemi, setBestOfSemi] = useState("5");
@@ -68,6 +70,7 @@ export default function NewEventPage() {
     bestOfSemi !== "5" ||
     bestOfFinal !== "7" ||
     roundBestOfEnabled ||
+    competitionFormat !== "knockout" ||
     mode !== "singles" ||
     appAssignOpeningBreak ||
     signupOpen ||
@@ -295,11 +298,15 @@ export default function NewEventPage() {
     const validTeams = teams.filter((t) => t.player1 && t.player2);
     const uniqueTeamPlayerCount = new Set(selectedTeamPlayers).size;
 
+    if (competitionFormat === "league" && mode === "doubles") {
+      setMessage("League competition currently supports singles only.");
+      return;
+    }
     if (!signupOpen && mode === "singles" && selected.length < 2) {
       setMessage("Select at least 2 players.");
       return;
     }
-    if (mode === "doubles" && !signupOpen) {
+    if (competitionFormat === "knockout" && mode === "doubles" && !signupOpen) {
       if (validTeams.length < 2) {
         setMessage("Create at least 2 doubles teams.");
         return;
@@ -313,7 +320,7 @@ export default function NewEventPage() {
         return;
       }
     }
-    if (!premium.unlocked && mode === "singles" && selected.length > 4) {
+    if (competitionFormat === "knockout" && !premium.unlocked && mode === "singles" && selected.length > 4) {
       setMessage("Free tier supports knockout up to 4 players.");
       return;
     }
@@ -326,7 +333,7 @@ export default function NewEventPage() {
       return;
     }
     if (!signupOpen && mode === "singles" && selected.length < 2) {
-      setMessage("Competition requires at least 2 players.");
+      setMessage(`${competitionFormat === "league" ? "League" : "Competition"} requires at least 2 players.`);
       return;
     }
     if (signupMaxEntries && Number.parseInt(signupMaxEntries, 10) <= 0) {
@@ -349,7 +356,7 @@ export default function NewEventPage() {
         venue: venue.trim() || null,
         location_id: locationId,
         sport_type: sport,
-        competition_format: "knockout",
+        competition_format: competitionFormat,
         best_of: best,
         match_mode: mode,
         is_practice: false,
@@ -373,13 +380,12 @@ export default function NewEventPage() {
     const competitionId = compRes.data.id as string;
     const singlesReady = mode === "singles" && selected.length >= 2;
     const doublesReady = mode === "doubles" && validTeams.length >= 2;
-    const matches = mode === "singles"
-      ? (singlesReady
-          ? createKnockoutMatches(competitionId, best, selected, appAssignOpeningBreak)
-          : [])
-      : (doublesReady
-          ? createKnockoutDoubles(competitionId, best, validTeams, appAssignOpeningBreak)
-          : []);
+    const matches =
+      competitionFormat === "knockout"
+        ? (mode === "singles"
+            ? (singlesReady ? createKnockoutMatches(competitionId, best, selected, appAssignOpeningBreak) : [])
+            : (doublesReady ? createKnockoutDoubles(competitionId, best, validTeams, appAssignOpeningBreak) : []))
+        : [];
 
     if (matches.length > 0) {
       const mRes = await client.from("matches").insert(matches);
@@ -391,13 +397,31 @@ export default function NewEventPage() {
       }
     }
 
+    if (competitionFormat === "league" && mode === "singles" && selected.length > 0 && admin.userId) {
+      const entryRows = selected.map((playerId) => ({
+        competition_id: competitionId,
+        requester_user_id: admin.userId as string,
+        player_id: playerId,
+        status: "approved" as const,
+        reviewed_by_user_id: admin.userId as string,
+        reviewed_at: new Date().toISOString(),
+      }));
+      const entryRes = await client.from("competition_entries").insert(entryRows);
+      if (entryRes.error) {
+        await client.from("competitions").delete().eq("id", competitionId);
+        setSaving(false);
+        setMessage(entryRes.error.message);
+        return;
+      }
+    }
+
     await logAudit("competition_created", {
       entityType: "competition",
       entityId: competitionId,
-      summary: `${name.trim()} created (knockout, ${mode}, best of ${best}).`,
+      summary: `${name.trim()} created (${competitionFormat}, ${mode}, best of ${best}).`,
       meta: {
         sport,
-        format: "knockout",
+        format: competitionFormat,
         mode,
         bestOf: best,
         roundSpecificBestOf: roundBestOfEnabled ? { semi: semi, final: final } : null,
@@ -429,6 +453,7 @@ export default function NewEventPage() {
         : "rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-4";
   const competitionSummary = [
     { label: "Sport", value: sport === "snooker" ? "Snooker" : sport === "pool_9_ball" ? "Pool (9-ball)" : "Pool (8-ball)" },
+    { label: "Competition", value: competitionFormat === "knockout" ? "Knockout" : "League" },
     { label: "Format", value: mode === "singles" ? "Singles" : "Doubles" },
     { label: "Opening round", value: `Best of ${bestOf}` },
     { label: "Entries", value: mode === "singles" ? `${selected.length} selected` : `${teams.filter((t) => t.player1 && t.player2).length} teams` },
@@ -441,7 +466,7 @@ export default function NewEventPage() {
           <ScreenHeader
             title="Create Competition"
             eyebrow="Competition"
-            subtitle="Set up a local knockout competition and move straight into fixtures."
+            subtitle="Set up a club knockout or league competition for snooker and pool."
             warnOnNavigate={hasDraftChanges}
             warnMessage="You have unsaved competition setup. Leave this screen and lose your changes?"
           />
@@ -457,7 +482,7 @@ export default function NewEventPage() {
             <div className={sportAccentClass}>
               <p className="text-sm font-semibold text-slate-900">Competition setup</p>
               <p className="mt-1 text-sm text-slate-600">
-                Choose the location, match format, and player list. The app will build the knockout bracket for you.
+                Choose the location, competition type, match format, and player list. Knockout builds fixtures immediately; league creates the club league shell and approved field.
               </p>
               <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 {competitionSummary.map((item) => (
@@ -502,6 +527,29 @@ export default function NewEventPage() {
                 </select>
               </div>
               <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Competition type</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className={competitionFormat === "knockout" ? pillActiveClass : pillIdleClass}
+                    onClick={() => setCompetitionFormat("knockout")}
+                  >
+                    Knockout
+                  </button>
+                  <button
+                    type="button"
+                    className={competitionFormat === "league" ? pillActiveClass : pillIdleClass}
+                    onClick={() => {
+                      setCompetitionFormat("league");
+                      setMode("singles");
+                      setRoundBestOfEnabled(false);
+                    }}
+                  >
+                    League
+                  </button>
+                </div>
+              </div>
+              <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Format</label>
                 <div className="flex gap-2">
                   <button type="button" className={mode === "singles" ? pillActiveClass : pillIdleClass} onClick={() => setMode("singles")}>
@@ -510,10 +558,10 @@ export default function NewEventPage() {
                   <button
                     type="button"
                     className={mode === "doubles" ? pillActiveClass : pillIdleClass}
-                    onClick={() => premium.unlocked && setMode("doubles")}
-                    disabled={!premium.unlocked}
+                    onClick={() => premium.unlocked && competitionFormat === "knockout" && setMode("doubles")}
+                    disabled={!premium.unlocked || competitionFormat === "league"}
                   >
-                    Doubles{premium.unlocked ? "" : " (Premium)"}
+                    Doubles{competitionFormat === "league" ? " (Knockout only)" : premium.unlocked ? "" : " (Premium)"}
                   </button>
                 </div>
               </div>
@@ -528,6 +576,7 @@ export default function NewEventPage() {
                 </select>
               </div>
             </div>
+            {competitionFormat === "knockout" ? (
             <div className={mutedCardClass}>
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-slate-700">Round-specific match lengths</p>
@@ -594,6 +643,14 @@ export default function NewEventPage() {
                 </p>
               ) : null}
             </div>
+            ) : (
+              <div className={mutedCardClass}>
+                <p className="text-sm font-medium text-slate-700">League format</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Club leagues are created as a competition shell with an approved player field. League fixtures are managed inside the league competition rather than auto-building a knockout bracket.
+                </p>
+              </div>
+            )}
             <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <span className="text-sm font-medium text-slate-700">
                 Auto-select opening breaker
@@ -784,7 +841,9 @@ export default function NewEventPage() {
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">Ready to launch</p>
               <p className="mt-1 text-sm text-slate-600">
-                The app will create the competition shell and build the knockout event using the setup above.
+                {competitionFormat === "knockout"
+                  ? "The app will create the competition shell and build the knockout event using the setup above."
+                  : "The app will create the league competition and approve the selected player field using the setup above."}
               </p>
               <button type="button" onClick={onCreateClick} disabled={saving} className={`mt-3 ${primaryButtonClass}`}>
                 {saving ? "Creating..." : "Create competition"}
@@ -797,7 +856,11 @@ export default function NewEventPage() {
         <ConfirmModal
           open={createConfirmOpen}
           title="Create this competition?"
-          description="This will create the knockout competition and take you to the event."
+          description={
+            competitionFormat === "knockout"
+              ? "This will create the knockout competition and take you to the event."
+              : "This will create the league competition and take you to the event."
+          }
           confirmLabel="Create Competition"
           cancelLabel="Cancel"
           onCancel={() => {

@@ -503,17 +503,19 @@ export default function CompetitionPage() {
           <ScreenHeader
             title="Competition"
             eyebrow="Event"
-            subtitle="Fixtures, bracket, and live status."
+            subtitle={competition?.competition_format === "league" ? "Player field, sign-ups, and league status." : "Fixtures, bracket, and live status."}
             actions={
               <>
-                <button
-                  type="button"
-                  onClick={openBracketDisplay}
-                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-slate-700"
-                >
-                  Open Bracket Display
-                </button>
-                {admin.isAdmin ? (
+                {competition?.competition_format === "knockout" ? (
+                  <button
+                    type="button"
+                    onClick={openBracketDisplay}
+                    className="rounded-full border border-slate-300 bg-white px-4 py-2 text-slate-700"
+                  >
+                    Open Bracket Display
+                  </button>
+                ) : null}
+                {admin.isAdmin && competition?.competition_format === "knockout" ? (
                   <button
                     type="button"
                     onClick={openMatchDisplay}
@@ -533,6 +535,11 @@ export default function CompetitionPage() {
                 <p className="mt-1 text-slate-700">Venue: {competition.venue || "-"}</p>
                 <p className="mt-1 text-slate-700">Format: {competition.competition_format}</p>
                 <p className="mt-1 text-slate-700">Best of {competition.best_of}</p>
+                {competition.competition_format === "league" ? (
+                  <p className="mt-2 text-sm text-slate-600">
+                    This is a club league competition. Use sign-ups and approved entries to manage the field.
+                  </p>
+                ) : null}
               </section>
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -623,6 +630,14 @@ export default function CompetitionPage() {
                   <p className="mt-2 text-sm text-slate-600">No entries yet.</p>
                 )}
               </section>
+              {competition.competition_format === "league" ? (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-lg font-semibold text-slate-900">League field</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Approved and pending player entries are shown above. Knockout-only bracket and fixture views are not used for league competitions.
+                  </p>
+                </section>
+              ) : (
               <section className="space-y-2">
                 <div className="inline-flex rounded-lg border border-slate-300 bg-white p-1">
                   <button
@@ -727,6 +742,7 @@ export default function CompetitionPage() {
                   </div>
                 )}
               </section>
+              )}
             </>
           ) : null}
         </RequireAuth>

@@ -30,7 +30,6 @@ const supportLinks = [
 ] as const;
 
 const adminToolLinks = [
-  { href: "/league", title: "League Manager", desc: "Set up leagues, teams, fixtures, and standings." },
   { href: "/signups", title: "Competition Sign-ups", desc: "Review open sign-ups and player entry requests." },
   { href: "/live", title: "Live Overview", desc: "See active matches and competition progress at a glance." },
 ] as const;
@@ -147,7 +146,6 @@ export default function HomePage() {
       "/quick-match",
       "/events",
       "/events/new",
-      "/league",
       "/signups",
       "/players",
       "/results",
