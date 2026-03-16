@@ -8,6 +8,7 @@ import ScreenHeader from "@/components/ScreenHeader";
 import { supabase } from "@/lib/supabase";
 import useAdminStatus from "@/components/useAdminStatus";
 import MessageModal from "@/components/MessageModal";
+import ConfirmModal from "@/components/ConfirmModal";
 
 type Competition = {
   id: string;
@@ -284,6 +285,7 @@ export default function CompetitionPage() {
   const [view, setView] = useState<View>("fixtures");
   const [message, setMessage] = useState<string | null>(null);
   const [generatingLeagueFixtures, setGeneratingLeagueFixtures] = useState(false);
+  const [confirmLeagueGenerationOpen, setConfirmLeagueGenerationOpen] = useState(false);
 
   const openBracketDisplay = () => {
     if (!id) return;
@@ -396,6 +398,15 @@ export default function CompetitionPage() {
   const pendingEntries = useMemo(() => entries.filter((e) => e.status === "pending"), [entries]);
   const approvedEntries = useMemo(() => entries.filter((e) => e.status === "approved"), [entries]);
   const approvedLeaguePlayerIds = useMemo(() => approvedEntries.map((entry) => entry.player_id), [approvedEntries]);
+  const projectedLeagueRounds = useMemo(() => {
+    const meetings = Number.parseInt(leagueMeetingsInput, 10);
+    if (!Number.isInteger(meetings) || meetings < 1 || meetings > 4) return [];
+    return generateLeagueRounds(approvedLeaguePlayerIds, meetings);
+  }, [approvedLeaguePlayerIds, leagueMeetingsInput]);
+  const projectedLeagueFixtureCount = useMemo(
+    () => projectedLeagueRounds.reduce((total, round) => total + round.length, 0),
+    [projectedLeagueRounds]
+  );
 
   const generateLeagueFixtures = async () => {
     const client = supabase;
@@ -800,7 +811,7 @@ export default function CompetitionPage() {
                       <div className="flex items-end">
                         <button
                           type="button"
-                          onClick={() => void generateLeagueFixtures()}
+                          onClick={() => setConfirmLeagueGenerationOpen(true)}
                           disabled={generatingLeagueFixtures || matches.length > 0}
                           className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-60"
                         >
@@ -939,6 +950,22 @@ export default function CompetitionPage() {
             </>
           ) : null}
         </RequireAuth>
+        <ConfirmModal
+          open={confirmLeagueGenerationOpen}
+          title="Generate weekly league fixtures?"
+          description={
+            projectedLeagueFixtureCount > 0
+              ? `This will generate ${projectedLeagueFixtureCount} weekly fixture${projectedLeagueFixtureCount === 1 ? "" : "s"} for the approved league field.`
+              : "This will generate weekly fixtures for the approved league field."
+          }
+          confirmLabel="Generate Fixtures"
+          cancelLabel="Cancel"
+          onCancel={() => setConfirmLeagueGenerationOpen(false)}
+          onConfirm={async () => {
+            setConfirmLeagueGenerationOpen(false);
+            await generateLeagueFixtures();
+          }}
+        />
       </div>
     </main>
   );
