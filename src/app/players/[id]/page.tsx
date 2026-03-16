@@ -1690,9 +1690,6 @@ export default function PlayerProfilePage() {
                       >
                         <option value="18_plus">18+</option>
                         <option value="under_18">Under 18s</option>
-                        <option value="16_17">16–17</option>
-                        <option value="13_15">13–15</option>
-                        <option value="under_13">Under 13</option>
                       </select>
                     </div>
                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -1803,9 +1800,6 @@ export default function PlayerProfilePage() {
                       >
                         <option value="18_plus">18+</option>
                         <option value="under_18">Under 18s</option>
-                        <option value="16_17">16–17</option>
-                        <option value="13_15">13–15</option>
-                        <option value="under_13">Under 13</option>
                       </select>
                     </div>
                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
