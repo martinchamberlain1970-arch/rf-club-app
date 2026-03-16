@@ -318,6 +318,8 @@ function formatLeagueFixtureDeadline(scheduledFor: string | null | undefined) {
   if (!window) return null;
   return window.dueAt.toLocaleString("en-GB", {
     weekday: "long",
+    day: "numeric",
+    month: "long",
     hour: "numeric",
     minute: "2-digit",
   });

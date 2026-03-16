@@ -106,6 +106,20 @@ type ResultSubmission = {
   note: string | null;
 };
 
+type LeagueRescheduleRequest = {
+  id: string;
+  match_id: string;
+  requester_user_id: string;
+  requester_player_id: string | null;
+  original_scheduled_for: string;
+  requested_scheduled_for: string;
+  status: "pending" | "approved" | "rejected";
+  reviewed_by_user_id: string | null;
+  reviewed_at: string | null;
+  note: string | null;
+  created_at: string;
+};
+
 const REJECTION_REASONS = [
   "Incorrect final score",
   "Wrong match or players selected",
@@ -204,6 +218,13 @@ function getLeagueFixtureWindow(scheduledFor: string | null | undefined) {
   return { opensAt, dueAt };
 }
 
+function addDaysToIsoDate(isoDate: string, days: number) {
+  const [year, month, day] = isoDate.split("-").map((value) => Number.parseInt(value, 10));
+  if (!year || !month || !day) return isoDate;
+  const next = new Date(year, month - 1, day + days, 12, 0, 0, 0);
+  return next.toISOString().slice(0, 10);
+}
+
 function getMatchStatusLabel(match: Match | null) {
   if (!match) return "";
   if (match.status === "bye") return "Locked";
@@ -290,6 +311,8 @@ export default function MatchPage() {
   const [message, setMessage] = useState<string | null>(() => (supabase ? null : "Supabase is not configured."));
   const [confirmEditComplete, setConfirmEditComplete] = useState(false);
   const [submissions, setSubmissions] = useState<ResultSubmission[]>([]);
+  const [rescheduleRequests, setRescheduleRequests] = useState<LeagueRescheduleRequest[]>([]);
+  const [requesterPendingReschedules, setRequesterPendingReschedules] = useState<LeagueRescheduleRequest[]>([]);
   const [adminLocationId, setAdminLocationId] = useState<string | null>(null);
   const [viewerLinkedPlayerId, setViewerLinkedPlayerId] = useState<string | null>(null);
   const [assigningBreaker, setAssigningBreaker] = useState(false);
@@ -303,6 +326,7 @@ export default function MatchPage() {
   const [infoModal, setInfoModal] = useState<{ title: string; description: string } | null>(null);
   const [redirectAfterInfo, setRedirectAfterInfo] = useState(false);
   const [reviewNowMs] = useState(() => Date.now());
+  const [requestingReschedule, setRequestingReschedule] = useState(false);
   const [rejectModal, setRejectModal] = useState<{
     submission: ResultSubmission;
     reason: string;
@@ -406,6 +430,8 @@ export default function MatchPage() {
       let effectiveMatch = loadedMatch;
       let effectiveFrameRows = ((framesRes.data ?? []) as unknown) as FrameRow[];
       let effectiveSubmissionRows = ((submissionsRes.data ?? []) as unknown) as ResultSubmission[];
+      let effectiveRescheduleRows: LeagueRescheduleRequest[] = [];
+      let effectiveRequesterPendingRows: LeagueRescheduleRequest[] = [];
       const sessionRes = await client.auth.getSession();
       const accessToken = sessionRes.data.session?.access_token ?? null;
       if (accessToken && competitionRes.data.competition_format === "league") {
@@ -441,6 +467,31 @@ export default function MatchPage() {
         if (!refreshedSubmissionsRes.error) effectiveSubmissionRows = ((refreshedSubmissionsRes.data ?? []) as unknown) as ResultSubmission[];
       }
 
+      if (competitionRes.data.competition_format === "league") {
+        const [matchRescheduleRes, requesterPendingRes] = await Promise.all([
+          client
+            .from("league_reschedule_requests")
+            .select("id,match_id,requester_user_id,requester_player_id,original_scheduled_for,requested_scheduled_for,status,reviewed_by_user_id,reviewed_at,note,created_at")
+            .eq("match_id", matchId)
+            .order("created_at", { ascending: false }),
+          signedInUserId
+            ? client
+                .from("league_reschedule_requests")
+                .select("id,match_id,requester_user_id,requester_player_id,original_scheduled_for,requested_scheduled_for,status,reviewed_by_user_id,reviewed_at,note,created_at")
+                .eq("requester_user_id", signedInUserId)
+                .eq("status", "pending")
+                .order("created_at", { ascending: false })
+            : Promise.resolve({ data: [], error: null }),
+        ]);
+        if (matchRescheduleRes.error || requesterPendingRes.error) {
+          setLoading(false);
+          setMessage(matchRescheduleRes.error?.message || requesterPendingRes.error?.message || "Failed to load reschedule requests.");
+          return;
+        }
+        effectiveRescheduleRows = ((matchRescheduleRes.data ?? []) as unknown) as LeagueRescheduleRequest[];
+        effectiveRequesterPendingRows = ((requesterPendingRes.data ?? []) as unknown) as LeagueRescheduleRequest[];
+      }
+
       const loadedPlayers = (playersRes.data as unknown) as Player[];
       const names = new Map(loadedPlayers.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name]));
       const teams = getTeamInfo(effectiveMatch, names);
@@ -474,6 +525,8 @@ export default function MatchPage() {
       setCompetition((competitionRes.data as unknown) as CompetitionSettings);
       setFrames(existing.length > 0 ? existing : [createEmptyFrame(1)]);
       setSubmissions(effectiveSubmissionRows);
+      setRescheduleRequests(effectiveRescheduleRows);
+      setRequesterPendingReschedules(effectiveRequesterPendingRows);
       setLoading(false);
     };
 
@@ -555,6 +608,19 @@ export default function MatchPage() {
     const now = new Date();
     return now >= leagueFixtureWindow.opensAt && now <= leagueFixtureWindow.dueAt;
   }, [leagueFixtureWindow]);
+  const pendingRescheduleForMatch = useMemo(
+    () => rescheduleRequests.find((request) => request.status === "pending") ?? null,
+    [rescheduleRequests]
+  );
+  const latestRescheduleForMatch = useMemo(() => rescheduleRequests[0] ?? null, [rescheduleRequests]);
+  const requesterPendingElsewhere = useMemo(
+    () => requesterPendingReschedules.find((request) => request.match_id !== matchId) ?? null,
+    [requesterPendingReschedules, matchId]
+  );
+  const rescheduleTargetDate = useMemo(
+    () => (match?.scheduled_for ? addDaysToIsoDate(match.scheduled_for, 7) : null),
+    [match?.scheduled_for]
+  );
   const canAdminEditFrames = Boolean(!isByeMatch && !isArchived && admin.isAdmin && !adminReviewOnly);
   const canParticipantEditFrames = Boolean(
     !admin.loading &&
@@ -566,6 +632,66 @@ export default function MatchPage() {
       playerLeagueWindowOpen
   );
   const canEditFrames = canAdminEditFrames || canParticipantEditFrames;
+  const canRequestReschedule = Boolean(
+    competition?.competition_format === "league" &&
+      !admin.isSuper &&
+      viewerCanEditThisMatch &&
+      !isByeMatch &&
+      !isArchived &&
+      !isVoidedMatch &&
+      match?.status !== "complete" &&
+      match?.scheduled_for &&
+      !userPendingSubmission &&
+      !userApprovedSubmission &&
+      !pendingRescheduleForMatch &&
+      !requesterPendingElsewhere
+  );
+
+  const requestLeagueReschedule = async () => {
+    const client = supabase;
+    if (!client || !admin.userId || !viewerLinkedPlayerId || !match?.scheduled_for || !rescheduleTargetDate) return;
+    setRequestingReschedule(true);
+    const insert = await client.from("league_reschedule_requests").insert({
+      match_id: match.id,
+      competition_id: match.competition_id,
+      requester_user_id: admin.userId,
+      requester_player_id: viewerLinkedPlayerId,
+      original_scheduled_for: match.scheduled_for,
+      requested_scheduled_for: rescheduleTargetDate,
+      status: "pending",
+    });
+    setRequestingReschedule(false);
+    if (insert.error) {
+      const normalized = insert.error.message.toLowerCase();
+      if (normalized.includes("one_pending_per_requester") || normalized.includes("one_pending_per_match") || normalized.includes("duplicate key")) {
+        setMessage("Only one outstanding reschedule request is allowed at a time.");
+        return;
+      }
+      setMessage(insert.error.message);
+      return;
+    }
+    const refresh = await client
+      .from("league_reschedule_requests")
+      .select("id,match_id,requester_user_id,requester_player_id,original_scheduled_for,requested_scheduled_for,status,reviewed_by_user_id,reviewed_at,note,created_at")
+      .eq("match_id", match.id)
+      .order("created_at", { ascending: false });
+    if (!refresh.error) {
+      setRescheduleRequests(((refresh.data ?? []) as unknown) as LeagueRescheduleRequest[]);
+    }
+    const refreshPending = await client
+      .from("league_reschedule_requests")
+      .select("id,match_id,requester_user_id,requester_player_id,original_scheduled_for,requested_scheduled_for,status,reviewed_by_user_id,reviewed_at,note,created_at")
+      .eq("requester_user_id", admin.userId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+    if (!refreshPending.error) {
+      setRequesterPendingReschedules(((refreshPending.data ?? []) as unknown) as LeagueRescheduleRequest[]);
+    }
+    setInfoModal({
+      title: "Reschedule requested",
+      description: `Your request has been sent to the Super User. If approved, this fixture will move to the following week (${new Date(`${rescheduleTargetDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}).`,
+    });
+  };
 
   const assignOpeningBreaker = async (playerId: string) => {
     const client = supabase;
@@ -2273,6 +2399,81 @@ export default function MatchPage() {
                       {" "}Please correct and resubmit.
                     </div>
                   ) : null}
+                </section>
+              ) : null}
+              {!admin.loading &&
+              !admin.isSuper &&
+              viewerCanEditThisMatch &&
+              competition?.competition_format === "league" &&
+              match?.scheduled_for &&
+              !isByeMatch &&
+              !isArchived ? (
+                <section className={`${cardClass} space-y-3`}>
+                  <h3 className="text-xl font-semibold text-slate-900">Reschedule</h3>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                    <p className="font-medium text-slate-900">Need one extra week?</p>
+                    <p className="mt-1">
+                      One reschedule request can be submitted per player at a time. If approved by the Super User, this fixture will move to the following week only.
+                    </p>
+                    {pendingRescheduleForMatch ? (
+                      <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                        Reschedule requested for {new Date(`${pendingRescheduleForMatch.requested_scheduled_for}T12:00:00`).toLocaleDateString("en-GB", {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                        })}. Waiting for Super User review.
+                      </p>
+                    ) : null}
+                    {!pendingRescheduleForMatch && latestRescheduleForMatch?.status === "approved" ? (
+                      <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900">
+                        Reschedule approved. This fixture now plays by {leagueFixtureWindow?.dueAt.toLocaleString("en-GB", {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        }) ?? "the updated weekly deadline"}.
+                      </p>
+                    ) : null}
+                    {!pendingRescheduleForMatch && latestRescheduleForMatch?.status === "rejected" ? (
+                      <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900">
+                        Latest reschedule request was not approved.
+                      </p>
+                    ) : null}
+                    {requesterPendingElsewhere ? (
+                      <p className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                        You already have another outstanding reschedule request. That must be reviewed before you can request another.
+                      </p>
+                    ) : null}
+                    {canRequestReschedule ? (
+                      <button
+                        type="button"
+                        disabled={requestingReschedule}
+                        onClick={() =>
+                          setConfirmModal({
+                            title: "Request one-week reschedule?",
+                            description: `This will ask the Super User to move this fixture from ${new Date(`${match.scheduled_for}T12:00:00`).toLocaleDateString("en-GB", {
+                              weekday: "long",
+                              day: "numeric",
+                              month: "long",
+                            })} to ${rescheduleTargetDate ? new Date(`${rescheduleTargetDate}T12:00:00`).toLocaleDateString("en-GB", {
+                              weekday: "long",
+                              day: "numeric",
+                              month: "long",
+                            }) : "the following week"}. Only one outstanding reschedule request is allowed at a time.`,
+                            confirmLabel: "Request reschedule",
+                            onConfirm: async () => {
+                              setConfirmModal(null);
+                              await requestLeagueReschedule();
+                            },
+                          })
+                        }
+                        className={buttonSecondaryClass}
+                      >
+                        Request one-week reschedule
+                      </button>
+                    ) : null}
+                  </div>
                 </section>
               ) : null}
               {admin.isAdmin && submissions.length ? (
