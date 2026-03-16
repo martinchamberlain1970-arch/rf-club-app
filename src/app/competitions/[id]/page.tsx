@@ -73,6 +73,7 @@ type LeaguePairing = {
   meetingNumber: number;
 };
 type View = "fixtures" | "bracket";
+type LeagueFixtureFilterMode = "all" | "week" | "player";
 type BracketNode = {
   id: string;
   roundNo: number;
@@ -342,6 +343,9 @@ export default function CompetitionPage() {
   const [leagueMeetingsInput, setLeagueMeetingsInput] = useState("2");
   const [leagueStartDateInput, setLeagueStartDateInput] = useState("");
   const [view, setView] = useState<View>("fixtures");
+  const [leagueFixtureFilterMode, setLeagueFixtureFilterMode] = useState<LeagueFixtureFilterMode>("all");
+  const [leagueFixtureFilterWeek, setLeagueFixtureFilterWeek] = useState<string>("all");
+  const [leagueFixtureFilterPlayer, setLeagueFixtureFilterPlayer] = useState<string>("all");
   const [message, setMessage] = useState<string | null>(null);
   const [generatingLeagueFixtures, setGeneratingLeagueFixtures] = useState(false);
   const [confirmLeagueGenerationOpen, setConfirmLeagueGenerationOpen] = useState(false);
@@ -770,6 +774,33 @@ export default function CompetitionPage() {
           }),
       }));
   }, [competition, matches, fullMap, viewerLinkedPlayerId, currentUserId, resultSubmissions, admin.isAdmin]);
+  const leagueFixtureWeekOptions = useMemo(
+    () => leagueFixturesByWeek.map((week) => ({ value: String(week.week), label: `Week ${week.week}` })),
+    [leagueFixturesByWeek]
+  );
+  const leagueFixturePlayerOptions = useMemo(
+    () =>
+      approvedLeaguePlayerIds.map((playerId) => ({
+        value: playerId,
+        label: fullMap.get(playerId) ?? shortMap.get(playerId) ?? "Unknown player",
+      })),
+    [approvedLeaguePlayerIds, fullMap, shortMap]
+  );
+  const filteredLeagueFixturesByWeek = useMemo(() => {
+    if (leagueFixtureFilterMode === "week" && leagueFixtureFilterWeek !== "all") {
+      return leagueFixturesByWeek.filter((week) => String(week.week) === leagueFixtureFilterWeek);
+    }
+    if (leagueFixtureFilterMode === "player" && leagueFixtureFilterPlayer !== "all") {
+      const selectedLabel = fullMap.get(leagueFixtureFilterPlayer) ?? shortMap.get(leagueFixtureFilterPlayer) ?? "";
+      return leagueFixturesByWeek
+        .map((week) => ({
+          ...week,
+          matches: week.matches.filter((match) => match.label.includes(selectedLabel)),
+        }))
+        .filter((week) => week.matches.length > 0);
+    }
+    return leagueFixturesByWeek;
+  }, [leagueFixturesByWeek, leagueFixtureFilterMode, leagueFixtureFilterWeek, leagueFixtureFilterPlayer, fullMap, shortMap]);
   const leagueTableRows = useMemo(() => {
     if (!competition || competition.competition_format !== "league") return [] as Array<{
       playerId: string;
@@ -1161,7 +1192,67 @@ export default function CompetitionPage() {
                         </div>
                       </div>
                       <div className="space-y-3">
-                        {leagueFixturesByWeek.map((week) => (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-sm font-semibold text-slate-900">Fixture filter</p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setLeagueFixtureFilterMode("all")}
+                              className={`rounded-lg border px-3 py-2 text-sm ${leagueFixtureFilterMode === "all" ? "border-teal-700 bg-teal-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
+                            >
+                              All fixtures
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLeagueFixtureFilterMode("week")}
+                              className={`rounded-lg border px-3 py-2 text-sm ${leagueFixtureFilterMode === "week" ? "border-teal-700 bg-teal-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
+                            >
+                              By week
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLeagueFixtureFilterMode("player")}
+                              className={`rounded-lg border px-3 py-2 text-sm ${leagueFixtureFilterMode === "player" ? "border-teal-700 bg-teal-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
+                            >
+                              By player
+                            </button>
+                          </div>
+                          {leagueFixtureFilterMode === "week" ? (
+                            <label className="mt-3 flex max-w-xs flex-col gap-1 text-sm text-slate-700">
+                              Select week
+                              <select
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                                value={leagueFixtureFilterWeek}
+                                onChange={(e) => setLeagueFixtureFilterWeek(e.target.value)}
+                              >
+                                <option value="all">All weeks</option>
+                                {leagueFixtureWeekOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          {leagueFixtureFilterMode === "player" ? (
+                            <label className="mt-3 flex max-w-sm flex-col gap-1 text-sm text-slate-700">
+                              Select player
+                              <select
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                                value={leagueFixtureFilterPlayer}
+                                onChange={(e) => setLeagueFixtureFilterPlayer(e.target.value)}
+                              >
+                                <option value="all">All players</option>
+                                {leagueFixturePlayerOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                        </div>
+                        {filteredLeagueFixturesByWeek.map((week) => (
                           <div key={`week-${week.week}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                             <p className="text-sm font-semibold text-slate-900">
                               Week {week.week}
@@ -1197,6 +1288,11 @@ export default function CompetitionPage() {
                             </div>
                           </div>
                         ))}
+                        {!filteredLeagueFixturesByWeek.length ? (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                            No fixtures match the current filter.
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   ) : (
