@@ -54,6 +54,13 @@ type Entry = {
   status: "pending" | "approved" | "rejected" | "withdrawn";
   created_at: string;
 };
+type LeaguePairing = {
+  player1: string;
+  player2: string | null;
+  isBye: boolean;
+  pairKey: string | null;
+  meetingNumber: number;
+};
 type View = "fixtures" | "bracket";
 type BracketNode = {
   id: string;
@@ -234,7 +241,7 @@ function getMatchLabel(m: Match, shortMap: Map<string, string>) {
 }
 
 function generateLeagueRounds(playerIds: string[], meetings: number) {
-  if (playerIds.length < 2) return [] as Array<Array<{ player1: string; player2: string }>>;
+  if (playerIds.length < 2) return [] as LeaguePairing[][];
   let rotation = [...playerIds];
   let hasBye = false;
   if (rotation.length % 2 === 1) {
@@ -242,21 +249,37 @@ function generateLeagueRounds(playerIds: string[], meetings: number) {
     hasBye = true;
   }
 
-  const rounds: Array<Array<{ player1: string; player2: string }>> = [];
+  const rounds: LeaguePairing[][] = [];
   const roundCount = rotation.length - 1;
+  const meetingCounts = new Map<string, number>();
 
   for (let cycle = 0; cycle < meetings; cycle += 1) {
     let order = [...rotation];
     for (let round = 0; round < roundCount; round += 1) {
-      const pairings: Array<{ player1: string; player2: string }> = [];
+      const pairings: LeaguePairing[] = [];
       for (let i = 0; i < order.length / 2; i += 1) {
         const a = order[i];
         const b = order[order.length - 1 - i];
-        if (hasBye && (a === "__BYE__" || b === "__BYE__")) continue;
+        if (hasBye && (a === "__BYE__" || b === "__BYE__")) {
+          const playerId = a === "__BYE__" ? b : a;
+          if (playerId !== "__BYE__") {
+            pairings.push({
+              player1: playerId,
+              player2: null,
+              isBye: true,
+              pairKey: null,
+              meetingNumber: 1,
+            });
+          }
+          continue;
+        }
+        const pairKey = [a, b].sort().join(":");
+        const meetingNumber = (meetingCounts.get(pairKey) ?? 0) + 1;
+        meetingCounts.set(pairKey, meetingNumber);
         if ((cycle + round) % 2 === 0) {
-          pairings.push({ player1: a, player2: b });
+          pairings.push({ player1: a, player2: b, isBye: false, pairKey, meetingNumber });
         } else {
-          pairings.push({ player1: b, player2: a });
+          pairings.push({ player1: b, player2: a, isBye: false, pairKey, meetingNumber });
         }
       }
       rounds.push(pairings);
@@ -437,21 +460,33 @@ export default function CompetitionPage() {
       return;
     }
 
+    const openingBreakBaseByPair = new Map<string, string>();
     const fixtureRows = rounds.flatMap((round, roundIndex) =>
       round.map((pairing, matchIndex) => {
         const scheduled = new Date(start);
         scheduled.setDate(start.getDate() + (roundIndex * 7));
+        let openingBreaker: string | null = null;
+        if (!pairing.isBye && pairing.player2 && pairing.pairKey) {
+          let baseBreaker = openingBreakBaseByPair.get(pairing.pairKey) ?? null;
+          if (!baseBreaker) {
+            baseBreaker = Math.random() < 0.5 ? pairing.player1 : pairing.player2;
+            openingBreakBaseByPair.set(pairing.pairKey, baseBreaker);
+          }
+          openingBreaker = pairing.meetingNumber % 2 === 1
+            ? baseBreaker
+            : (baseBreaker === pairing.player1 ? pairing.player2 : pairing.player1);
+        }
         return {
           competition_id: competition.id,
           round_no: roundIndex + 1,
           match_no: matchIndex + 1,
           best_of: competition.best_of,
-          status: "pending" as const,
+          status: (pairing.isBye ? "bye" : "pending") as Match["status"],
           match_mode: "singles" as const,
           player1_id: pairing.player1,
-          player2_id: pairing.player2,
-          winner_player_id: null,
-          opening_break_player_id: null,
+          player2_id: pairing.player2 ?? pairing.player1,
+          winner_player_id: pairing.isBye ? pairing.player1 : null,
+          opening_break_player_id: openingBreaker,
           scheduled_for: scheduled.toISOString().slice(0, 10),
         };
       })
@@ -568,6 +603,113 @@ export default function CompetitionPage() {
     }
     return out;
   }, [competition, matches, shortMap, round1MatchCount]);
+  const leagueFixturesByWeek = useMemo(() => {
+    if (!competition || competition.competition_format !== "league") return [] as Array<{
+      week: number;
+      scheduledFor: string | null;
+      matches: Array<{
+        id: string;
+        label: string;
+        status: string;
+        isBye: boolean;
+      }>;
+    }>;
+    const grouped = new Map<number, Match[]>();
+    matches.forEach((match) => {
+      const roundNo = match.round_no ?? 1;
+      const prev = grouped.get(roundNo) ?? [];
+      prev.push(match);
+      grouped.set(roundNo, prev);
+    });
+    return [...grouped.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([week, weekMatches]) => ({
+        week,
+        scheduledFor: weekMatches[0]?.scheduled_for ?? null,
+        matches: weekMatches
+          .sort((a, b) => (a.match_no ?? 0) - (b.match_no ?? 0))
+          .map((match) => ({
+            id: match.id,
+            label: getMatchLabel(match, fullMap),
+            status: getStatusLabel(match),
+            isBye: match.status === "bye",
+          })),
+      }));
+  }, [competition, matches, fullMap]);
+  const leagueTableRows = useMemo(() => {
+    if (!competition || competition.competition_format !== "league") return [] as Array<{
+      playerId: string;
+      playerName: string;
+      played: number;
+      won: number;
+      lost: number;
+      voided: number;
+      byes: number;
+      points: number;
+    }>;
+    const stats = new Map<string, {
+      playerId: string;
+      playerName: string;
+      played: number;
+      won: number;
+      lost: number;
+      voided: number;
+      byes: number;
+      points: number;
+    }>();
+    const ensureRow = (playerId: string) => {
+      const existing = stats.get(playerId);
+      if (existing) return existing;
+      const row = {
+        playerId,
+        playerName: fullMap.get(playerId) ?? shortMap.get(playerId) ?? "Unknown player",
+        played: 0,
+        won: 0,
+        lost: 0,
+        voided: 0,
+        byes: 0,
+        points: 0,
+      };
+      stats.set(playerId, row);
+      return row;
+    };
+
+    approvedLeaguePlayerIds.forEach((playerId) => ensureRow(playerId));
+
+    matches.forEach((match) => {
+      if (!match.player1_id) return;
+      const row1 = ensureRow(match.player1_id);
+      const row2 = match.player2_id && match.player2_id !== match.player1_id ? ensureRow(match.player2_id) : null;
+      if (match.status === "bye") {
+        row1.byes += 1;
+        return;
+      }
+      if (match.status !== "complete") return;
+      row1.played += 1;
+      if (row2) row2.played += 1;
+      if (!match.winner_player_id) {
+        row1.voided += 1;
+        if (row2) row2.voided += 1;
+        return;
+      }
+      if (match.winner_player_id === match.player1_id) {
+        row1.won += 1;
+        row1.points += 1;
+        if (row2) row2.lost += 1;
+      } else if (row2 && match.winner_player_id === match.player2_id) {
+        row2.won += 1;
+        row2.points += 1;
+        row1.lost += 1;
+      }
+    });
+
+    return [...stats.values()].sort((a, b) =>
+      b.points - a.points ||
+      b.won - a.won ||
+      a.lost - b.lost ||
+      a.playerName.localeCompare(b.playerName)
+    );
+  }, [competition, matches, approvedLeaguePlayerIds, fullMap, shortMap]);
   const totalBracketRounds = bracketRounds.length;
   const matchesByKey = useMemo(() => {
     const m = new Map<string, Match>();
@@ -682,6 +824,11 @@ export default function CompetitionPage() {
                       {competition.league_meetings ? `Each opponent: ${competition.league_meetings} time${competition.league_meetings === 1 ? "" : "s"}` : "Fixtures not generated yet."}
                       {competition.league_start_date ? ` · Start date: ${competition.league_start_date}` : ""}
                     </p>
+                    {competition.app_assign_opening_break ? (
+                      <p className="mt-1 text-sm text-slate-600">
+                        Opening break alternates across each opponent series. First meeting is assigned at fixture generation, then alternates on repeat meetings.
+                      </p>
+                    ) : null}
                   </>
                 ) : null}
               </section>
@@ -821,21 +968,73 @@ export default function CompetitionPage() {
                     </div>
                   ) : null}
                   {matches.length ? (
-                    <div className="mt-4 space-y-2">
-                      {matches.map((match) => (
-                        <article key={match.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                          <p className="text-sm font-semibold text-slate-900">
-                            Week {match.round_no ?? "?"} · Match {match.match_no ?? "?"}
-                          </p>
-                          <p className="mt-1 text-sm text-slate-700">{getMatchLabel(match, shortMap)}</p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {match.scheduled_for ? `Scheduled for ${match.scheduled_for}` : "Weekly fixture"} · {match.status.replace("_", " ")}
-                          </p>
-                          <Link href={`/matches/${match.id}`} className="mt-2 inline-block text-sm font-medium text-teal-700 underline">
-                            {admin.isAdmin ? (match.status === "complete" ? "Edit match" : "Open match") : "Submit result"}
-                          </Link>
-                        </article>
-                      ))}
+                    <div className="mt-4 space-y-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-sm font-semibold text-slate-900">League table</p>
+                        <div className="mt-3 overflow-x-auto">
+                          <table className="min-w-full text-sm">
+                            <thead className="text-left text-slate-500">
+                              <tr>
+                                <th className="px-2 py-2">#</th>
+                                <th className="px-2 py-2">Player</th>
+                                <th className="px-2 py-2 text-right">P</th>
+                                <th className="px-2 py-2 text-right">W</th>
+                                <th className="px-2 py-2 text-right">L</th>
+                                <th className="px-2 py-2 text-right">Void</th>
+                                <th className="px-2 py-2 text-right">Bye</th>
+                                <th className="px-2 py-2 text-right">Pts</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {leagueTableRows.map((row, index) => (
+                                <tr key={row.playerId} className="border-t border-slate-200 text-slate-800">
+                                  <td className="px-2 py-2">{index + 1}</td>
+                                  <td className="px-2 py-2 font-medium">{row.playerName}</td>
+                                  <td className="px-2 py-2 text-right">{row.played}</td>
+                                  <td className="px-2 py-2 text-right">{row.won}</td>
+                                  <td className="px-2 py-2 text-right">{row.lost}</td>
+                                  <td className="px-2 py-2 text-right">{row.voided}</td>
+                                  <td className="px-2 py-2 text-right">{row.byes}</td>
+                                  <td className="px-2 py-2 text-right font-semibold">{row.points}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {leagueFixturesByWeek.map((week) => (
+                          <div key={`week-${week.week}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-semibold text-slate-900">
+                              Week {week.week}
+                              {week.scheduledFor ? ` · ${week.scheduledFor}` : ""}
+                            </p>
+                            <div className="mt-2 space-y-2">
+                              {week.matches.map((match) =>
+                                match.isBye ? (
+                                  <div
+                                    key={`${week.week}-${match.id}`}
+                                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                                  >
+                                    {match.label.replace(" vs BYE", " vs BYE week")}
+                                  </div>
+                                ) : (
+                                  <Link
+                                    key={`${week.week}-${match.id}`}
+                                    href={`/matches/${match.id}`}
+                                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 transition hover:border-teal-300 hover:bg-teal-50"
+                                  >
+                                    <span>{match.label}</span>
+                                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
+                                      {match.status}
+                                    </span>
+                                  </Link>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     <p className="mt-3 text-sm text-slate-600">No weekly fixtures generated yet.</p>
