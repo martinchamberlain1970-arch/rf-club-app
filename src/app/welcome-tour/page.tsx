@@ -23,19 +23,25 @@ const stepsByRole: Record<TourRole, { title: string; detail: string; href: strin
       cta: "Open Quick Match",
     },
     {
-      title: "3) Submit your result",
-      detail: "Submit your final result and let the club admin approve it so rankings, results, and event progress stay accurate.",
-      href: "/results",
-      cta: "Open My Submissions",
+      title: "3) Use My Fixtures for weekly matches",
+      detail: "If you are in a competition or league, open My Fixtures to see Last Week, This Week, and Next Week and submit your own fixture when it is live.",
+      href: "/my-fixtures",
+      cta: "Open My Fixtures",
     },
     {
-      title: "4) Follow events and updates",
-      detail: "Use Events, Notifications, and Results to keep track of club competitions, approvals, and account activity.",
+      title: "4) Submit your result for approval",
+      detail: "Submit the full result and let the club admin or Super User approve it so rankings, results, and event progress stay accurate.",
+      href: "/results",
+      cta: "Open Results",
+    },
+    {
+      title: "5) Follow events and updates",
+      detail: "Use Events, Notifications, and Results to keep track of club competitions, league fixtures, approvals, and account activity.",
       href: "/events",
       cta: "Open Events",
     },
     {
-      title: "5) Explore Premium extras",
+      title: "6) Explore Premium extras",
       detail: "Premium adds doubles, stats, live overview access where relevant, auto breaker, and other advanced features.",
       href: "/premium",
       cta: "Open Premium",
@@ -50,7 +56,7 @@ const stepsByRole: Record<TourRole, { title: string; detail: string; href: strin
     },
     {
       title: "2) Create competitions",
-      detail: "Club Admin accounts can create and run club competitions, assign locations, and manage fixtures from the Events flow.",
+      detail: "Club Admin accounts can create and run knockout competitions and club leagues, assign locations, and manage fixtures from the Events flow.",
       href: "/events/new",
       cta: "Open Create Competition",
     },
@@ -61,20 +67,26 @@ const stepsByRole: Record<TourRole, { title: string; detail: string; href: strin
       cta: "Open Quick Match",
     },
     {
-      title: "4) Review results and sign-ups",
-      detail: "Use Results, Notifications, and Competition Sign-ups to keep scores and event entries moving for your club.",
+      title: "4) Run league fixtures and weekly play",
+      detail: "For club leagues, approve the field, generate weekly fixtures, and keep matches moving to the Sunday 21:00 deadline.",
+      href: "/events",
+      cta: "Open Events",
+    },
+    {
+      title: "5) Review results and sign-ups",
+      detail: "Use Results, Notifications, and Competition Sign-ups to keep scores, league fixtures, and event entries moving for your club.",
       href: "/results",
       cta: "Open Results",
     },
     {
-      title: "5) Use Premium where enabled",
+      title: "6) Use Premium where enabled",
       detail: "Premium adds the advanced extras on top of your Club Admin role, including doubles, stats, live overview, and enhanced competition tools.",
       href: "/premium",
       cta: "Open Premium",
     },
     {
-      title: "6) Leave governance to the Super User",
-      detail: "Locations, role changes, premium approvals, audit tools, and wider system controls stay with the Super User account.",
+      title: "7) Leave governance to the Super User",
+      detail: "Locations, role changes, premium approvals, handicap exceptions, reschedule approvals, audit tools, and wider system controls stay with the Super User account.",
       href: "/help",
       cta: "Open Help",
     },
@@ -84,11 +96,13 @@ const stepsByRole: Record<TourRole, { title: string; detail: string; href: strin
 const roleSummary: Record<TourRole, string[]> = {
   player: [
     "You can create Quick Match entries and follow club activity once your player profile is linked.",
+    "Use My Fixtures to open your own scheduled league or competition matches by week.",
     "Club Admin accounts create competitions and run day-to-day club operations.",
     "Premium adds advanced extras like doubles, stats, live overview access where relevant, and enhanced match tools.",
   ],
   admin: [
     "Club Admin accounts can create competitions, manage player activity, and approve result submissions for their club.",
+    "Club Admin accounts can also run club leagues and generate weekly fixtures from the approved field.",
     "Super User controls role promotion, premium approvals, account linking, locations, and system governance.",
     "Premium adds the advanced extras on top of the Club Admin role rather than replacing it.",
   ],
@@ -111,7 +125,7 @@ export default function WelcomeTourPage() {
           <ScreenHeader
             title="Welcome Tour"
             eyebrow="Welcome"
-            subtitle="Fast setup path for players and Club Admin accounts on the current stable build."
+            subtitle="Fast setup path for players and Club Admin accounts on the current stable build, including club leagues and weekly fixtures."
           />
 
           <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-sky-50 via-white to-emerald-50 p-5 shadow-sm">
@@ -121,7 +135,7 @@ export default function WelcomeTourPage() {
                   Welcome
                 </span>
                 <p className="max-w-2xl text-slate-700">
-                  Fast setup path for the current Rack &amp; Frame club workflow. Choose your role to see the right day-to-day path.
+                  Fast setup path for the current Rack &amp; Frame club workflow. Choose your role to see the right day-to-day path for quick matches, competitions, and club leagues.
                 </p>
                 <p className="max-w-2xl text-sm text-slate-600">{heroSummary}</p>
               </div>

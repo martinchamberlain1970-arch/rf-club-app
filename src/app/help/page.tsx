@@ -14,7 +14,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
     getting_started: {
       title: "Getting Started (Player)",
       bullets: [
-        "Sign in and complete profile check: first name, second name, age band, and location.",
+        "Sign in and complete profile check: make sure your account is linked to the right player profile and club location.",
         "Your account must be linked to a player profile before match play is enabled.",
         "If your profile is not linked yet, request linking from the Players screen.",
       ],
@@ -23,7 +23,9 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       title: "Quick Match & Submission (Player)",
       bullets: [
         "Create Quick Match in snooker, 8-ball pool, or 9-ball pool and ensure you are one of the selected players.",
-        "Submit final score for approval instead of editing frame-by-frame live scoring.",
+        "Use My Fixtures to open your league or competition match for Last Week, This Week, or Next Week.",
+        "For league fixtures, only your own live weekly fixture is editable. Other fixtures stay view-only.",
+        "If a snooker competition is handicapped, enter the final adjusted frame score including the handicap start.",
         "Break & Run and Run Out submission is available; totals are validated against match length.",
       ],
     },
@@ -33,7 +35,9 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
         "Players can enter events, follow fixtures, and track results from the Events board.",
         "Competition creation is reserved for Club Admin and Super User accounts.",
         "Competition Sign-ups lets players join open events and track entry status.",
-        "You can open events and view fixtures/brackets for assigned matches.",
+        "Club leagues can be created for snooker or pool, with weekly fixtures generated from the approved field.",
+        "League fixtures are expected to be played by the listed Sunday 21:00 deadline unless a reschedule is approved.",
+        "You can request a one-week reschedule for your own fixture, but only the Super User can approve it.",
       ],
     },
     stats_rules: {
@@ -60,6 +64,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       title: "Result Approvals (Player)",
       bullets: [
         "Track submitted results in Results Queue and Notifications.",
+        "A submitted fixture locks while it waits for approval, then changes to approved once accepted.",
         "Approve/reject is admin-only; players can view status updates.",
         "Approved submissions update event progress and stats automatically.",
       ],
@@ -78,7 +83,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
     getting_started: {
       title: "Getting Started (Club Admin)",
       bullets: [
-        "Register players with mandatory first name, second name, age band, and location.",
+        "Register or link players, keeping profiles tied to the correct club location.",
         "Club Admin can run events, approve results, and manage day-to-day match operations.",
         "Super User has additional governance controls (roles, premium approvals, user linking, location management).",
       ],
@@ -88,6 +93,8 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       bullets: [
         "Open matches to record rack/frame scoring live.",
         "Complete a match once a player reaches the required racks/frames.",
+        "League fixtures open weekly and are intended to be played by the listed Sunday 21:00 deadline.",
+        "If a fixture is not played and no valid result is pending approval, it can be voided with no points awarded.",
         "Walkovers and BYEs do not count toward player stats.",
       ],
     },
@@ -95,9 +102,11 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       title: "Competitions (Club Admin)",
       bullets: [
         "Knockout supports uneven entries with BYEs and auto-advance.",
-        "Competition setup supports snooker, 8-ball pool, and 9-ball pool.",
+        "Competition setup supports snooker, 8-ball pool, and 9-ball pool in knockout and club league formats.",
         "Fixture List and Bracket views both stay available for event tracking.",
         "Competition Sign-ups can be opened per event, with admin approve/reject workflow.",
+        "Club leagues can generate weekly fixtures with players meeting each other 1 to 4 times.",
+        "Snooker competitions and leagues can be marked as handicapped where required.",
         "Round-specific best-of settings and advanced setup are Premium features.",
       ],
     },
@@ -123,8 +132,9 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       bullets: [
         "Review pending result submissions in Results Queue.",
         "Approve applies score/stats progression; reject returns outcome as not accepted.",
+        "Super User can reopen, void, or override fixtures where needed.",
         "If no Club Admin exists for a location, approvals that need an admin can be escalated to the Super User.",
-        "Role or premium request approvals are Super User actions.",
+        "Role changes, premium approvals, handicap exceptions, and league reschedule approvals are Super User actions.",
       ],
     },
     premium: {
@@ -142,11 +152,12 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
 const roleSummary: Record<GuideRole, string[]> = {
   player: [
     "Can create and submit Quick Match results (must be a selected player).",
-    "Cannot create competitions, but can use Competition Sign-ups, view events, check results, and open their ranking card.",
+    "Cannot create competitions, but can use Competition Sign-ups, view events, check results, open My Fixtures, and open their ranking card.",
     "Can play snooker, 8-ball pool, and 9-ball pool through Quick Match.",
   ],
   admin: [
     "Can run day-to-day event operations, create competitions, and approve match/result activity for their club.",
+    "Can create knockout and club league competitions for their club.",
     "Cannot perform Super User-only governance actions unless account role is Super User.",
     "Super User controls roles, premium approvals, account linking, locations, and governance.",
   ],
@@ -183,7 +194,7 @@ export default function HelpPage() {
     <main className="min-h-screen bg-slate-100 p-4 sm:p-6">
       <div className="mx-auto max-w-5xl space-y-3 sm:space-y-4">
         <RequireAuth>
-          <ScreenHeader title="Help & User Guide" eyebrow="Guide" subtitle="How to use Rack & Frame for quick matches, club competitions, player profiles, and results." />
+          <ScreenHeader title="Help & User Guide" eyebrow="Guide" subtitle="How to use Rack & Frame for quick matches, club competitions, club leagues, player profiles, and results." />
 
           <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-sky-50 via-white to-emerald-50 p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-4">
