@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/auto-void-league-fixtures",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}
