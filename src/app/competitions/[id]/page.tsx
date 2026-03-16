@@ -369,6 +369,7 @@ export default function CompetitionPage() {
   const [leagueFixtureFilterPlayer, setLeagueFixtureFilterPlayer] = useState<string>("all");
   const [message, setMessage] = useState<string | null>(null);
   const [generatingLeagueFixtures, setGeneratingLeagueFixtures] = useState(false);
+  const [refreshingFutureHandicaps, setRefreshingFutureHandicaps] = useState(false);
   const [confirmLeagueGenerationOpen, setConfirmLeagueGenerationOpen] = useState(false);
 
   const openBracketDisplay = () => {
@@ -625,7 +626,7 @@ export default function CompetitionPage() {
     setCompetition({ ...competition, league_meetings: meetings, league_start_date: leagueStartDateInput });
     const reload = await client
       .from("matches")
-      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
       .eq("competition_id", competition.id)
       .eq("is_archived", false)
       .order("round_no")
@@ -633,6 +634,64 @@ export default function CompetitionPage() {
     if (reload.data) setMatches(reload.data as Match[]);
     const frameReload = await client.from("frames").select("match_id,winner_player_id");
     if (frameReload.data) setFrames(frameReload.data as Frame[]);
+  };
+
+  const refreshFutureLeagueHandicapStarts = async () => {
+    const client = supabase;
+    if (!client || !competition || competition.competition_format !== "league") return;
+    if (!competition.handicap_enabled || competition.sport_type !== "snooker" || (competition.match_mode ?? "singles") === "doubles") {
+      setMessage("This option is only available for handicapped snooker singles leagues.");
+      return;
+    }
+
+    const now = new Date();
+    const todayLabel = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const playerHandicapById = new Map(players.map((player) => [player.id, player.snooker_handicap ?? 0]));
+    const futureMatches = matches.filter(
+      (match) =>
+        match.status === "pending" &&
+        Boolean(match.scheduled_for) &&
+        String(match.scheduled_for) > todayLabel &&
+        !match.team1_player1_id &&
+        !match.team2_player1_id
+    );
+
+    if (!futureMatches.length) {
+      setMessage("No future pending singles fixtures were found to refresh.");
+      return;
+    }
+
+    setRefreshingFutureHandicaps(true);
+    for (const match of futureMatches) {
+      const handicapStarts = calculateSnookerHandicapStarts(playerHandicapById.get(match.player1_id ?? ""), playerHandicapById.get(match.player2_id ?? ""));
+      const updateRes = await client
+        .from("matches")
+        .update({
+          team1_handicap_start: handicapStarts.team1,
+          team2_handicap_start: handicapStarts.team2,
+        })
+        .eq("id", match.id);
+      if (updateRes.error) {
+        setRefreshingFutureHandicaps(false);
+        setMessage(updateRes.error.message);
+        return;
+      }
+    }
+
+    const reload = await client
+      .from("matches")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
+      .eq("competition_id", competition.id)
+      .eq("is_archived", false)
+      .order("round_no")
+      .order("match_no");
+    setRefreshingFutureHandicaps(false);
+    if (reload.error) {
+      setMessage(reload.error.message);
+      return;
+    }
+    if (reload.data) setMatches(reload.data as Match[]);
+    setMessage(`Future handicap starts refreshed for ${futureMatches.length} fixture${futureMatches.length === 1 ? "" : "s"}.`);
   };
 
   const bracketRounds = useMemo(() => {
@@ -1196,6 +1255,21 @@ export default function CompetitionPage() {
                           {generatingLeagueFixtures ? "Generating..." : matches.length > 0 ? "Fixtures Generated" : "Create Weekly Fixtures"}
                         </button>
                       </div>
+                    </div>
+                  ) : null}
+                  {admin.isAdmin && competition.handicap_enabled && competition.sport_type === "snooker" && (competition.match_mode ?? "singles") !== "doubles" && matches.length > 0 ? (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-sm text-amber-900">
+                        Handicap starts are stored when fixtures are generated. If player handicaps change later, refresh future pending fixtures here.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void refreshFutureLeagueHandicapStarts()}
+                        disabled={refreshingFutureHandicaps}
+                        className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-amber-900 disabled:opacity-60"
+                      >
+                        {refreshingFutureHandicaps ? "Refreshing..." : "Refresh Future Handicap Starts"}
+                      </button>
                     </div>
                   ) : null}
                   {matches.length ? (
