@@ -9,34 +9,6 @@ import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
 import ConfirmModal from "@/components/ConfirmModal";
 
-type DashboardMatch = {
-  id: string;
-  competition_id: string;
-  player1_id: string | null;
-  player2_id: string | null;
-  team1_player1_id: string | null;
-  team1_player2_id: string | null;
-  team2_player1_id: string | null;
-  team2_player2_id: string | null;
-  status: "pending" | "in_progress" | "complete" | "bye";
-  scheduled_for?: string | null;
-  round_no?: number | null;
-  match_no?: number | null;
-};
-
-type DashboardCompetition = {
-  id: string;
-  name: string;
-  sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
-  competition_format: "knockout" | "league";
-};
-
-type DashboardPlayer = {
-  id: string;
-  display_name: string;
-  full_name: string | null;
-};
-
 const coreActionLinks = [
   { href: "/quick-match", title: "Quick Match", desc: "Start a local practice or social match." },
   { href: "/events/new", title: "Create Competition", desc: "Set up a knockout competition for your club." },
@@ -97,9 +69,6 @@ export default function HomePage() {
   const [resultsQueueCount, setResultsQueueCount] = useState<number | null>(null);
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number | null>(null);
   const [pendingResultSubmissionsCount, setPendingResultSubmissionsCount] = useState<number>(0);
-  const [myFixtures, setMyFixtures] = useState<DashboardMatch[]>([]);
-  const [dashboardCompetitions, setDashboardCompetitions] = useState<DashboardCompetition[]>([]);
-  const [dashboardPlayers, setDashboardPlayers] = useState<DashboardPlayer[]>([]);
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
   const [confirmState, setConfirmState] = useState<{
     open: boolean;
@@ -258,56 +227,6 @@ export default function HomePage() {
   useEffect(() => {
     const run = async () => {
       const client = supabase;
-      if (!client || !userPlayerId) {
-        setMyFixtures([]);
-        setDashboardCompetitions([]);
-        setDashboardPlayers([]);
-        return;
-      }
-      const matchesRes = await client
-        .from("matches")
-        .select("id,competition_id,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,status,scheduled_for,round_no,match_no")
-        .eq("is_archived", false)
-        .in("status", ["pending", "in_progress"])
-        .or(
-          `player1_id.eq.${userPlayerId},player2_id.eq.${userPlayerId},team1_player1_id.eq.${userPlayerId},team1_player2_id.eq.${userPlayerId},team2_player1_id.eq.${userPlayerId},team2_player2_id.eq.${userPlayerId}`
-        )
-        .order("scheduled_for", { ascending: true })
-        .order("round_no", { ascending: true })
-        .order("match_no", { ascending: true });
-      if (matchesRes.error) return;
-      const loadedMatches = ((matchesRes.data ?? []) as unknown) as DashboardMatch[];
-      setMyFixtures(loadedMatches);
-
-      const competitionIds = [...new Set(loadedMatches.map((match) => match.competition_id).filter(Boolean))];
-      const playerIds = [...new Set(
-        loadedMatches.flatMap((match) => [
-          match.player1_id,
-          match.player2_id,
-          match.team1_player1_id,
-          match.team1_player2_id,
-          match.team2_player1_id,
-          match.team2_player2_id,
-        ].filter(Boolean) as string[])
-      )];
-
-      const [competitionRes, playerRes] = await Promise.all([
-        competitionIds.length
-          ? client.from("competitions").select("id,name,sport_type,competition_format").in("id", competitionIds)
-          : Promise.resolve({ data: [], error: null }),
-        playerIds.length
-          ? client.from("players").select("id,display_name,full_name").in("id", playerIds)
-          : Promise.resolve({ data: [], error: null }),
-      ]);
-      if (!competitionRes.error) setDashboardCompetitions(((competitionRes.data ?? []) as unknown) as DashboardCompetition[]);
-      if (!playerRes.error) setDashboardPlayers(((playerRes.data ?? []) as unknown) as DashboardPlayer[]);
-    };
-    void run();
-  }, [userPlayerId]);
-
-  useEffect(() => {
-    const run = async () => {
-      const client = supabase;
       if (!client) return;
       const { count: openCount } = await client
         .from("competitions")
@@ -413,34 +332,6 @@ export default function HomePage() {
     const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
     window.history.replaceState({}, "", next);
   }, [admin.loading, admin.isAdmin, pendingClaim]);
-
-  const competitionNameById = new Map(dashboardCompetitions.map((competition) => [competition.id, competition]));
-  const dashboardPlayerNameById = new Map(
-    dashboardPlayers.map((player) => [player.id, player.full_name?.trim() ? player.full_name : player.display_name])
-  );
-
-  const myFixtureRows = myFixtures.map((match) => {
-    const isDoubles = Boolean(match.team1_player1_id || match.team2_player1_id);
-    const myTeamIds = isDoubles
-      ? [match.team1_player1_id, match.team1_player2_id].includes(userPlayerId)
-        ? [match.team1_player1_id, match.team1_player2_id]
-        : [match.team2_player1_id, match.team2_player2_id]
-      : [match.player1_id].includes(userPlayerId) ? [match.player1_id] : [match.player2_id];
-    const opponentIds = isDoubles
-      ? [match.team1_player1_id, match.team1_player2_id].includes(userPlayerId)
-        ? [match.team2_player1_id, match.team2_player2_id]
-        : [match.team1_player1_id, match.team1_player2_id]
-      : [match.player1_id].includes(userPlayerId) ? [match.player2_id] : [match.player1_id];
-    const myLabel = myTeamIds.filter(Boolean).map((id) => dashboardPlayerNameById.get(id as string) ?? "TBC").join(" & ");
-    const opponentLabel = opponentIds.filter(Boolean).map((id) => dashboardPlayerNameById.get(id as string) ?? "TBC").join(" & ") || "BYE";
-    const competition = competitionNameById.get(match.competition_id);
-    return {
-      ...match,
-      competition,
-      myLabel,
-      opponentLabel,
-    };
-  });
 
   const submitClaimRequest = async () => {
     setProfileMessage(null);
@@ -700,47 +591,6 @@ export default function HomePage() {
             {profileMessage ? <p className="mt-2 text-sm text-slate-700">{profileMessage}</p> : null}
           </section>
 
-          {userPlayerId ? (
-            <section className={subtleCardClass}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">My Fixtures</p>
-                  <p className="mt-1 text-sm text-slate-600">Your upcoming and live club fixtures across leagues and competitions.</p>
-                </div>
-                {userPlayerId ? (
-                  <Link href={`/players/${userPlayerId}`} className={pillSecondaryClass}>
-                    Open profile
-                  </Link>
-                ) : null}
-              </div>
-              {myFixtureRows.length ? (
-                <div className="mt-3 space-y-2">
-                  {myFixtureRows.map((match) => (
-                    <Link
-                      key={match.id}
-                      href={`/matches/${match.id}`}
-                      className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 transition hover:bg-white"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="font-medium text-slate-900">{match.competition?.name ?? "Competition fixture"}</p>
-                        <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700">
-                          {match.status === "in_progress" ? "Live" : "Scheduled"}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm text-slate-700">{match.myLabel} vs {match.opponentLabel}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {match.competition?.competition_format === "league" ? `Week ${match.round_no ?? 1}` : `Round ${match.round_no ?? 1} · Match ${match.match_no ?? 1}`}
-                        {match.scheduled_for ? ` · Plays by ${new Date(`${match.scheduled_for}T21:00:00`).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}` : ""}
-                      </p>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-3 text-sm text-slate-600">No current upcoming or live fixtures are scheduled for your linked player profile.</p>
-              )}
-            </section>
-          ) : null}
-
           <section className="space-y-3">
             <div className="space-y-3">
               <div className={cardBaseClass}>
@@ -749,6 +599,13 @@ export default function HomePage() {
                   The main day-to-day actions for running matches, competitions, players, and results.
                 </p>
                 <div className="mt-3 grid gap-2 sm:gap-3 sm:grid-cols-3">
+                  {userPlayerId ? (
+                    <Link href="/my-fixtures" className={primaryCardClass("/my-fixtures")}>
+                      <h2 className="text-base sm:text-lg font-semibold text-slate-900">My Fixtures</h2>
+                      <p className="mt-1 text-sm text-slate-600">Open your last, current, and next week fixture list.</p>
+                      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
+                    </Link>
+                  ) : null}
                   {visibleCoreLinks.map((item) => (
                     <Link
                       key={item.href}
