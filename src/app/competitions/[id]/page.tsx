@@ -603,6 +603,7 @@ export default function CompetitionPage() {
     }
     return out;
   }, [competition, matches, shortMap, round1MatchCount]);
+  const getStatusLabel = (m: Match) => (m.status === "bye" ? "Locked" : m.status.replace("_", " "));
   const leagueFixturesByWeek = useMemo(() => {
     if (!competition || competition.competition_format !== "league") return [] as Array<{
       week: number;
@@ -716,8 +717,6 @@ export default function CompetitionPage() {
     for (const match of matches) m.set(`${match.round_no ?? 1}-${match.match_no ?? 1}`, match);
     return m;
   }, [matches]);
-
-  const getStatusLabel = (m: Match) => (m.status === "bye" ? "Locked" : m.status.replace("_", " "));
   const fixtureRowsByRound = useMemo(() => {
     if (!competition) return [] as Array<{ roundNo: number; title: string; bestOf: number; rows: FixtureRow[] }>;
     const roundCount = Math.max(1, totalBracketRounds);
