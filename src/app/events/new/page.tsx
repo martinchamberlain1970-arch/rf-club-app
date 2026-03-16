@@ -398,13 +398,23 @@ export default function NewEventPage() {
     }
 
     if (competitionFormat === "league" && mode === "singles" && selected.length > 0 && admin.userId) {
+      const linkedUsersRes = await client
+        .from("app_users")
+        .select("id,linked_player_id")
+        .in("linked_player_id", selected);
+      const linkedUserByPlayerId = new Map(
+        ((linkedUsersRes.data ?? []) as Array<{ id: string; linked_player_id: string | null }>)
+          .filter((row) => row.linked_player_id)
+          .map((row) => [row.linked_player_id as string, row.id])
+      );
+      const reviewedAt = new Date().toISOString();
       const entryRows = selected.map((playerId) => ({
         competition_id: competitionId,
-        requester_user_id: admin.userId as string,
+        requester_user_id: linkedUserByPlayerId.get(playerId) ?? (admin.userId as string),
         player_id: playerId,
         status: "approved" as const,
         reviewed_by_user_id: admin.userId as string,
-        reviewed_at: new Date().toISOString(),
+        reviewed_at: reviewedAt,
       }));
       const entryRes = await client.from("competition_entries").insert(entryRows);
       if (entryRes.error) {
