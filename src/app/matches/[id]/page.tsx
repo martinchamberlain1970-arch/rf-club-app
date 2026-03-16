@@ -1657,6 +1657,10 @@ export default function MatchPage() {
       showSubmitModal("You already have a pending submission for this match. This match is locked until an administrator reviews it.");
       return;
     }
+    if (hasPendingSubmission) {
+      showSubmitModal("A result for this fixture is already pending review. This match is locked until an administrator reviews it.");
+      return;
+    }
     if (userApprovedSubmission) {
       showSubmitModal("Your submitted result has already been approved. This match is locked.");
       return;
