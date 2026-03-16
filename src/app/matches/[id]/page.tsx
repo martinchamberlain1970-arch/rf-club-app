@@ -588,7 +588,7 @@ export default function MatchPage() {
   }, [admin.userId, submissions]);
   const hasPendingSubmission = useMemo(() => submissions.some((s) => s.status === "pending"), [submissions]);
   const pendingSubmissionForReview = useMemo(() => submissions.find((s) => s.status === "pending") ?? null, [submissions]);
-  const adminReviewOnly = Boolean(admin.isAdmin && hasPendingSubmission && !isArchived && !isByeMatch && match?.status !== "complete");
+  const adminReviewOnly = Boolean(canAdminManageMatch && hasPendingSubmission && !isArchived && !isByeMatch && match?.status !== "complete");
   const userApprovedSubmission = useMemo(() => {
     if (!admin.userId) return null;
     return submissions.find((s) => s.submitted_by_user_id === admin.userId && s.status === "approved") ?? null;
@@ -618,6 +618,7 @@ export default function MatchPage() {
     if (!match || competition?.competition_format !== "league") return null;
     return getLeagueFixtureWindow(match.scheduled_for);
   }, [competition?.competition_format, match]);
+  const canAdminManageMatch = admin.isAdmin || admin.isSuper;
   const playerLeagueWindowOpen = useMemo(() => {
     if (!leagueFixtureWindow) return true;
     const now = new Date();
@@ -636,10 +637,10 @@ export default function MatchPage() {
     () => (match?.scheduled_for ? addDaysToIsoDate(match.scheduled_for, 7) : null),
     [match?.scheduled_for]
   );
-  const canAdminEditFrames = Boolean(!isByeMatch && !isArchived && admin.isAdmin && !adminReviewOnly);
+  const canAdminEditFrames = Boolean(!isByeMatch && !isArchived && canAdminManageMatch && !adminReviewOnly);
   const canParticipantEditFrames = Boolean(
     !admin.loading &&
-      !admin.isAdmin &&
+      !canAdminManageMatch &&
       viewerCanEditThisMatch &&
       !userSubmissionLocked &&
       !isByeMatch &&
@@ -1965,7 +1966,7 @@ export default function MatchPage() {
                 >
                   Open Display (TV Mode)
                 </button>
-                {admin.isAdmin ? (
+                {canAdminManageMatch ? (
                   <>
                     {isArchived ? (
                       <button
@@ -2103,7 +2104,7 @@ export default function MatchPage() {
                 {isByeMatch ? (
                   <p className="mt-2 text-sm text-slate-700">This match is a BYE. The Winner auto-advanced.</p>
                 ) : (
-                  admin.isAdmin ? (
+                  canAdminManageMatch ? (
                     adminReviewOnly && pendingSubmissionForReview ? (
                       <p className="mt-1 text-slate-700">
                         Submitted score (awaiting review): {pendingSubmissionForReview.team1_score} - {pendingSubmissionForReview.team2_score}
@@ -2388,7 +2389,7 @@ export default function MatchPage() {
                   ) : null}
                 </>
               ) : null}
-              {!admin.loading && !admin.isAdmin && !isByeMatch && !isArchived ? (
+              {!admin.loading && !canAdminManageMatch && !isByeMatch && !isArchived ? (
                 <section className={`${cardClass} space-y-3`}>
                   <h3 className="text-xl font-semibold text-slate-900">Fixture access</h3>
                   {!viewerCanEditThisMatch ? (
@@ -2507,7 +2508,7 @@ export default function MatchPage() {
                   </div>
                 </section>
               ) : null}
-              {admin.isAdmin && submissions.length ? (
+              {canAdminManageMatch && submissions.length ? (
                 <section className={`${cardClass} space-y-3`}>
                   <h3 className="text-xl font-semibold text-slate-900">Result submissions</h3>
                   {admin.isAdmin && !admin.isSuper && !canAdminReviewThisMatch ? (
