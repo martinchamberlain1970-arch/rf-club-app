@@ -8,6 +8,7 @@ import PageNav from "@/components/PageNav";
 import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
 import ConfirmModal from "@/components/ConfirmModal";
+import { buildSharedLinkSuggestion, SharedLinkPlayer } from "@/lib/shared-player-links";
 
 const coreActionLinks = [
   { href: "/quick-match", title: "Quick Match", desc: "Start a local practice or social match." },
@@ -70,6 +71,8 @@ export default function HomePage() {
   const [resultsQueueCount, setResultsQueueCount] = useState<number | null>(null);
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number | null>(null);
   const [pendingResultSubmissionsCount, setPendingResultSubmissionsCount] = useState<number>(0);
+  const [sharedLinkSuggestionsCount, setSharedLinkSuggestionsCount] = useState<number>(0);
+  const [sharedLinksMonthlyReviewDue, setSharedLinksMonthlyReviewDue] = useState(false);
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
   const [confirmState, setConfirmState] = useState<{
     open: boolean;
@@ -247,6 +250,37 @@ export default function HomePage() {
       }
 
       if (admin.isSuper) {
+        const sessionRes = await client.auth.getSession();
+        const token = sessionRes.data.session?.access_token;
+        if (token) {
+          const sharedRes = await fetch("/api/rating/shared-link-candidates", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const sharedBody = (await sharedRes.json().catch(() => ({}))) as {
+            clubPlayers?: SharedLinkPlayer[];
+            leaguePlayers?: SharedLinkPlayer[];
+            existingLinks?: Array<{ source_player_id: string; league_player_id: string }>;
+          };
+          if (sharedRes.ok) {
+            const clubPlayers = sharedBody.clubPlayers ?? [];
+            const leaguePlayers = sharedBody.leaguePlayers ?? [];
+            const existingLinks = sharedBody.existingLinks ?? [];
+            const linkedClubIds = new Set(existingLinks.map((link) => link.source_player_id));
+            const linkedLeagueIds = new Set(existingLinks.map((link) => link.league_player_id));
+            const suggestions = clubPlayers
+              .filter((clubPlayer) => !linkedClubIds.has(clubPlayer.id))
+              .flatMap((clubPlayer) =>
+                leaguePlayers
+                  .filter((leaguePlayer) => !linkedLeagueIds.has(leaguePlayer.id))
+                  .map((leaguePlayer) => buildSharedLinkSuggestion(clubPlayer, leaguePlayer))
+                  .filter((row) => Boolean(row))
+                  .slice(0, 3)
+              );
+            setSharedLinkSuggestionsCount(suggestions.length);
+          } else {
+            setSharedLinkSuggestionsCount(0);
+          }
+        }
         const tables = [
           "player_claim_requests",
           "player_update_requests",
@@ -259,6 +293,12 @@ export default function HomePage() {
         const counts = await Promise.all(tables.map((table) => client.from(table).select("id", { count: "exact", head: true }).eq("status", "pending")));
         setPendingRequestsCount(counts.reduce((sum, result) => sum + (result.count ?? 0), 0));
         setPendingResultSubmissionsCount(0);
+        if (typeof window !== "undefined") {
+          const lastReviewedAt = window.localStorage.getItem("shared_player_links_last_reviewed_at");
+          const thresholdMs = 1000 * 60 * 60 * 24 * 30;
+          const due = !lastReviewedAt || Date.now() - new Date(lastReviewedAt).getTime() >= thresholdMs;
+          setSharedLinksMonthlyReviewDue(due);
+        }
         return;
       }
 
@@ -656,8 +696,22 @@ export default function HomePage() {
                         href={item.href}
                         className={primaryCardClass(item.href)}
                       >
-                        <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
+                        <div className="flex items-start justify-between gap-2">
+                          <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
+                          {item.href === "/shared-player-links" && sharedLinkSuggestionsCount > 0 ? (
+                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                              {sharedLinkSuggestionsCount}
+                            </span>
+                          ) : null}
+                        </div>
                         <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
+                        {item.href === "/shared-player-links" ? (
+                          <p className="mt-2 text-xs font-medium text-slate-500">
+                            {sharedLinkSuggestionsCount > 0
+                              ? `${sharedLinkSuggestionsCount} live suggestion${sharedLinkSuggestionsCount === 1 ? "" : "s"} to review.`
+                              : "No live suggestions right now."}
+                          </p>
+                        ) : null}
                         <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
                       </Link>
                     ))}
@@ -665,6 +719,22 @@ export default function HomePage() {
                 </div>
               ) : null}
             </div>
+
+            {admin.isSuper && sharedLinksMonthlyReviewDue ? (
+              <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-cyan-50 p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="max-w-3xl">
+                    <p className="text-sm font-semibold uppercase tracking-wide text-amber-700">Monthly Review</p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      Shared Player Links has not been reviewed for around a month. Open it to check any new club-to-league suggestions.
+                    </p>
+                  </div>
+                  <Link href="/shared-player-links" className={actionLinkClass}>
+                    Review shared links
+                  </Link>
+                </div>
+              </div>
+            ) : null}
 
             {!admin.isSuper ? (
               <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-4 shadow-sm">

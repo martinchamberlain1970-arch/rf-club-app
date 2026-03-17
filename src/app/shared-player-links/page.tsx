@@ -5,22 +5,10 @@ import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
 import MessageModal from "@/components/MessageModal";
 import { supabase } from "@/lib/supabase";
+import { buildSharedLinkSuggestion, SharedLinkPlayer, SharedLinkSuggestion } from "@/lib/shared-player-links";
 
-type ClubPlayer = {
-  id: string;
-  display_name: string;
-  full_name: string | null;
-  location_name: string | null;
-  linked_email: string | null;
-};
-
-type LeaguePlayer = {
-  id: string;
-  display_name: string;
-  full_name: string | null;
-  location_name: string | null;
-  linked_email: string | null;
-};
+type ClubPlayer = SharedLinkPlayer;
+type LeaguePlayer = SharedLinkPlayer;
 
 type ExistingLink = {
   source_player_id: string;
@@ -28,87 +16,7 @@ type ExistingLink = {
   source_app: "club";
 };
 
-type Suggestion = {
-  clubPlayer: ClubPlayer;
-  leaguePlayer: LeaguePlayer;
-  score: number;
-  confidence: "High" | "Medium" | "Low";
-  matchedCount: number;
-  totalFields: number;
-  matchedFields: string[];
-};
-
-function normalize(value: string | null | undefined) {
-  return (value ?? "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function firstName(value: string) {
-  return normalize(value).split(" ")[0] ?? "";
-}
-
-function surname(value: string) {
-  const parts = normalize(value).split(" ").filter(Boolean);
-  return parts[parts.length - 1] ?? "";
-}
-
-function buildSuggestion(clubPlayer: ClubPlayer, leaguePlayer: LeaguePlayer): Suggestion | null {
-  const clubName = clubPlayer.full_name?.trim() || clubPlayer.display_name;
-  const leagueName = leaguePlayer.full_name?.trim() || leaguePlayer.display_name;
-  const clubNorm = normalize(clubName);
-  const leagueNorm = normalize(leagueName);
-  const clubSurname = surname(clubName);
-  const leagueSurname = surname(leagueName);
-  if (!clubSurname || !leagueSurname || clubSurname !== leagueSurname) return null;
-
-  let score = 0;
-  const matchedFields: string[] = [];
-  let matchedCount = 0;
-  const totalFields = 4;
-
-  if (clubNorm === leagueNorm) {
-    score += 70;
-    matchedFields.push("Exact name");
-    matchedCount += 1;
-  } else if (firstName(clubName) === firstName(leagueName)) {
-    score += 35;
-    matchedFields.push("Surname + first name");
-    matchedCount += 1;
-  } else {
-    score -= 15;
-  }
-
-  if (clubPlayer.linked_email && leaguePlayer.linked_email) {
-    if (normalize(clubPlayer.linked_email) === normalize(leaguePlayer.linked_email)) {
-      score += 40;
-      matchedFields.push("Linked email");
-      matchedCount += 1;
-    } else {
-      score -= 10;
-    }
-  }
-
-  if (clubPlayer.location_name && leaguePlayer.location_name) {
-    if (normalize(clubPlayer.location_name) === normalize(leaguePlayer.location_name)) {
-      score += 15;
-      matchedFields.push("Club/location");
-      matchedCount += 1;
-    } else {
-      score -= 5;
-    }
-  }
-
-  const clubDisplay = normalize(clubPlayer.display_name);
-  const leagueDisplay = normalize(leaguePlayer.display_name);
-  if (clubDisplay && leagueDisplay && clubDisplay === leagueDisplay) {
-    score += 10;
-    matchedFields.push("Display name");
-    matchedCount += 1;
-  }
-
-  if (score < 35) return null;
-  const confidence: Suggestion["confidence"] = score >= 80 ? "High" : score >= 55 ? "Medium" : "Low";
-  return { clubPlayer, leaguePlayer, score, confidence, matchedCount, totalFields, matchedFields };
-}
+type Suggestion = SharedLinkSuggestion;
 
 export default function SharedPlayerLinksPage() {
   const [clubPlayers, setClubPlayers] = useState<ClubPlayer[]>([]);
@@ -117,6 +25,8 @@ export default function SharedPlayerLinksPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [showExistingLinks, setShowExistingLinks] = useState(true);
 
   const load = async () => {
     const client = supabase;
@@ -152,6 +62,11 @@ export default function SharedPlayerLinksPage() {
 
   useEffect(() => {
     void load();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("shared_player_links_last_reviewed_at", new Date().toISOString());
   }, []);
 
   const leagueById = useMemo(() => new Map(leaguePlayers.map((player) => [player.id, player])), [leaguePlayers]);
@@ -231,17 +146,29 @@ export default function SharedPlayerLinksPage() {
 
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-sm text-slate-700">
-              Suggestions are ranked by exact name, linked email, club/location, and display name. Each row shows confidence plus how many key fields matched exactly.
+              Suggestions are generated live each time this page opens. Already linked players are excluded. Matches are ranked by exact name, linked email,
+              club/location, and display name, with a count of how many key fields matched exactly.
             </p>
           </section>
 
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-slate-900">Suggested Links</h2>
-            {loading ? <p className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">Loading suggestions...</p> : null}
-            {!loading && suggestions.length === 0 ? (
-              <p className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-slate-600">No link suggestions at the moment.</p>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-slate-900">Suggested Links</h2>
+              <button
+                type="button"
+                onClick={() => setShowSuggestions((current) => !current)}
+                className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700"
+              >
+                {showSuggestions ? "Collapse" : "Expand"}
+              </button>
+            </div>
+            {showSuggestions ? loading ? <p className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">Loading suggestions...</p> : null : null}
+            {showSuggestions && !loading && suggestions.length === 0 ? (
+              <p className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-slate-600">
+                No link suggestions at the moment. Suggestions are checked live when this page opens, not on a background schedule.
+              </p>
             ) : null}
-            {suggestions.map((suggestion) => (
+            {showSuggestions ? suggestions.map((suggestion) => (
               <article key={`${suggestion.clubPlayer.id}:${suggestion.leaguePlayer.id}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="grid flex-1 gap-3 md:grid-cols-2">
@@ -277,14 +204,24 @@ export default function SharedPlayerLinksPage() {
                   </div>
                 </div>
               </article>
-            ))}
+            )) : null}
           </section>
 
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-slate-900">Existing Links</h2>
-            {existingLinks.length === 0 ? (
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-slate-900">Existing Links</h2>
+              <button
+                type="button"
+                onClick={() => setShowExistingLinks((current) => !current)}
+                className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700"
+              >
+                {showExistingLinks ? "Collapse" : "Expand"}
+              </button>
+            </div>
+            {showExistingLinks && existingLinks.length === 0 ? (
               <p className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-slate-600">No shared player links yet.</p>
-            ) : (
+            ) : null}
+            {showExistingLinks && existingLinks.length > 0 ? (
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
                   <thead className="bg-slate-50 text-slate-600">
@@ -317,7 +254,7 @@ export default function SharedPlayerLinksPage() {
                   </tbody>
                 </table>
               </div>
-            )}
+            ) : null}
           </section>
         </RequireAuth>
       </div>
