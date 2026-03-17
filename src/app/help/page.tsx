@@ -9,6 +9,49 @@ import ScreenHeader from "@/components/ScreenHeader";
 type GuideFilter = "getting_started" | "matches" | "competitions" | "stats_rules" | "rankings" | "premium" | "approvals";
 type GuideRole = "player" | "admin";
 
+const faqs: { question: string; answer: string }[] = [
+  {
+    question: "How do I join a competition or league?",
+    answer:
+      "Open the event or the Competition Sign-ups page, sign in with your linked account, and submit your entry. Your status will show as pending until it is approved by the club admin or Super User.",
+  },
+  {
+    question: "Where do I find my weekly league fixtures?",
+    answer:
+      "Use the My Fixtures tile on the dashboard. It groups your scheduled matches into Last Week, This Week, and Next Week so you can quickly open the right fixture.",
+  },
+  {
+    question: "Can I submit results for someone else's fixture?",
+    answer:
+      "No. Players can only submit their own live fixture. Other fixtures stay view-only unless you are a Club Admin or Super User with review access.",
+  },
+  {
+    question: "What happens if a weekly league fixture is not played?",
+    answer:
+      "If the weekly deadline passes and there is no valid result pending approval, the fixture can be voided with no points awarded. A walkover should only be used for a genuine no-show.",
+  },
+  {
+    question: "Can a fixture be rescheduled?",
+    answer:
+      "Yes, but only by request. A player can request a one-week delay, and the Super User decides whether to approve or reject it. Only one outstanding reschedule is allowed at a time.",
+  },
+  {
+    question: "How do handicapped snooker matches work?",
+    answer:
+      "If the competition is marked as handicapped, the fixture shows who receives the points start. Enter the final adjusted frame score including that start, not the raw score from scratch.",
+  },
+  {
+    question: "How do snooker Elo and handicap work together?",
+    answer:
+      "Valid approved snooker singles results update Elo. Handicap is then reviewed from Elo rather than changing after every result. The Super User can also apply or override handicaps where needed.",
+  },
+  {
+    question: "What does Premium unlock?",
+    answer:
+      "Premium adds advanced extras such as doubles support, full stats, live overview access where relevant, auto breaker, and more advanced competition tools. Core player and club features remain available without Premium.",
+  },
+];
+
 const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bullets: string[] }>> = {
   player: {
     getting_started: {
@@ -315,6 +358,18 @@ export default function HelpPage() {
                 </li>
               ))}
             </ul>
+          </section>
+
+          <section className={cardBaseClass}>
+            <h2 className="text-xl font-semibold text-slate-900">Frequently Asked Questions</h2>
+            <div className="mt-3 space-y-3">
+              {faqs.map((item) => (
+                <article key={item.question} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-slate-900">{item.question}</h3>
+                  <p className="mt-2 text-sm text-slate-700">{item.answer}</p>
+                </article>
+              ))}
+            </div>
           </section>
         </RequireAuth>
       </div>

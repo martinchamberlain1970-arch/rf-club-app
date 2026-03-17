@@ -1,7 +1,7 @@
 "use client";
 
 export default function PrivacyPage() {
-  const effectiveDate = "March 3, 2026";
+  const effectiveDate = "March 17, 2026";
   const onClose = () => {
     if (typeof window === "undefined") return;
     if (window.opener) {
@@ -20,10 +20,14 @@ export default function PrivacyPage() {
           By using the service, you consent to the data practices described in this policy.
         </p>
         <ul className="list-disc space-y-1 pl-5 text-slate-700">
-          <li>We collect account data (email, role), profile data, and match/competition records.</li>
-          <li>We use this data to run fixtures, stats, rankings, approvals, and governance workflows.</li>
+          <li>We collect account data such as email address, role, linked player profile, and club-location association.</li>
+          <li>We collect player-profile data, match data, competition and league entries, fixture schedules, submissions, approvals, and notifications.</li>
+          <li>We use this data to run fixtures, results, stats, rankings, handicap review, approvals, reschedule requests, and governance workflows.</li>
+          <li>League fixtures may include scheduled play windows and automated void handling if a deadline passes without a valid submitted result.</li>
+          <li>Snooker handicap and rating data may be stored and reviewed so handicapped competitions and league fixtures can be administered correctly.</li>
           <li>Under-18 profiles use safeguarding controls including guardian consent requirements.</li>
           <li>You can request profile updates or deletion; governance actions are reviewed by authorized roles.</li>
+          <li>Support requests, audit events, and admin actions may be logged to help operate, secure, and improve the service.</li>
         </ul>
         <p className="text-slate-700">
           For the full website-hosted policy text, please refer to your published policy URL configured by the Super User.

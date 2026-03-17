@@ -1,7 +1,7 @@
 "use client";
 
 export default function TermsPage() {
-  const effectiveDate = "March 3, 2026";
+  const effectiveDate = "March 17, 2026";
   const onClose = () => {
     if (typeof window === "undefined") return;
     if (window.opener) {
@@ -24,6 +24,10 @@ export default function TermsPage() {
           <li>Premium functionality may require approval and can vary by account role and subscription state.</li>
           <li>Snooker Elo updates from valid approved singles results only; no-show, walkover, void, and doubles outcomes are excluded.</li>
           <li>Snooker handicap is reviewed from Elo and may be overridden manually by the Super User when needed.</li>
+          <li>League fixtures may be scheduled weekly and are expected to be completed by the listed deadline unless a valid reschedule is approved.</li>
+          <li>Where a weekly league fixture is not played and no valid result is pending approval, it may be voided with no points awarded.</li>
+          <li>Reschedule requests are limited and remain subject to Super User approval.</li>
+          <li>Handicapped snooker fixtures must be submitted using the adjusted frame score including the points start shown on the fixture.</li>
           <li>Accounts and profiles may be suspended or removed for misuse, fraud, or policy violations.</li>
         </ul>
         <p className="text-slate-700">

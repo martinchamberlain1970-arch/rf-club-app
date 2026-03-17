@@ -21,7 +21,7 @@ export default function LegalPage() {
                 <div>
                   <h2 className="text-3xl font-semibold text-slate-900 sm:text-4xl">Rack &amp; Frame</h2>
                   <p className="mt-2 max-w-2xl text-slate-700">
-                    Policy, credits, ownership, and support details for the current Rack &amp; Frame release.
+                    Policy, credits, ownership, support details, and legal references for the current Rack &amp; Frame release, including club competitions and in-house leagues.
                   </p>
                 </div>
               </div>
@@ -29,6 +29,7 @@ export default function LegalPage() {
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Version</p>
                   <p className="mt-1 text-2xl font-semibold text-slate-900">1.0.0</p>
+                  <p className="mt-1 text-xs text-slate-500">Updated for league fixtures, handicap review, and reschedule workflows.</p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Third-party notices</p>
