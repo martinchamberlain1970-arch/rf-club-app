@@ -1230,7 +1230,7 @@ export default function MatchPage() {
     await logAudit("rating_applied", {
       entityType: "match",
       entityId: match.id,
-      summary: `Ratings updated (${competition.sport_type === "snooker" ? "snooker" : "pool"}): team1 ${deltaTeam1 >= 0 ? "+" : ""}${deltaTeam1}, team2 ${
+      summary: `Ratings updated (pool): team1 ${deltaTeam1 >= 0 ? "+" : ""}${deltaTeam1}, team2 ${
         deltaTeam2 >= 0 ? "+" : ""
       }${deltaTeam2}.`,
       meta: { competitionId: match.competition_id, sport: competition.sport_type, deltaTeam1, deltaTeam2 },
