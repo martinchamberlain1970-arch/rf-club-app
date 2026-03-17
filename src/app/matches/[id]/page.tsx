@@ -60,6 +60,7 @@ type CompetitionSettings = {
   sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   location_id?: string | null;
   competition_format: "knockout" | "league";
+  is_practice?: boolean;
   app_assign_opening_break: boolean;
   knockout_round_best_of: KnockoutRoundBestOf | null;
   handicap_enabled?: boolean;
@@ -411,7 +412,7 @@ export default function MatchPage() {
           .select("id,display_name,full_name,avatar_url,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker,snooker_handicap"),
         client
           .from("competitions")
-          .select("id,name,sport_type,location_id,competition_format,app_assign_opening_break,knockout_round_best_of,handicap_enabled")
+          .select("id,name,sport_type,location_id,competition_format,is_practice,app_assign_opening_break,knockout_round_best_of,handicap_enabled")
           .eq("id", loadedMatch.competition_id)
           .maybeSingle(),
         client
@@ -953,6 +954,10 @@ export default function MatchPage() {
   const refreshCompetitionCompletion = async () => {
     const client = supabase;
     if (!client || !match) return false;
+    if (competition?.is_practice) {
+      await client.from("competitions").update({ is_completed: true }).eq("id", match.competition_id);
+      return true;
+    }
     const allMatches = await client
       .from("matches")
       .select("status")
@@ -1093,6 +1098,55 @@ export default function MatchPage() {
     if (!client || !match || !competition || options?.isWalkover) return;
     if (isByeMatch) return;
     if (match.match_mode === "doubles") return;
+    if (competition.is_practice) return;
+
+    if (competition.sport_type === "snooker") {
+      const sessionRes = await client.auth.getSession();
+      const token = sessionRes.data.session?.access_token;
+      if (!token) return;
+      const syncRes = await fetch("/api/rating/sync-snooker", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          matchId: match.id,
+          winnerSide,
+        }),
+      });
+      const syncPayload = (await syncRes.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        skipped?: boolean;
+        deltaTeam1?: number;
+        deltaTeam2?: number;
+      };
+      if (!syncRes.ok || !syncPayload.ok) {
+        setInfoModal({
+          title: "Shared rating sync failed",
+          description: syncPayload.error ?? "Unable to sync official snooker Elo with the league app.",
+        });
+        return;
+      }
+      if (!syncPayload.skipped) {
+        await logAudit("rating_applied", {
+          entityType: "match",
+          entityId: match.id,
+          summary: `Shared snooker ratings updated: team1 ${Number(syncPayload.deltaTeam1 ?? 0) >= 0 ? "+" : ""}${Number(syncPayload.deltaTeam1 ?? 0)}, team2 ${
+            Number(syncPayload.deltaTeam2 ?? 0) >= 0 ? "+" : ""
+          }${Number(syncPayload.deltaTeam2 ?? 0)}.`,
+          meta: {
+            competitionId: match.competition_id,
+            sport: competition.sport_type,
+            deltaTeam1: syncPayload.deltaTeam1 ?? 0,
+            deltaTeam2: syncPayload.deltaTeam2 ?? 0,
+            sharedSource: "league",
+          },
+        });
+      }
+      return;
+    }
 
     const keys = ratingKeysForSport(competition.sport_type);
     const matchRead = await client

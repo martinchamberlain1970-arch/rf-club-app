@@ -48,6 +48,7 @@ export default function SnookerHandicapExceptionsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [handicapByPlayerId, setHandicapByPlayerId] = useState<Record<string, string>>({});
+  const [refreshingOfficial, setRefreshingOfficial] = useState(false);
 
   const load = async () => {
     const client = supabase;
@@ -180,6 +181,34 @@ export default function SnookerHandicapExceptionsPage() {
     await load();
   };
 
+  const refreshOfficialSnookerRatings = async () => {
+    const client = supabase;
+    if (!client) return;
+    const sessionRes = await client.auth.getSession();
+    const token = sessionRes.data.session?.access_token;
+    if (!token) {
+      setMessage("You need to be signed in to refresh official snooker ratings.");
+      return;
+    }
+    setRefreshingOfficial(true);
+    setMessage(null);
+    const res = await fetch("/api/rating/refresh-snooker-from-league", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string; updated?: number };
+    setRefreshingOfficial(false);
+    if (!res.ok) {
+      setMessage(body.error ?? "Failed to refresh official snooker ratings.");
+      return;
+    }
+    setMessage(`Official snooker Elo and handicaps refreshed for ${body.updated ?? 0} mapped player(s).`);
+    await load();
+  };
+
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <div className="mx-auto max-w-6xl space-y-4">
@@ -215,6 +244,22 @@ export default function SnookerHandicapExceptionsPage() {
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Seed Rule</p>
                     <p className="mt-1 text-sm text-slate-700">Snooker Elo = 1000 - (handicap x 5)</p>
                   </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-cyan-900">Official league sync</p>
+                    <p className="text-sm text-cyan-800">
+                      Pull current official snooker Elo and handicap figures from the league app for all mapped club players.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void refreshOfficialSnookerRatings()}
+                    disabled={refreshingOfficial}
+                    className="rounded-xl border border-cyan-300 bg-white px-4 py-2 text-sm font-semibold text-cyan-800 disabled:opacity-60"
+                  >
+                    {refreshingOfficial ? "Refreshing..." : "Refresh official snooker Elo"}
+                  </button>
                 </div>
               </section>
 
