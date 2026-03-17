@@ -80,7 +80,7 @@ export default function SharedPlayerLinksPage() {
       .flatMap((clubPlayer) =>
         leaguePlayers
           .filter((leaguePlayer) => !linkedLeagueIds.has(leaguePlayer.id))
-          .map((leaguePlayer) => buildSuggestion(clubPlayer, leaguePlayer))
+          .map((leaguePlayer) => buildSharedLinkSuggestion(clubPlayer, leaguePlayer))
           .filter((row): row is Suggestion => Boolean(row))
           .sort((a, b) => b.score - a.score)
           .slice(0, 3)
