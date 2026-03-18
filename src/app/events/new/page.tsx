@@ -8,6 +8,7 @@ import usePremiumStatus from "@/components/usePremiumStatus";
 import useAdminStatus from "@/components/useAdminStatus";
 import ScreenHeader from "@/components/ScreenHeader";
 import { logAudit } from "@/lib/audit";
+import { calculateSnookerHandicapStarts, MAX_SNOOKER_START } from "@/lib/snooker-handicap";
 import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
@@ -24,16 +25,6 @@ function nextPowerOfTwo(n: number): number {
   let p = 1;
   while (p < n) p *= 2;
   return p;
-}
-
-function calculateSnookerHandicapStarts(playerOneHandicap: number | null | undefined, playerTwoHandicap: number | null | undefined) {
-  const h1 = playerOneHandicap ?? 0;
-  const h2 = playerTwoHandicap ?? 0;
-  const baseline = Math.min(h1, h2);
-  return {
-    team1: h1 - baseline,
-    team2: h2 - baseline,
-  };
 }
 
 export default function NewEventPage() {
@@ -724,7 +715,7 @@ export default function NewEventPage() {
               <div className={mutedCardClass}>
                 <p className="text-sm font-medium text-slate-700">Handicap mode</p>
                 <p className="mt-1 text-sm text-slate-600">
-                  Match starts will use each player&apos;s current snooker handicap. Frame scores should be entered with the handicap start included in the final adjusted total.
+                  Match starts will use each player&apos;s current snooker handicap, with a maximum start cap of {MAX_SNOOKER_START}. Frame scores should be entered with the handicap start included in the final adjusted total.
                 </p>
               </div>
             ) : null}

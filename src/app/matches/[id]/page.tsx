@@ -8,6 +8,7 @@ import usePremiumStatus from "@/components/usePremiumStatus";
 import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
 import { logAudit } from "@/lib/audit";
+import { calculateSnookerHandicapStarts, MAX_SNOOKER_START } from "@/lib/snooker-handicap";
 import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
@@ -227,16 +228,6 @@ function addDaysToIsoDate(isoDate: string, days: number) {
   if (!year || !month || !day) return isoDate;
   const next = new Date(year, month - 1, day + days, 12, 0, 0, 0);
   return next.toISOString().slice(0, 10);
-}
-
-function calculateSnookerHandicapStarts(playerOneHandicap: number | null | undefined, playerTwoHandicap: number | null | undefined) {
-  const h1 = playerOneHandicap ?? 0;
-  const h2 = playerTwoHandicap ?? 0;
-  const baseline = Math.min(h1, h2);
-  return {
-    team1: h1 - baseline,
-    team2: h2 - baseline,
-  };
 }
 
 function getMatchStatusLabel(match: Match | null) {
@@ -2143,7 +2134,7 @@ export default function MatchPage() {
                 <p className="mt-1 text-slate-700">Status: {getMatchStatusLabel(match)}</p>
                 {isHandicappedSnookerMatch ? (
                   <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-                    Handicapped fixture. Each frame starts at {teams.team1Label} {match.team1_handicap_start ?? 0} - {match.team2_handicap_start ?? 0} {teams.team2Label}. Enter the final adjusted frame scores including that handicap start, not the raw points scored from scratch.
+                    Handicapped fixture. Each frame starts at {teams.team1Label} {match.team1_handicap_start ?? 0} - {match.team2_handicap_start ?? 0} {teams.team2Label}. Maximum start is capped at {MAX_SNOOKER_START}. Enter the final adjusted frame scores including that handicap start, not the raw points scored from scratch.
                   </div>
                 ) : null}
                 {competition.app_assign_opening_break || openingBreakerName ? (

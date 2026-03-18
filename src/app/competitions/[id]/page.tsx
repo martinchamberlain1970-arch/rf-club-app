@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import useAdminStatus from "@/components/useAdminStatus";
 import MessageModal from "@/components/MessageModal";
 import ConfirmModal from "@/components/ConfirmModal";
+import { calculateSnookerHandicapStarts, MAX_SNOOKER_START } from "@/lib/snooker-handicap";
 
 type Competition = {
   id: string;
@@ -261,16 +262,6 @@ function getMatchLabel(m: Match, shortMap: Map<string, string>) {
     return `${shortMap.get(m.player1_id) ?? "TBC"} vs BYE`;
   }
   return `${shortMap.get(m.player1_id ?? "") ?? "TBC"} vs ${shortMap.get(m.player2_id ?? "") ?? "TBC"}`;
-}
-
-function calculateSnookerHandicapStarts(playerOneHandicap: number | null | undefined, playerTwoHandicap: number | null | undefined) {
-  const h1 = playerOneHandicap ?? 0;
-  const h2 = playerTwoHandicap ?? 0;
-  const baseline = Math.min(h1, h2);
-  return {
-    team1: h1 - baseline,
-    team2: h2 - baseline,
-  };
 }
 
 function generateLeagueRounds(playerIds: string[], meetings: number) {
@@ -1274,7 +1265,7 @@ export default function CompetitionPage() {
                   {admin.isAdmin && competition.handicap_enabled && competition.sport_type === "snooker" && (competition.match_mode ?? "singles") !== "doubles" && matches.length > 0 ? (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
                       <p className="text-sm text-amber-900">
-                        Handicap starts are stored when fixtures are generated. If player handicaps change later, refresh future pending fixtures here.
+                        Handicap starts are stored when fixtures are generated and capped at {MAX_SNOOKER_START}. If player handicaps change later, refresh future pending fixtures here.
                       </p>
                       <button
                         type="button"

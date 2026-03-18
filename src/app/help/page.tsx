@@ -46,6 +46,11 @@ const faqs: { question: string; answer: string }[] = [
       "Valid approved snooker singles results update Elo. Handicap is then reviewed from Elo rather than changing after every result. The Super User can also apply or override handicaps where needed.",
   },
   {
+    question: "Why is there a maximum 40-point start in handicapped snooker?",
+    answer:
+      "The live match start is capped at 40 so frames stay competitive and do not feel decided before play begins. Elo still tracks the full strength gap in the background, but the cap keeps the scoreline understandable and the match playable for both sides.",
+  },
+  {
     question: "What does Premium unlock?",
     answer:
       "Premium adds advanced extras such as doubles support, full stats, live overview access where relevant, auto breaker, and more advanced competition tools. Core player and club features remain available without Premium.",
@@ -98,6 +103,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
         "Expected result is calculated from both players' current rating; larger upsets produce larger gains/losses.",
         "K-factor scales by experience (fewer rated matches = faster movement, more matches = steadier movement).",
         "Snooker handicap is reviewed from Elo rather than changed after every result, with current and baseline handicap shown on the player profile.",
+        "The live start in handicapped snooker is capped at 40, even if the reviewed handicap gap is larger, so fixtures stay competitive while Elo still reflects the full rating spread.",
         "BYE, walkover, void, and doubles outcomes are excluded from rating and handicap review.",
         "Player Profile shows current rating, peak rating, rated-match count, current handicap, baseline handicap, and rank for Pool and Snooker.",
         "Use Pop-out Ranking Card on Player Profile to show a clean ranking card on a second screen.",

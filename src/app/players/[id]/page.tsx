@@ -10,6 +10,7 @@ import useAdminStatus from "@/components/useAdminStatus";
 import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
+import { MAX_SNOOKER_START } from "@/lib/snooker-handicap";
 
 type Player = {
   id: string;
@@ -1488,6 +1489,9 @@ export default function PlayerProfilePage() {
                     <p className="mt-1">
                       Snooker handicap is reviewed from Elo rather than moved automatically after every result. Negative values give start; positive values receive start.
                     </p>
+                    <p className="mt-1">
+                      Actual match starts are capped at {MAX_SNOOKER_START}. The cap keeps frames competitive and understandable while Elo continues to track the full strength gap in the background.
+                    </p>
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
                     <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-3">
@@ -1506,11 +1510,20 @@ export default function PlayerProfilePage() {
                       <p className="text-xs text-slate-500">approved singles results only</p>
                     </div>
                   </div>
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-sm font-semibold text-slate-900">Why the maximum start is capped at {MAX_SNOOKER_START}</p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      Large handicap gaps can be mathematically consistent with Elo but still produce frames that feel pre-decided. The cap protects weaker players without turning the opening scoreline into the whole contest.
+                    </p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      In practice, the reviewed handicap still reflects the longer-term strength gap, but the live fixture uses a capped start so the match remains playable, recognisable, and easier for players to trust.
+                    </p>
+                  </div>
                   <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="text-sm font-semibold text-slate-900">Elo to handicap guide</p>
-                        <p className="text-xs text-slate-500">Quick reference for how snooker Elo maps toward reviewed handicap.</p>
+                        <p className="text-xs text-slate-500">Quick reference for how snooker Elo maps toward reviewed handicap. Live starts are capped at {MAX_SNOOKER_START}.</p>
                       </div>
                       <button
                         type="button"
