@@ -125,6 +125,8 @@ export default function PlayerProfilePage() {
   const [childAgeBand, setChildAgeBand] = useState<"under_18">("under_18");
   const [childLocationId, setChildLocationId] = useState("");
   const [creatingChild, setCreatingChild] = useState(false);
+  const [showHandicap, setShowHandicap] = useState(true);
+  const [showPerformance, setShowPerformance] = useState(true);
   const [infoModal, setInfoModal] = useState<{ title: string; description: string } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
