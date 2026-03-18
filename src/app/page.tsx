@@ -354,10 +354,15 @@ export default function HomePage() {
     if (typeof window === "undefined") return;
     if (admin.loading || admin.isSuper) return;
     if (!admin.userId || !userPlayerId) return;
+    const sessionKey = `profile_photo_prompt_seen_${admin.userId}_${userPlayerId}`;
     if (userMissingAvatar) {
-      queueMicrotask(() => {
-        setShowProfilePrompt(true);
-      });
+      const seenThisSession = window.sessionStorage.getItem(sessionKey);
+      if (!seenThisSession) {
+        queueMicrotask(() => {
+          setShowProfilePrompt(true);
+          window.sessionStorage.setItem(sessionKey, "1");
+        });
+      }
       return;
     }
     setShowProfilePrompt(false);
@@ -863,10 +868,18 @@ export default function HomePage() {
         confirmLabel="Review now"
         cancelLabel="Later"
         onConfirm={() => {
+          if (typeof window !== "undefined" && admin.userId && userPlayerId) {
+            const sessionKey = `profile_photo_prompt_seen_${admin.userId}_${userPlayerId}`;
+            window.sessionStorage.setItem(sessionKey, "1");
+          }
           setShowProfilePrompt(false);
           if (userPlayerId) router.push(`/players/${userPlayerId}?prompt=photo`);
         }}
         onCancel={() => {
+          if (typeof window !== "undefined" && admin.userId && userPlayerId) {
+            const sessionKey = `profile_photo_prompt_seen_${admin.userId}_${userPlayerId}`;
+            window.sessionStorage.setItem(sessionKey, "1");
+          }
           setShowProfilePrompt(false);
         }}
       />
