@@ -1385,17 +1385,20 @@ export default function PlayerProfilePage() {
           {!loading ? (
             <>
               {player ? (
-                <section ref={profileRef} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="grid gap-4 lg:grid-cols-[auto,1fr] lg:items-start">
-                    <div className="h-24 w-24 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                <section
+                  ref={profileRef}
+                  className="rounded-[2rem] border border-cyan-200 bg-gradient-to-r from-cyan-50 via-white to-amber-50 p-6 shadow-sm"
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                    <div className="h-28 w-28 shrink-0 overflow-hidden rounded-full border-4 border-cyan-200 bg-slate-100">
                       {player.avatar_url ? (
                         <img src={player.avatar_url} alt={playerName} className="h-full w-full object-cover" />
                       ) : null}
                     </div>
-                    <div className="space-y-3">
+                    <div className="min-w-0 flex-1 space-y-3">
                       <div>
                         <h1 className="text-4xl font-black tracking-tight text-slate-950">{playerName}</h1>
-                        <p className="mt-1 text-sm text-slate-600">
+                        <p className="mt-1 text-lg text-slate-600">
                           Match history, Elo-style ratings, recognition badges, and club profile details.
                         </p>
                       </div>
