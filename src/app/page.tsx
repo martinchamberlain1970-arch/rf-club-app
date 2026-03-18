@@ -18,6 +18,7 @@ const coreActionLinks = [
   { href: "/results", title: "Results", desc: "Review and approve submitted match results." },
   { href: "/notifications", title: "Notifications", desc: "Check inbox updates and pending actions." },
   { href: "/stats", title: "Stats", desc: "View club rankings, form, and performance summaries." },
+  { href: "/high-breaks", title: "High Breaks", desc: "See the dedicated snooker high-break table." },
   { href: "/rankings", title: "Rankings", desc: "Browse Elo-style player leaderboards by discipline." },
 ] as const;
 
@@ -158,6 +159,7 @@ export default function HomePage() {
       "/signup-requests",
       "/notifications",
       "/stats",
+      "/high-breaks",
       "/live",
       "/rules",
       "/help",
