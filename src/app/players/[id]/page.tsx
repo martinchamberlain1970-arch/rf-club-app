@@ -1513,7 +1513,7 @@ export default function PlayerProfilePage() {
                   <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Frames Won %</p>
                     <p className="mt-2 text-3xl font-black text-slate-950">{pct(effectiveSummary.won, effectiveSummary.played)}%</p>
-                    <p className="mt-1 text-sm text-slate-600">{effectiveSummary.won} wins from {effectiveSummary.played} recorded matches.</p>
+                    <p className="mt-1 text-sm text-slate-600">{effectiveSummary.won} wins from {effectiveSummary.played} recorded frames.</p>
                   </div>
                 </section>
               ) : null}
