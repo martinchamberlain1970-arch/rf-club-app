@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import RequireAuth from "@/components/RequireAuth";
 import usePremiumStatus from "@/components/usePremiumStatus";
@@ -1025,6 +1026,14 @@ export default function StatsPage() {
       <div className="mx-auto max-w-5xl space-y-4">
         <RequireAuth>
           <ScreenHeader title="Stats" eyebrow="Stats" subtitle="Performance tables, head-to-head, and predictions." />
+          <div className="flex justify-end">
+            <Link
+              href="/high-breaks"
+              className="inline-flex items-center rounded-full border border-teal-700 bg-teal-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-teal-800"
+            >
+              Open High Break Table
+            </Link>
+          </div>
           <MessageModal message={message} onClose={() => setMessage(null)} />
           {!premium.loading && !premium.unlocked ? (
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
