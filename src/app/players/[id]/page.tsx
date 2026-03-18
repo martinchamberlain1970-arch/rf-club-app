@@ -1386,81 +1386,83 @@ export default function PlayerProfilePage() {
             <>
               {player ? (
                 <section ref={profileRef} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="grid gap-4 lg:grid-cols-[auto,1fr,280px] lg:items-start">
-                  <div className="h-24 w-24 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-                    {player.avatar_url ? (
-                      <img src={player.avatar_url} alt={playerName} className="h-full w-full object-cover" />
-                    ) : null}
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-sm text-slate-600">
-                        Match history, Elo-style ratings, recognition badges, and club profile details.
-                      </p>
+                  <div className="grid gap-4 lg:grid-cols-[auto,1fr] lg:items-start">
+                    <div className="h-24 w-24 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                      {player.avatar_url ? (
+                        <img src={player.avatar_url} alt={playerName} className="h-full w-full object-cover" />
+                      ) : null}
                     </div>
-                    {linkedEmail ? <p className="text-sm text-slate-600">{linkedEmail}</p> : null}
-                    <div className="flex flex-wrap gap-2">
-                      {profileHeaderPills.map((item) => (
-                        <span key={item.label} className={pillClass(item.tone)}>
-                          {item.label}
-                        </span>
-                      ))}
-                    </div>
-                    {(guardianLabel || guardianContact) ? (
-                      <p className="text-sm text-slate-600">
-                        Guardian: {guardianLabel ?? "Name missing"}
-                        {hasAdminPower ? ` · ${guardianContact ?? "Email missing"}` : ""}
-                        {guardianProfileId ? (
-                          <>
-                            {" "}
-                            ·{" "}
-                            <Link href={`/players/${guardianProfileId}`} className="font-medium text-teal-700 underline">
-                              View profile
-                            </Link>
-                          </>
-                        ) : null}
-                      </p>
-                    ) : null}
-                    <p className="text-sm text-slate-500">
-                      Current handicap reflects the latest review. Baseline handicap is the original pre-season or review-cycle starting point.
-                    </p>
-                    {!isMinor ? (
-                      <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) onUploadAvatar(file);
-                          }}
-                          disabled={uploading}
-                        />
-                        <span className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700">
-                          {uploading ? "Uploading..." : "Upload profile photo"}
-                        </span>
-                      </label>
-                    ) : (
-                      <p className="mt-2 text-xs text-slate-500">Profile photos are disabled for minors.</p>
-                    )}
-                    {childProfiles.length > 0 ? (
-                      <div className="mt-2 text-sm text-slate-600">
-                        <p>Linked child profiles:</p>
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {childProfiles.map((c) => (
-                            <Link
-                              key={c.id}
-                              href={`/players/${c.id}`}
-                              className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-teal-700 underline"
-                            >
-                              {c.full_name?.trim() ? c.full_name : c.display_name}
-                            </Link>
-                          ))}
-                        </div>
+                    <div className="space-y-3">
+                      <div>
+                        <h1 className="text-4xl font-black tracking-tight text-slate-950">{playerName}</h1>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Match history, Elo-style ratings, recognition badges, and club profile details.
+                        </p>
                       </div>
-                    ) : null}
+                      {linkedEmail ? <p className="text-sm text-slate-600">{linkedEmail}</p> : null}
+                      <div className="flex flex-wrap gap-2">
+                        {profileHeaderPills.map((item) => (
+                          <span key={item.label} className={pillClass(item.tone)}>
+                            {item.label}
+                          </span>
+                        ))}
+                      </div>
+                      {(guardianLabel || guardianContact) ? (
+                        <p className="text-sm text-slate-600">
+                          Guardian: {guardianLabel ?? "Name missing"}
+                          {hasAdminPower ? ` · ${guardianContact ?? "Email missing"}` : ""}
+                          {guardianProfileId ? (
+                            <>
+                              {" "}
+                              ·{" "}
+                              <Link href={`/players/${guardianProfileId}`} className="font-medium text-teal-700 underline">
+                                View profile
+                              </Link>
+                            </>
+                          ) : null}
+                        </p>
+                      ) : null}
+                      <p className="text-sm text-slate-500">
+                        Current handicap reflects the latest review. Baseline handicap is the original pre-season or review-cycle starting point.
+                      </p>
+                      {!isMinor ? (
+                        <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) onUploadAvatar(file);
+                            }}
+                            disabled={uploading}
+                          />
+                          <span className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700">
+                            {uploading ? "Uploading..." : "Upload profile photo"}
+                          </span>
+                        </label>
+                      ) : (
+                        <p className="mt-2 text-xs text-slate-500">Profile photos are disabled for minors.</p>
+                      )}
+                      {childProfiles.length > 0 ? (
+                        <div className="mt-2 text-sm text-slate-600">
+                          <p>Linked child profiles:</p>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {childProfiles.map((c) => (
+                              <Link
+                                key={c.id}
+                                href={`/players/${c.id}`}
+                                className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-teal-700 underline"
+                              >
+                                {c.full_name?.trim() ? c.full_name : c.display_name}
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
                     <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Overall record</p>
                       <p className="mt-2 text-2xl font-bold text-slate-900">{pct(effectiveSummary.won, effectiveSummary.played)}%</p>
@@ -1485,7 +1487,6 @@ export default function PlayerProfilePage() {
                         Rank #{rankingCard?.poolRank ?? "-"} · {rankingCard ? formatPeakLabel(rankingCard.poolPeak, rankingCard.poolMatches) : "Starting rating 1000"}
                       </p>
                     </div>
-                  </div>
                   </div>
                 </section>
               ) : null}
