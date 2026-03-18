@@ -1362,7 +1362,7 @@ export default function PlayerProfilePage() {
 
   return (
     <main className="min-h-screen bg-slate-100 p-6">
-      <div className="mx-auto max-w-4xl space-y-4">
+      <div className="mx-auto max-w-5xl space-y-4">
         <RequireAuth>
           <ScreenHeader
             title="Player Profile"
@@ -1387,22 +1387,22 @@ export default function PlayerProfilePage() {
               {player ? (
                 <section
                   ref={profileRef}
-                  className="rounded-[2rem] border border-cyan-200 bg-gradient-to-r from-cyan-50 via-white to-amber-50 p-6 shadow-sm"
+                  className="rounded-[2rem] border border-cyan-200 bg-gradient-to-br from-white via-cyan-50 to-sky-50 p-5 shadow-sm"
                 >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-                    <div className="h-28 w-28 shrink-0 overflow-hidden rounded-full border-4 border-cyan-200 bg-slate-100">
+                  <div className="flex flex-wrap items-start gap-5">
+                    <div className="h-24 w-24 shrink-0 overflow-hidden rounded-full border-2 border-cyan-200 bg-slate-100 shadow-sm">
                       {player.avatar_url ? (
                         <img src={player.avatar_url} alt={playerName} className="h-full w-full object-cover" />
                       ) : null}
                     </div>
-                    <div className="min-w-0 flex-1 space-y-3">
+                    <div className="min-w-[220px] flex-1 space-y-3">
                       <div>
-                        <h1 className="text-4xl font-black tracking-tight text-slate-950">{playerName}</h1>
-                        <p className="mt-1 text-lg text-slate-600">
+                        <h1 className="text-3xl font-black tracking-tight text-slate-950">{playerName}</h1>
+                        <p className="mt-1 text-sm font-medium text-slate-600">
                           Match history, Elo-style ratings, recognition badges, and club profile details.
                         </p>
                       </div>
-                      {linkedEmail ? <p className="text-sm text-slate-600">{linkedEmail}</p> : null}
+                      {linkedEmail ? <p className="mt-2 text-base text-slate-700">{linkedEmail}</p> : null}
                       <div className="flex flex-wrap gap-2">
                         {profileHeaderPills.map((item) => (
                           <span key={item.label} className={pillClass(item.tone)}>
