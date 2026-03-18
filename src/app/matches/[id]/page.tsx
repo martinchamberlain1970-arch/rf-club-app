@@ -1656,6 +1656,7 @@ export default function MatchPage() {
   const deleteMatch = async () => {
     const client = supabase;
     if (!client || !match) return;
+    const practiceCompetitionId = competition?.is_practice ? match.competition_id : null;
     const clearSubmissions = await client.from("result_submissions").delete().eq("match_id", match.id);
     if (clearSubmissions.error) {
       setMessage(clearSubmissions.error.message);
@@ -1675,12 +1676,23 @@ export default function MatchPage() {
       setMessage("Match was not deleted. Check role permissions for this account.");
       return;
     }
+    if (practiceCompetitionId) {
+      const competitionDelete = await client.from("competitions").delete().eq("id", practiceCompetitionId);
+      if (competitionDelete.error) {
+        setMessage(`Match deleted, but practice competition cleanup failed: ${competitionDelete.error.message}`);
+        return;
+      }
+    }
     await logAudit("match_deleted", {
       entityType: "match",
       entityId: match.id,
       summary: "Match deleted permanently.",
-      meta: { competitionId: match.competition_id },
+      meta: { competitionId: match.competition_id, deletedPracticeCompetition: Boolean(practiceCompetitionId) },
     });
+    if (practiceCompetitionId) {
+      router.push("/events");
+      return;
+    }
     router.push(`/competitions/${match.competition_id}`);
   };
 
