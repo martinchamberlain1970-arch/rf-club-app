@@ -40,6 +40,15 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
   };
 
   const onSignOut = async () => {
+    if (typeof window !== "undefined" && admin.userId) {
+      const prefix = `profile_photo_prompt_seen_${admin.userId}_`;
+      for (let i = window.sessionStorage.length - 1; i >= 0; i -= 1) {
+        const key = window.sessionStorage.key(i);
+        if (key?.startsWith(prefix)) {
+          window.sessionStorage.removeItem(key);
+        }
+      }
+    }
     const client = supabase;
     if (client) await client.auth.signOut();
     router.replace("/auth/sign-in");
