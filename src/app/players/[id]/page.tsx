@@ -783,6 +783,18 @@ export default function PlayerProfilePage() {
         })),
     [players]
   );
+  const handicapExplain = useMemo(() => {
+    const current = Number(player?.snooker_handicap ?? 0);
+    if (current < 0) return `Current handicap after the latest review: this player gives ${Math.abs(current)} points start to a scratch (0) opponent.`;
+    if (current > 0) return `Current handicap after the latest review: this player receives ${current} points start from a scratch (0) opponent.`;
+    return "Current handicap after the latest review: this player is off scratch and neither gives nor receives points against a 0-handicap opponent.";
+  }, [player?.snooker_handicap]);
+  const baselineExplain = useMemo(() => {
+    const start = Number(player?.snooker_handicap_base ?? 0);
+    if (start < 0) return `Baseline handicap set before the season/review cycle: gives ${Math.abs(start)} start.`;
+    if (start > 0) return `Baseline handicap set before the season/review cycle: receives ${start} start.`;
+    return "Baseline handicap set before the season/review cycle: scratch.";
+  }, [player?.snooker_handicap_base]);
   const formatPeakLabel = (peak: number, ratedMatches: number) =>
     ratedMatches > 0 ? `Peak ${Math.round(peak)}` : "Starting rating 1000";
   const formatHandicap = (value: number | null | undefined) => {
