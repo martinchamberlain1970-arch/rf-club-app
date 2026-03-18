@@ -61,6 +61,7 @@ export default function HomePage() {
   const [userName, setUserName] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userPlayerId, setUserPlayerId] = useState<string | null>(null);
+  const [userMissingAvatar, setUserMissingAvatar] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -183,12 +184,12 @@ export default function HomePage() {
       const { data: player } = linkedPlayerId
         ? await client
             .from("players")
-            .select("id,display_name,full_name,location_id")
+            .select("id,display_name,full_name,location_id,avatar_url")
             .eq("id", linkedPlayerId)
             .maybeSingle()
         : await client
             .from("players")
-            .select("id,display_name,full_name,location_id")
+            .select("id,display_name,full_name,location_id,avatar_url")
             .eq("claimed_by", userId)
             .maybeSingle();
       const emailName =
@@ -201,6 +202,7 @@ export default function HomePage() {
       const name = player?.full_name?.trim() ? player.full_name : player?.display_name ?? emailName;
       setUserName(name);
       setUserPlayerId(player?.id ?? null);
+      setUserMissingAvatar(Boolean(player?.id) && !player?.avatar_url);
       if (admin.isSuper) {
         setPendingClaim(null);
         setPendingAdminRequest(null);
@@ -352,14 +354,14 @@ export default function HomePage() {
     if (typeof window === "undefined") return;
     if (admin.loading || admin.isSuper) return;
     if (!admin.userId || !userPlayerId) return;
-    const key = `profile_onboarding_prompt_seen_${admin.userId}_${userPlayerId}`;
-    const seen = window.localStorage.getItem(key);
-    if (!seen) {
+    if (userMissingAvatar) {
       queueMicrotask(() => {
         setShowProfilePrompt(true);
       });
+      return;
     }
-  }, [admin.loading, admin.isSuper, admin.userId, userPlayerId]);
+    setShowProfilePrompt(false);
+  }, [admin.loading, admin.isSuper, admin.userId, userPlayerId, userMissingAvatar]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -856,23 +858,15 @@ export default function HomePage() {
       />
       <ConfirmModal
         open={showProfilePrompt}
-        title="Review your profile"
-        description="Would you like to review your profile now and optionally upload a profile picture?"
+        title="Add a profile photo"
+        description="Your player profile does not have a photo yet. Open your profile now to upload one."
         confirmLabel="Review now"
         cancelLabel="Later"
         onConfirm={() => {
-          if (typeof window !== "undefined" && admin.userId && userPlayerId) {
-            const key = `profile_onboarding_prompt_seen_${admin.userId}_${userPlayerId}`;
-            window.localStorage.setItem(key, "1");
-          }
           setShowProfilePrompt(false);
           if (userPlayerId) router.push(`/players/${userPlayerId}?prompt=photo`);
         }}
         onCancel={() => {
-          if (typeof window !== "undefined" && admin.userId && userPlayerId) {
-            const key = `profile_onboarding_prompt_seen_${admin.userId}_${userPlayerId}`;
-            window.localStorage.setItem(key, "1");
-          }
           setShowProfilePrompt(false);
         }}
       />
