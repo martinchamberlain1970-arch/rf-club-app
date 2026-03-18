@@ -85,6 +85,14 @@ const snookerDisputeTopics: DisputeTopic[] = [
   { label: "Final Black", quickCheck: "Are frame scores level after black sequence was completed?", action: "Use re-spotted black procedure and continue until one player scores or concedes." },
 ];
 
+const snookerHandicapGuide = [
+  "Handicapped snooker fixtures use each player's current reviewed handicap, but the live start in any one frame is capped at 40 points.",
+  "The cap is there to keep matches competitive and understandable. Very large starts can make a frame feel over before it begins.",
+  "The handicap system can still reflect a wider long-term gap in player standard, but the match-day start is limited so both players remain actively in the game.",
+  "If a fixture is marked as handicapped, the match page will show exactly who receives the start and how many points they receive.",
+  "Players must enter the final adjusted frame score including the shown start, not the raw scratch score.",
+];
+
 export default function RulesPage() {
   const sportOptions = ["Pool", "Snooker"] as const;
   const poolRuleSetOptions = ["International", "World Rules", "Ultimate"] as const;
@@ -208,6 +216,22 @@ export default function RulesPage() {
               </p>
             </div>
           </section>
+
+          {sportTab === 1 ? (
+            <section className={`${cardBaseClass} space-y-3`}>
+              <h2 className="text-xl font-semibold text-slate-900">Handicapped Snooker Guide</h2>
+              <p className="text-sm text-slate-600">
+                This explains the current in-app approach to handicapped snooker fixtures and why the live start is capped.
+              </p>
+              <ul className="space-y-3 text-slate-700">
+                {snookerHandicapGuide.map((line) => (
+                  <li key={line} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <section className={`${cardBaseClass} space-y-3`}>
             <h2 className="text-xl font-semibold text-slate-900">Dispute Wizard</h2>
