@@ -764,6 +764,23 @@ export default function PlayerProfilePage() {
       totalPlayers: players.length,
     };
   }, [player, players]);
+  const snookerEloLeaderboard = useMemo(
+    () =>
+      [...players]
+        .sort(
+          (a, b) =>
+            Number(b.rating_snooker ?? 1000) - Number(a.rating_snooker ?? 1000) ||
+            (a.full_name?.trim() ? a.full_name : a.display_name).localeCompare(b.full_name?.trim() ? b.full_name : b.display_name)
+        )
+        .map((entry, index) => ({
+          id: entry.id,
+          rank: index + 1,
+          name: entry.full_name?.trim() ? entry.full_name : entry.display_name,
+          rating: Math.round(Number(entry.rating_snooker ?? 1000)),
+          handicap: Number(entry.snooker_handicap ?? 0),
+        })),
+    [players]
+  );
   const formatPeakLabel = (peak: number, ratedMatches: number) =>
     ratedMatches > 0 ? `Peak ${Math.round(peak)}` : "Starting rating 1000";
   const formatHandicap = (value: number | null | undefined) => {
@@ -1458,10 +1475,34 @@ export default function PlayerProfilePage() {
                   </div>
                 </section>
               ) : null}
+              {player && rankingCard ? (
+                <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl border border-cyan-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">Current Elo</p>
+                    <p className="mt-2 text-3xl font-black text-slate-950">{Math.round(rankingCard.snookerRating)}</p>
+                    <p className="mt-1 text-sm text-slate-600">Live snooker rating after approved results.</p>
+                  </div>
+                  <div className="rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Rank</p>
+                    <p className="mt-2 text-3xl font-black text-slate-950">#{rankingCard.snookerRank}</p>
+                    <p className="mt-1 text-sm text-slate-600">Out of {rankingCard.totalPlayers} active players.</p>
+                  </div>
+                  <div className="rounded-2xl border border-teal-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Current Handicap</p>
+                    <p className="mt-2 text-3xl font-black text-slate-950">{formatHandicap(player?.snooker_handicap)}</p>
+                    <p className="mt-1 text-sm text-slate-600">Live points-start figure after latest review.</p>
+                  </div>
+                  <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Frames Won %</p>
+                    <p className="mt-2 text-3xl font-black text-slate-950">{pct(effectiveSummary.won, effectiveSummary.played)}%</p>
+                    <p className="mt-1 text-sm text-slate-600">{effectiveSummary.won} wins from {effectiveSummary.played} recorded matches.</p>
+                  </div>
+                </section>
+              ) : null}
               {rankingCard ? (
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-lg font-semibold text-slate-900">Player ranking</h2>
+                    <h2 className="text-lg font-semibold text-slate-900">Ranking Card</h2>
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
                         href="/rankings"
@@ -1493,71 +1534,207 @@ export default function PlayerProfilePage() {
                       Actual match starts are capped at {MAX_SNOOKER_START}. The cap keeps frames competitive and understandable while Elo continues to track the full strength gap in the background.
                     </p>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current</p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{formatHandicap(player?.snooker_handicap)}</p>
-                      <p className="text-xs text-slate-500">after latest review</p>
+                  <div className="mt-3 grid gap-3 xl:grid-cols-[0.9fr_1.1fr]">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-sm font-semibold text-slate-900">Snooker Rating</p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900">{Math.round(rankingCard.snookerRating)}</p>
+                      <p className="text-sm text-slate-600">Rank #{rankingCard.snookerRank} of {rankingCard.totalPlayers}</p>
+                      <p className="text-xs text-slate-500">Peak {Math.round(rankingCard.snookerPeak)} · Rated matches {rankingCard.snookerMatches}</p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Baseline</p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{formatHandicap(player?.snooker_handicap_base)}</p>
-                      <p className="text-xs text-slate-500">original starting handicap</p>
-                    </div>
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rated snooker matches</p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{player?.rated_matches_snooker ?? 0}</p>
-                      <p className="text-xs text-slate-500">approved singles results only</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                    <p className="text-sm font-semibold text-slate-900">Why the maximum start is capped at {MAX_SNOOKER_START}</p>
-                    <p className="mt-1 text-sm text-slate-700">
-                      Large handicap gaps can be mathematically consistent with Elo but still produce frames that feel pre-decided. The cap protects weaker players without turning the opening scoreline into the whole contest.
-                    </p>
-                    <p className="mt-1 text-sm text-slate-700">
-                      In practice, the reviewed handicap still reflects the longer-term strength gap, but the live fixture uses a capped start so the match remains playable, recognisable, and easier for players to trust.
-                    </p>
-                  </div>
-                  <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Elo to handicap guide</p>
-                        <p className="text-xs text-slate-500">Quick reference for how snooker Elo maps toward reviewed handicap. Live starts are capped at {MAX_SNOOKER_START}.</p>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-900">Live Elo and Handicap Table</p>
+                        <p className="text-xs text-slate-500">All active players</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!snookerHandicapExport) return;
-                          await navigator.clipboard.writeText(snookerHandicapExport);
-                          setInfoModal({ title: "Copied", description: "Snooker Elo and handicap summary copied for WhatsApp or email." });
-                        }}
-                        className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
-                      >
-                        Copy handicap summary
-                      </button>
-                    </div>
-                    <div className="mt-3 overflow-x-auto">
-                      <table className="min-w-full text-left text-sm">
-                        <thead>
-                          <tr className="text-slate-500">
-                            <th className="py-2 pr-4 font-medium">Elo</th>
-                            <th className="py-2 pr-4 font-medium">Current</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {snookerHandicapGuide.map((row) => (
-                            <tr key={row.elo} className="border-t border-slate-100">
-                              <td className="py-2 pr-4 font-medium text-slate-900">{row.elo}</td>
-                              <td className="py-2 pr-4 text-slate-700">{formatHandicap(row.handicap)}</td>
+                      <div className="mt-3 max-h-72 overflow-auto rounded-xl border border-slate-200">
+                        <table className="min-w-full border-collapse text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+                              <th className="px-3 py-2">#</th>
+                              <th className="px-3 py-2">Player</th>
+                              <th className="px-3 py-2">Elo</th>
+                              <th className="px-3 py-2">Handicap</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {snookerEloLeaderboard.map((row) => (
+                              <tr
+                                key={row.id}
+                                className={`border-b border-slate-100 text-slate-800 last:border-b-0 ${row.id === player?.id ? "bg-cyan-50" : "bg-white"}`}
+                              >
+                                <td className="px-3 py-2 font-semibold">{row.rank}</td>
+                                <td className="px-3 py-2">{row.name}</td>
+                                <td className="px-3 py-2">{row.rating}</td>
+                                <td className="px-3 py-2">{formatHandicap(row.handicap)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 </section>
               ) : null}
+              {rankingCard ? (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setShowHandicap((v) => !v)}
+                    className="flex w-full items-center justify-between text-left"
+                  >
+                    <h2 className="text-lg font-semibold text-slate-900">Handicap</h2>
+                    <span className="text-sm text-slate-600">{showHandicap ? "Hide" : "Show"}</span>
+                  </button>
+                  {showHandicap ? (
+                    <div className="mt-3">
+                      <div className="mb-3 rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-3 text-xs leading-6 text-fuchsia-950">
+                        <p className="font-semibold">How your handicap is adjusted</p>
+                        <p className="mt-1">
+                          Your snooker Elo rating updates after every valid competitive frame. Handicap is then reviewed from Elo rather than changed automatically after every win or loss.
+                        </p>
+                        <p className="mt-1">
+                          Target handicap matches the current Elo guide and the live start is capped at {MAX_SNOOKER_START}. No-show, nominated-player, and void frames are excluded.
+                        </p>
+                      </div>
+                      <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs leading-6 text-slate-700">
+                        <p className="font-semibold text-slate-900">What your handicap means in points start</p>
+                        <p className="mt-1">{handicapExplain}</p>
+                        <p className="mt-1">{baselineExplain}</p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current</p>
+                          <p className="mt-2 text-2xl font-bold text-slate-900">{formatHandicap(player?.snooker_handicap)}</p>
+                          <p className="text-xs text-slate-500">after latest review</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Baseline</p>
+                          <p className="mt-2 text-2xl font-bold text-slate-900">{formatHandicap(player?.snooker_handicap_base)}</p>
+                          <p className="text-xs text-slate-500">original starting handicap</p>
+                        </div>
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rated snooker matches</p>
+                          <p className="mt-2 text-2xl font-bold text-slate-900">{player?.rated_matches_snooker ?? 0}</p>
+                          <p className="text-xs text-slate-500">approved singles results only</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-sm font-semibold text-slate-900">Why the maximum start is capped at {MAX_SNOOKER_START}</p>
+                        <p className="mt-1 text-sm text-slate-700">
+                          Large handicap gaps can be mathematically consistent with Elo but still produce frames that feel pre-decided. The cap protects weaker players without turning the opening scoreline into the whole contest.
+                        </p>
+                        <p className="mt-1 text-sm text-slate-700">
+                          In practice, the reviewed handicap still reflects the longer-term strength gap, but the live fixture uses a capped start so the match remains playable, recognisable, and easier for players to trust.
+                        </p>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">Elo to handicap guide</p>
+                            <p className="text-xs text-slate-500">Quick reference for how snooker Elo maps toward reviewed handicap. Live starts are capped at {MAX_SNOOKER_START}.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!snookerHandicapExport) return;
+                              await navigator.clipboard.writeText(snookerHandicapExport);
+                              setInfoModal({ title: "Copied", description: "Snooker Elo and handicap summary copied for WhatsApp or email." });
+                            }}
+                            className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                          >
+                            Copy handicap summary
+                          </button>
+                        </div>
+                        <div className="mt-3 overflow-x-auto">
+                          <table className="min-w-full text-left text-sm">
+                            <thead>
+                              <tr className="text-slate-500">
+                                <th className="py-2 pr-4 font-medium">Elo</th>
+                                <th className="py-2 pr-4 font-medium">Current</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {snookerHandicapGuide.map((row) => (
+                                <tr key={row.elo} className="border-t border-slate-100">
+                                  <td className="py-2 pr-4 font-medium text-slate-900">{row.elo}</td>
+                                  <td className="py-2 pr-4 text-slate-700">{formatHandicap(row.handicap)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setShowPerformance((v) => !v)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <h2 className="text-lg font-semibold text-slate-900">Performance Snapshot</h2>
+                  <span className="text-sm text-slate-600">{showPerformance ? "Hide" : "Show"}</span>
+                </button>
+                {showPerformance ? (
+                  <>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-5">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-500">Frames Played</p>
+                        <p className="text-xl font-semibold text-slate-900">{effectiveSummary.played}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-500">Win %</p>
+                        <p className="text-xl font-semibold text-slate-900">{pct(effectiveSummary.won, effectiveSummary.played)}%</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-500">Frames For</p>
+                        <p className="text-xl font-semibold text-slate-900">{effectiveSummary.framesFor}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-500">Frames Against</p>
+                        <p className="text-xl font-semibold text-slate-900">{effectiveSummary.framesAgainst}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-500">Snooker Wins</p>
+                        <p className="text-xl font-semibold text-slate-900">{effectiveSummary.snookerWon}/{effectiveSummary.snookerPlayed}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-3">
+                        <p className="text-sm font-semibold text-slate-900">Recent form</p>
+                        <p className="mt-1 text-xs text-slate-500">Last {recentFormItems.length || 0} completed results</p>
+                        {recentFormItems.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {recentFormItems.map((item) => (
+                              <span
+                                key={item.key}
+                                className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${
+                                  item.result === "W" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                                }`}
+                              >
+                                {item.result}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-sm text-slate-600">No recent form yet.</p>
+                        )}
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 p-3">
+                        <p className="text-sm font-semibold text-slate-900">Overall summary</p>
+                        <p className="mt-2 text-slate-800">
+                          Matches/Frames: {effectiveSummary.played} · Won: {effectiveSummary.won} · Lost: {effectiveSummary.lost} · Win%: {pct(effectiveSummary.won, effectiveSummary.played)}%
+                        </p>
+                        <p className="mt-1 text-slate-800">
+                          Frames: For {effectiveSummary.framesFor} · Against {effectiveSummary.framesAgainst}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </section>
               {childProfilesEnabled && player && (player.age_band ?? "18_plus") === "18_plus" ? (
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <h2 className="text-lg font-semibold text-slate-900">Create child profile</h2>
@@ -1873,37 +2050,6 @@ export default function PlayerProfilePage() {
                     </div>
                   </div>
                 ) : null}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-3">
-                    <p className="text-sm font-semibold text-slate-900">Recent form</p>
-                    <p className="mt-1 text-xs text-slate-500">Last {recentFormItems.length || 0} completed results</p>
-                    {recentFormItems.length ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {recentFormItems.map((item) => (
-                          <span
-                            key={item.key}
-                            className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${
-                              item.result === "W" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
-                            }`}
-                          >
-                            {item.result}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-slate-600">No recent form yet.</p>
-                    )}
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 p-3">
-                    <p className="text-sm font-semibold text-slate-900">Overall summary</p>
-                    <p className="mt-2 text-slate-800">
-                      Matches/Frames: {effectiveSummary.played} · Won: {effectiveSummary.won} · Lost: {effectiveSummary.lost} · Win%: {pct(effectiveSummary.won, effectiveSummary.played)}%
-                    </p>
-                    <p className="mt-1 text-slate-800">
-                      Frames: For {effectiveSummary.framesFor} · Against {effectiveSummary.framesAgainst}
-                    </p>
-                  </div>
-                </div>
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
