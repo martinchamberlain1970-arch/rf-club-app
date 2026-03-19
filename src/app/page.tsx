@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import RequireAuth from "@/components/RequireAuth";
 import PageNav from "@/components/PageNav";
@@ -46,6 +46,15 @@ const systemToolLinks = [
   { href: "/audit", title: "Audit Log", desc: "Check important account and system actions." },
   { href: "/usage", title: "Usage Analytics", desc: "Review app activity and usage trends." },
 ] as const;
+
+type PriorityTone = "teal" | "emerald" | "indigo" | "amber" | "violet";
+type PriorityCard = {
+  href: string;
+  title: string;
+  value: number;
+  tone: PriorityTone;
+  detail: string;
+};
 
 export default function HomePage() {
   const router = useRouter();
@@ -111,6 +120,95 @@ export default function HomePage() {
   const pillPrimaryClass = `${pillBaseClass} border-teal-700 bg-teal-700 text-white hover:bg-teal-800`;
   const pillWarningClass = `${pillBaseClass} border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100`;
   const actionLinkClass = "mt-2 inline-flex items-center rounded-full border border-teal-700 bg-teal-700 px-3 py-1 text-sm font-medium text-white transition hover:bg-teal-800";
+  const priorityCards = useMemo<PriorityCard[]>(() => {
+    if (admin.isSuper) {
+      return [
+        {
+          href: "/results",
+          title: "Results Queue",
+          value: resultsQueueCount ?? 0,
+          tone: "emerald",
+          detail: "Pending club result approvals and corrections needing attention.",
+        },
+        {
+          href: "/signup-requests",
+          title: "Governance Requests",
+          value: pendingRequestsCount ?? 0,
+          tone: "amber",
+          detail: "Access, profile, child, and other queued requests for review.",
+        },
+        {
+          href: "/shared-player-links",
+          title: "Shared Player Links",
+          value: sharedLinkSuggestionsCount,
+          tone: "indigo",
+          detail: "Live club-to-league mapping suggestions waiting to be checked.",
+        },
+      ];
+    }
+    if (admin.isAdmin) {
+      return [
+        {
+          href: "/events",
+          title: "Open Competitions",
+          value: openEventsCount ?? 0,
+          tone: "teal",
+          detail: "Current club competitions and day-to-day event activity.",
+        },
+        {
+          href: "/results",
+          title: "Results Queue",
+          value: resultsQueueCount ?? 0,
+          tone: "emerald",
+          detail: "Submitted match results awaiting club admin review.",
+        },
+        {
+          href: "/notifications",
+          title: "Notifications",
+          value: pendingRequestsCount ?? 0,
+          tone: "violet",
+          detail: "Updates affecting approvals, requests, and account actions.",
+        },
+      ];
+    }
+    return [
+      {
+        href: "/events",
+        title: "Open Competitions",
+        value: openEventsCount ?? 0,
+        tone: "teal",
+        detail: "What is currently active at club level right now.",
+      },
+      {
+        href: "/notifications",
+        title: "Notifications",
+        value: pendingRequestsCount ?? 0,
+        tone: "violet",
+        detail: "Track profile, result, and competition-related updates.",
+      },
+      {
+        href: "/high-breaks",
+        title: "High Breaks",
+        value: 1,
+        tone: "indigo",
+        detail: "Jump straight to the dedicated club snooker break table.",
+      },
+    ];
+  }, [admin.isAdmin, admin.isSuper, openEventsCount, pendingRequestsCount, resultsQueueCount, sharedLinkSuggestionsCount]);
+  const priorityCardClass = (tone: PriorityTone) => {
+    if (tone === "teal") return "border-teal-200 bg-gradient-to-br from-teal-50 to-white";
+    if (tone === "emerald") return "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white";
+    if (tone === "indigo") return "border-indigo-200 bg-gradient-to-br from-indigo-50 to-white";
+    if (tone === "amber") return "border-amber-200 bg-gradient-to-br from-amber-50 to-white";
+    return "border-violet-200 bg-gradient-to-br from-violet-50 to-white";
+  };
+  const priorityValueClass = (tone: PriorityTone) => {
+    if (tone === "teal") return "text-teal-700";
+    if (tone === "emerald") return "text-emerald-700";
+    if (tone === "indigo") return "text-indigo-700";
+    if (tone === "amber") return "text-amber-700";
+    return "text-violet-700";
+  };
 
   const primaryCardClass = (href: string) => {
     if (admin.isSuper) {
@@ -639,6 +737,39 @@ export default function HomePage() {
               </div>
             ) : null}
             {profileMessage ? <p className="mt-2 text-sm text-slate-700">{profileMessage}</p> : null}
+          </section>
+
+          <section className={subtleCardClass}>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Operational Focus</p>
+                <h2 className="mt-1 text-xl font-black text-slate-950">Start Here</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  The highest-priority club actions are surfaced first so the dashboard reads as an operating panel, not just a directory.
+                </p>
+              </div>
+              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                {admin.isSuper ? "System view" : admin.isAdmin ? "Club admin view" : "Player view"}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              {priorityCards.map((card) => (
+                <Link
+                  key={`${card.href}|${card.title}`}
+                  href={card.href}
+                  className={`rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${priorityCardClass(card.tone)}`}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{card.title}</p>
+                  <div className="mt-2 flex items-end justify-between gap-3">
+                    <p className={`text-4xl font-black leading-none ${priorityValueClass(card.tone)}`}>{card.value}</p>
+                    <span className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                      Open
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm font-medium text-slate-900">{card.detail}</p>
+                </Link>
+              ))}
+            </div>
           </section>
 
           <section className="space-y-3">
