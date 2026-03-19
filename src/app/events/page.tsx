@@ -88,6 +88,8 @@ function getSportMeta(sport: Competition["sport_type"]) {
   }
 }
 
+type OverviewTone = "teal" | "indigo" | "amber" | "emerald";
+
 export default function EventsPage() {
   const admin = useAdminStatus();
   const [rows, setRows] = useState<Competition[]>([]);
@@ -162,6 +164,47 @@ export default function EventsPage() {
     }
     return map;
   }, [matchRows]);
+  const overviewCards = useMemo(
+    () => [
+      {
+        title: "Active Competitions",
+        value: open.length,
+        detail: "Current competitions available to play, review, or manage.",
+        tone: "teal" as OverviewTone,
+      },
+      {
+        title: "Completed",
+        value: completed.length,
+        detail: "Competitions with a confirmed winner and finished bracket.",
+        tone: "emerald" as OverviewTone,
+      },
+      {
+        title: "Archived",
+        value: archived.length,
+        detail: "Older competitions kept for history and audit only.",
+        tone: "amber" as OverviewTone,
+      },
+      {
+        title: "Matches In Progress",
+        value: Array.from(statsByComp.values()).reduce((sum, stat) => sum + stat.inProgress, 0),
+        detail: "Live or partially-completed matches still moving through the system.",
+        tone: "indigo" as OverviewTone,
+      },
+    ],
+    [archived.length, completed.length, open.length, statsByComp]
+  );
+  const overviewCardClass = (tone: OverviewTone) => {
+    if (tone === "teal") return "border-teal-200 bg-gradient-to-br from-teal-50 to-white";
+    if (tone === "indigo") return "border-indigo-200 bg-gradient-to-br from-indigo-50 to-white";
+    if (tone === "amber") return "border-amber-200 bg-gradient-to-br from-amber-50 to-white";
+    return "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white";
+  };
+  const overviewValueClass = (tone: OverviewTone) => {
+    if (tone === "teal") return "text-teal-700";
+    if (tone === "indigo") return "text-indigo-700";
+    if (tone === "amber") return "text-amber-700";
+    return "text-emerald-700";
+  };
 
   const deleteEvent = async (row: Competition) => {
     const client = supabase;
@@ -277,6 +320,30 @@ export default function EventsPage() {
             </div>
           </section>
 
+          <section className={cardBaseClass}>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Competition Overview</p>
+                <h2 className="mt-1 text-xl font-black text-slate-950">Club Competition Timeline</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  A clearer read of what is live, what is complete, and where competition activity still needs attention.
+                </p>
+              </div>
+              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                {activeRows.length > 0 ? `${activeRows.length} shown in current view` : "No competitions in this view"}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {overviewCards.map((card) => (
+                <div key={card.title} className={`rounded-2xl border p-4 shadow-sm ${overviewCardClass(card.tone)}`}>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{card.title}</p>
+                  <p className={`mt-2 text-3xl font-black ${overviewValueClass(card.tone)}`}>{card.value}</p>
+                  <p className="mt-2 text-sm font-medium text-slate-900">{card.detail}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <div className="flex items-center gap-2">
             {admin.isAdmin ? (
               <Link href="/events/new" className={buttonPrimaryClass}>
@@ -307,46 +374,46 @@ export default function EventsPage() {
                 const sportMeta = getSportMeta(r.sport_type);
                 const competitionStats = statsByComp.get(r.id);
                 return (
-                  <article key={r.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <article key={r.id} className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-white p-5 shadow-sm">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-[240px] flex-1 space-y-3">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${sportMeta.cardClass}`}>
+                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${sportMeta.cardClass}`}>
                             {sportMeta.label}
                           </span>
-                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
                             {r.competition_format === "knockout" ? "Knockout" : "League"}
                           </span>
-                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
                             {r.match_mode === "doubles" ? "Doubles" : "Singles"}
                           </span>
                           {r.handicap_enabled ? (
-                            <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+                            <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
                               Handicapped
                             </span>
                           ) : null}
                           {r.is_practice ? (
-                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
                               Practice
                             </span>
                           ) : null}
                         </div>
                         <div>
-                          <h2 className="text-2xl font-semibold text-slate-900">{r.name}</h2>
+                          <h2 className="text-2xl font-black text-slate-950">{r.name}</h2>
                           <p className="mt-1 text-sm text-slate-500">Created {fmtDate.format(new Date(r.created_at))}</p>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-3">
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Format</p>
-                            <p className="mt-1 text-sm font-medium text-slate-900">{r.match_mode === "doubles" ? "Doubles" : "Singles"}</p>
+                          <div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-700">Format</p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">{r.match_mode === "doubles" ? "Doubles" : "Singles"}</p>
                           </div>
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Match length</p>
-                            <p className="mt-1 text-sm font-medium text-slate-900">Best of {r.best_of}</p>
+                          <div className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">Match Length</p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">Best of {r.best_of}</p>
                           </div>
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Progress</p>
-                            <p className="mt-1 text-sm font-medium text-slate-900">
+                          <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Progress</p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
                               {competitionStats ? `${competitionStats.done}/${competitionStats.total} complete` : "No matches yet"}
                             </p>
                           </div>
