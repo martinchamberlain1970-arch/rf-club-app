@@ -615,12 +615,12 @@ export default function HomePage() {
                 <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
                   {admin.isSuper
                     ? "Rack & Frame System Dashboard"
-                    : "Rack & Frame Club Dashboard"}
+                    : "Rack & Frame - Club Management Platform"}
                 </h1>
                 <p className="mt-1 text-sm text-slate-600">
                   {admin.isSuper
                     ? "Manage approvals, users, and system tools."
-                    : "Run quick matches, competitions, players, and results for your club."}
+                    : "Run club competitions, player management, fixtures, and results from one place."}
                 </p>
               </div>
               <PageNav />
@@ -792,13 +792,13 @@ export default function HomePage() {
           </section>
 
           <section className="space-y-3">
-            <div className="space-y-3">
-              <div className={cardBaseClass}>
-                <p className="text-sm font-semibold text-slate-900">Club Play</p>
-                <p className="mt-1 text-sm text-slate-600">
-                  The main day-to-day actions for running matches, competitions, players, and results.
-                </p>
-                <div className="mt-3 grid gap-2 sm:gap-3 sm:grid-cols-3">
+              <div className="space-y-3">
+                <div className={cardBaseClass}>
+                  <p className="text-sm font-semibold text-slate-900">Main Tabs</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Central controls for club play, competitions, players, and result administration.
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:gap-3 sm:grid-cols-3">
                   {userPlayerId ? (
                     <Link href="/my-fixtures" className={primaryCardClass("/my-fixtures")}>
                       <h2 className="text-base sm:text-lg font-semibold text-slate-900">My Fixtures</h2>
@@ -826,7 +826,7 @@ export default function HomePage() {
 
               {visibleAdminTools.length ? (
                 <div className={cardBaseClass}>
-                  <p className="text-sm font-semibold text-slate-900">Club Admin</p>
+                  <p className="text-sm font-semibold text-slate-900">Admin Tools</p>
                   <p className="mt-1 text-sm text-slate-600">
                     Extra controls for organisers running sign-ups, live sessions, and club operations.
                   </p>
@@ -926,6 +926,9 @@ export default function HomePage() {
             {visibleSupportLinks.length ? (
               <div className={cardBaseClass}>
                 <p className="text-sm font-semibold text-slate-900">Support</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Help, rules, premium information, and the guided tour for new users.
+                </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {visibleSupportLinks.map((item) => (
                     <Link key={item.href} href={item.href} className={pillSecondaryClass}>
