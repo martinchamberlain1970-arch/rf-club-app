@@ -211,14 +211,33 @@ export default function HomePage() {
   };
 
   const primaryCardClass = (href: string) => {
-    if (admin.isSuper) {
-      if (href === "/signup-requests") return `${cardBaseClass} border-l-4 border-l-amber-500 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md`;
-      if (href === "/players") return `${cardBaseClass} border-l-4 border-l-teal-600 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md`;
-      return `${cardBaseClass} border-l-4 border-l-indigo-500 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md`;
-    }
-    if (href === "/quick-match") return `${cardBaseClass} border-l-4 border-l-teal-600 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md`;
-    if (href === "/events/new") return `${cardBaseClass} border-l-4 border-l-emerald-600 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md`;
-    return `${cardBaseClass} border-l-4 border-l-slate-400 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md`;
+    const base = "rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md";
+    if (href === "/quick-match") return `${base} border-teal-200 bg-gradient-to-br from-teal-50 to-white`;
+    if (href === "/events/new") return `${base} border-emerald-200 bg-gradient-to-br from-emerald-50 to-white`;
+    if (href === "/events") return `${base} border-sky-200 bg-gradient-to-br from-sky-50 to-white`;
+    if (href === "/players") return `${base} border-indigo-200 bg-gradient-to-br from-indigo-50 to-white`;
+    if (href === "/results") return `${base} border-emerald-200 bg-gradient-to-br from-emerald-50 to-white`;
+    if (href === "/notifications") return `${base} border-violet-200 bg-gradient-to-br from-violet-50 to-white`;
+    if (href === "/stats") return `${base} border-amber-200 bg-gradient-to-br from-amber-50 to-white`;
+    if (href === "/high-breaks") return `${base} border-cyan-200 bg-gradient-to-br from-cyan-50 to-white`;
+    if (href === "/rankings") return `${base} border-indigo-200 bg-gradient-to-br from-indigo-50 to-white`;
+    if (href === "/signups") return `${base} border-amber-200 bg-gradient-to-br from-amber-50 to-white`;
+    if (href === "/live") return `${base} border-sky-200 bg-gradient-to-br from-sky-50 to-white`;
+    if (href === "/shared-player-links") return `${base} border-indigo-200 bg-gradient-to-br from-indigo-50 to-white`;
+    if (href === "/snooker-handicap-exceptions") return `${base} border-teal-200 bg-gradient-to-br from-teal-50 to-white`;
+    if (href === "/signup-requests") return `${base} border-amber-200 bg-gradient-to-br from-amber-50 to-white`;
+    if (href === "/backup" || href === "/audit" || href === "/usage") return `${base} border-slate-200 bg-gradient-to-br from-slate-50 to-white`;
+    return `${base} border-slate-200 bg-gradient-to-br from-slate-50 to-white`;
+  };
+  const primaryTileBadgeClass = (href: string) => {
+    if (href === "/quick-match") return "border-teal-300 bg-teal-100 text-teal-900";
+    if (href === "/events/new" || href === "/results") return "border-emerald-300 bg-emerald-100 text-emerald-900";
+    if (href === "/events" || href === "/live") return "border-sky-300 bg-sky-100 text-sky-900";
+    if (href === "/players" || href === "/rankings" || href === "/shared-player-links") return "border-indigo-300 bg-indigo-100 text-indigo-900";
+    if (href === "/notifications") return "border-violet-300 bg-violet-100 text-violet-900";
+    if (href === "/stats" || href === "/signups" || href === "/signup-requests") return "border-amber-300 bg-amber-100 text-amber-900";
+    if (href === "/high-breaks") return "border-cyan-300 bg-cyan-100 text-cyan-900";
+    return "border-slate-300 bg-slate-100 text-slate-800";
   };
 
   const askConfirm = (title: string, description: string, confirmLabel = "Confirm", cancelLabel = "Cancel") =>
@@ -784,7 +803,9 @@ export default function HomePage() {
                     <Link href="/my-fixtures" className={primaryCardClass("/my-fixtures")}>
                       <h2 className="text-base sm:text-lg font-semibold text-slate-900">My Fixtures</h2>
                       <p className="mt-1 text-sm text-slate-600">Open your last, current, and next week fixture list.</p>
-                      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
+                      <span className="mt-3 inline-flex rounded-full border border-teal-300 bg-teal-100 px-2.5 py-1 text-xs font-semibold text-teal-900">
+                        Open
+                      </span>
                     </Link>
                   ) : null}
                   {visibleCoreLinks.map((item) => (
@@ -795,7 +816,9 @@ export default function HomePage() {
                     >
                       <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
                       <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
-                      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
+                      <span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${primaryTileBadgeClass(item.href)}`}>
+                        Open
+                      </span>
                     </Link>
                   ))}
                 </div>
@@ -816,7 +839,9 @@ export default function HomePage() {
                       >
                         <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
                         <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
-                        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
+                        <span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${primaryTileBadgeClass(item.href)}`}>
+                          Open
+                        </span>
                       </Link>
                     ))}
                   </div>
@@ -852,7 +877,9 @@ export default function HomePage() {
                               : "No live suggestions right now."}
                           </p>
                         ) : null}
-                        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open</p>
+                        <span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${primaryTileBadgeClass(item.href)}`}>
+                          Open
+                        </span>
                       </Link>
                     ))}
                   </div>
