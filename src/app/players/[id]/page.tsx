@@ -134,6 +134,8 @@ export default function PlayerProfilePage() {
   const [creatingChild, setCreatingChild] = useState(false);
   const [showHandicap, setShowHandicap] = useState(true);
   const [showPerformance, setShowPerformance] = useState(true);
+  const [showOpponents, setShowOpponents] = useState(true);
+  const [showHistory, setShowHistory] = useState(true);
   const [infoModal, setInfoModal] = useState<{ title: string; description: string } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
@@ -2232,55 +2234,77 @@ export default function PlayerProfilePage() {
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h2 className="text-xl font-semibold text-slate-900">Vs Opponents (Singles)</h2>
-                {enhancedOpponents.length === 0 ? <p className="mt-2 text-slate-600">No singles head-to-head data yet.</p> : null}
-                <div className="mt-2 space-y-2">
-                  {enhancedOpponents.map((o) => (
-                    <div key={o.opponentId} className="rounded-lg border border-slate-200 px-3 py-2">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="font-medium text-slate-900">{o.opponent}</p>
-                          <p className="text-slate-700">P {o.played} · W {o.won} · L {o.lost} · Diff {o.frameDiff > 0 ? "+" : ""}{o.frameDiff}</p>
-                        </div>
-                        {o.recent.length ? (
-                          <div className="flex gap-1">
-                            {o.recent.map((item) => (
-                              <span
-                                key={item.key}
-                                className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
-                                  item.result === "W" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
-                                }`}
-                              >
-                                {item.result}
-                              </span>
-                            ))}
+                <button
+                  type="button"
+                  onClick={() => setShowOpponents((v) => !v)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <h2 className="text-xl font-semibold text-slate-900">Vs Opponents (Singles)</h2>
+                  <span className="text-sm text-slate-600">{showOpponents ? "Hide" : "Show"}</span>
+                </button>
+                {showOpponents ? (
+                  <>
+                    {enhancedOpponents.length === 0 ? <p className="mt-2 text-slate-600">No singles head-to-head data yet.</p> : null}
+                    <div className="mt-2 space-y-2">
+                      {enhancedOpponents.map((o) => (
+                        <div key={o.opponentId} className="rounded-lg border border-slate-200 px-3 py-2">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-slate-900">{o.opponent}</p>
+                              <p className="text-slate-700">P {o.played} · W {o.won} · L {o.lost} · Diff {o.frameDiff > 0 ? "+" : ""}{o.frameDiff}</p>
+                            </div>
+                            {o.recent.length ? (
+                              <div className="flex gap-1">
+                                {o.recent.map((item) => (
+                                  <span
+                                    key={item.key}
+                                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
+                                      item.result === "W" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                                    }`}
+                                  >
+                                    {item.result}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </>
+                ) : null}
               </section>
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h2 className="text-xl font-semibold text-slate-900">Recent History</h2>
-                {recentHistory.length === 0 ? (
-                  <p className="mt-2 text-slate-600">No completed history yet.</p>
-                ) : (
-                  <div className="mt-2 space-y-2">
-                    {recentHistory.map((h) => (
-                      <div key={h.key} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
-                        <div>
-                          <p className="font-medium text-slate-900">{h.label}</p>
-                          <p className="text-xs font-medium text-slate-600">{h.sublabel}</p>
-                          <p className="text-xs text-slate-500">{h.date ? new Date(h.date).toLocaleDateString() : "Date not set"}</p>
-                        </div>
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${h.result === "W" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
-                          {h.result}
-                        </span>
+                <button
+                  type="button"
+                  onClick={() => setShowHistory((v) => !v)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <h2 className="text-xl font-semibold text-slate-900">Recent History</h2>
+                  <span className="text-sm text-slate-600">{showHistory ? "Hide" : "Show"}</span>
+                </button>
+                {showHistory ? (
+                  <>
+                    {recentHistory.length === 0 ? (
+                      <p className="mt-2 text-slate-600">No completed history yet.</p>
+                    ) : (
+                      <div className="mt-2 space-y-2">
+                        {recentHistory.map((h) => (
+                          <div key={h.key} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                            <div>
+                              <p className="font-medium text-slate-900">{h.label}</p>
+                              <p className="text-xs font-medium text-slate-600">{h.sublabel}</p>
+                              <p className="text-xs text-slate-500">{h.date ? new Date(h.date).toLocaleDateString() : "Date not set"}</p>
+                            </div>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${h.result === "W" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                              {h.result}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
+                  </>
+                ) : null}
               </section>
             </>
           ) : null}
