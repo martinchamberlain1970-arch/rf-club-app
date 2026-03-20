@@ -51,6 +51,13 @@ type MatchRow = {
   updated_at: string | null;
 };
 type Competition = { id: string; name?: string | null; sport_type: "snooker" | "pool_8_ball" | "pool_9_ball"; competition_format: "knockout" | "league" };
+type RecentHistoryItem = {
+  key: string;
+  date: string | null;
+  label: string;
+  result: "W" | "L";
+  sublabel: string;
+};
 type CompetitionEntry = {
   id: string;
   competition_id: string;
@@ -1287,26 +1294,58 @@ export default function PlayerProfilePage() {
     return "Competition";
   };
 
-  const leagueHistory = useMemo(() => {
+  const leagueHistory = useMemo<RecentHistoryItem[]>(() => {
     return leagueRelevant
-      .map((s) => {
+      .flatMap((s) => {
         const fixture = leagueFixtureById.get(s.fixture_id);
-        if (!fixture) return null;
+        if (!fixture) return [];
         const homeTeam = leagueTeamById.get(fixture.home_team_id) ?? "Home";
         const awayTeam = leagueTeamById.get(fixture.away_team_id) ?? "Away";
         const inHome = s.home_player1_id === id || s.home_player2_id === id;
         const result = (inHome && s.winner_side === "home") || (!inHome && s.winner_side === "away") ? "W" : "L";
-        return {
+        return [{
           key: `${s.fixture_id}-${s.slot_no}`,
           date: fixture.fixture_date,
           label: `Week ${fixture.week_no ?? "?"} · ${homeTeam} vs ${awayTeam} · ${s.slot_type} ${s.slot_no}`,
           result,
-        };
+          sublabel: "League fixture",
+        }];
       })
-      .filter(Boolean)
       .sort((a, b) => Date.parse(b?.date ?? "0") - Date.parse(a?.date ?? "0"))
-      .slice(0, 20) as { key: string; date: string | null; label: string; result: "W" | "L" }[];
+      .slice(0, 20);
   }, [leagueRelevant, leagueFixtureById, leagueTeamById, id]);
+  const competitionHistory = useMemo<RecentHistoryItem[]>(() => {
+    return relevant.flatMap((match) => {
+      const competition = compMap.get(match.competition_id);
+      const inTeam1 = match.team1_player1_id === id || match.team1_player2_id === id;
+      const winnerIsTeam1 = match.winner_player_id === match.team1_player1_id || match.winner_player_id === match.team1_player2_id;
+      const winnerIsTeam2 = match.winner_player_id === match.team2_player1_id || match.winner_player_id === match.team2_player2_id;
+      const result: "W" | "L" = match.match_mode === "singles" ? (match.winner_player_id === id ? "W" : "L") : (inTeam1 ? winnerIsTeam1 : winnerIsTeam2) ? "W" : "L";
+      const opponentLabel =
+        match.match_mode === "singles"
+          ? nameMap.get(match.player1_id === id ? (match.player2_id ?? "") : (match.player1_id ?? "")) ?? "Opponent"
+          : [
+              match.team1_player1_id,
+              match.team1_player2_id,
+              match.team2_player1_id,
+              match.team2_player2_id,
+            ]
+              .filter((playerId) => Boolean(playerId) && playerId !== id)
+              .map((playerId) => nameMap.get(playerId as string) ?? "Opponent")
+              .join(" / ") || "Opponent";
+      return [{
+        key: `match-${match.id}`,
+        date: match.updated_at ?? null,
+        label: `${competition?.name?.trim() || competitionSportLabel(competition?.sport_type)} · ${opponentLabel}`,
+        result,
+        sublabel: competition?.competition_format === "knockout" ? "Competition match" : "Match record",
+      }];
+    });
+  }, [relevant, compMap, id, nameMap]);
+  const recentHistory = useMemo<RecentHistoryItem[]>(
+    () => [...competitionHistory, ...leagueHistory].sort((a, b) => Date.parse(b.date ?? "0") - Date.parse(a.date ?? "0")).slice(0, 20),
+    [competitionHistory, leagueHistory]
+  );
 
   const ageBandLabel =
     player?.age_band === "under_13"
@@ -2224,14 +2263,15 @@ export default function PlayerProfilePage() {
               </section>
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="text-xl font-semibold text-slate-900">Recent History</h2>
-                {leagueHistory.length === 0 ? (
+                {recentHistory.length === 0 ? (
                   <p className="mt-2 text-slate-600">No completed history yet.</p>
                 ) : (
                   <div className="mt-2 space-y-2">
-                    {leagueHistory.map((h) => (
+                    {recentHistory.map((h) => (
                       <div key={h.key} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
                         <div>
                           <p className="font-medium text-slate-900">{h.label}</p>
+                          <p className="text-xs font-medium text-slate-600">{h.sublabel}</p>
                           <p className="text-xs text-slate-500">{h.date ? new Date(h.date).toLocaleDateString() : "Date not set"}</p>
                         </div>
                         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${h.result === "W" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
