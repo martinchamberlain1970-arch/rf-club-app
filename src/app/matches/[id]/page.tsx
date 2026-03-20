@@ -1327,7 +1327,7 @@ export default function MatchPage() {
       meta: { competitionId: match.competition_id },
     });
     if (!silent) setSaving(false);
-    if (goBack) router.push(`/competitions/${match.competition_id}`);
+    if (goBack) router.replace(`/competitions/${match.competition_id}`);
     else if (!silent) setMessage("Progress saved.");
   };
 
@@ -1348,91 +1348,83 @@ export default function MatchPage() {
 
     setSaving(true);
     setMessage(null);
-    const rows = [];
-    for (const f of frames) {
-      const parsed1 = parseBreakValues(f.breaks_over_30_team1_values_text);
-      const parsed2 = parseBreakValues(f.breaks_over_30_team2_values_text);
-      if (!parsed1.ok) {
-        setSaving(false);
-        setInfoModal({
-          title: "Invalid Break Values",
-          description: parsed1.error,
-        });
-        return;
-      }
-      if (!parsed2.ok) {
-        setSaving(false);
-        setInfoModal({
-          title: "Invalid Break Values",
-          description: parsed2.error,
-        });
-        return;
-      }
-      const valid1 = validateBreaksAgainstPoints(teams.team1Label, f.team1_points, parsed1.values);
-      if (!valid1.ok) {
-        setSaving(false);
-        setInfoModal({ title: "Invalid Break Values", description: valid1.error });
-        return;
-      }
-      const valid2 = validateBreaksAgainstPoints(teams.team2Label, f.team2_points, parsed2.values);
-      if (!valid2.ok) {
-        setSaving(false);
-        setInfoModal({ title: "Invalid Break Values", description: valid2.error });
-        return;
-      }
-      rows.push({
-      match_id: match.id,
-      frame_number: f.frame_number,
-      winner_player_id: f.winner_side === 1 ? teams.team1Rep : f.winner_side === 2 ? teams.team2Rep : null,
-      break_and_run: isSnooker ? false : f.break_and_run,
-      run_out_against_break: isSnooker ? false : f.run_out_against_break,
-      is_walkover_award: false,
-      team1_points: isSnooker ? f.team1_points : 0,
-      team2_points: isSnooker ? f.team2_points : 0,
-      breaks_over_30_team1_values: isSnooker ? parsed1.values : [],
-      breaks_over_30_team2_values: isSnooker ? parsed2.values : [],
-      breaks_over_30_team1: isSnooker ? parsed1.values.length : 0,
-      breaks_over_30_team2: isSnooker ? parsed2.values.length : 0,
-      high_break_team1: isSnooker && parsed1.values.length ? Math.max(...parsed1.values) : 0,
-      high_break_team2: isSnooker && parsed2.values.length ? Math.max(...parsed2.values) : 0,
-      });
-    }
-    const save = await persistFrames(rows);
-    if (!save.ok) {
-      setSaving(false);
-      setMessage(save.error);
-      return;
-    }
 
-    const winnerId = winnerSide === 1 ? teams.team1Rep : teams.team2Rep;
-    const winnerName = winnerSide === 1 ? teams.team1Label : teams.team2Label;
-    const update = await client.from("matches").update({ status: "complete", winner_player_id: winnerId }).eq("id", match.id);
-    if (update.error) {
-      setSaving(false);
-      setMessage(update.error.message);
-      return;
-    }
+    try {
+      const rows = [];
+      for (const f of frames) {
+        const parsed1 = parseBreakValues(f.breaks_over_30_team1_values_text);
+        const parsed2 = parseBreakValues(f.breaks_over_30_team2_values_text);
+        if (!parsed1.ok) {
+          setInfoModal({
+            title: "Invalid Break Values",
+            description: parsed1.error,
+          });
+          return;
+        }
+        if (!parsed2.ok) {
+          setInfoModal({
+            title: "Invalid Break Values",
+            description: parsed2.error,
+          });
+          return;
+        }
+        const valid1 = validateBreaksAgainstPoints(teams.team1Label, f.team1_points, parsed1.values);
+        if (!valid1.ok) {
+          setInfoModal({ title: "Invalid Break Values", description: valid1.error });
+          return;
+        }
+        const valid2 = validateBreaksAgainstPoints(teams.team2Label, f.team2_points, parsed2.values);
+        if (!valid2.ok) {
+          setInfoModal({ title: "Invalid Break Values", description: valid2.error });
+          return;
+        }
+        rows.push({
+          match_id: match.id,
+          frame_number: f.frame_number,
+          winner_player_id: f.winner_side === 1 ? teams.team1Rep : f.winner_side === 2 ? teams.team2Rep : null,
+          break_and_run: isSnooker ? false : f.break_and_run,
+          run_out_against_break: isSnooker ? false : f.run_out_against_break,
+          is_walkover_award: false,
+          team1_points: isSnooker ? f.team1_points : 0,
+          team2_points: isSnooker ? f.team2_points : 0,
+          breaks_over_30_team1_values: isSnooker ? parsed1.values : [],
+          breaks_over_30_team2_values: isSnooker ? parsed2.values : [],
+          breaks_over_30_team1: isSnooker ? parsed1.values.length : 0,
+          breaks_over_30_team2: isSnooker ? parsed2.values.length : 0,
+          high_break_team1: isSnooker && parsed1.values.length ? Math.max(...parsed1.values) : 0,
+          high_break_team2: isSnooker && parsed2.values.length ? Math.max(...parsed2.values) : 0,
+        });
+      }
+      const save = await persistFrames(rows);
+      if (!save.ok) {
+        setMessage(save.error);
+        return;
+      }
 
-    await applyRatingsIfNeeded(winnerSide);
-    if (winnerId) await advanceKnockoutWinner(winnerId);
-    const competitionDone = await refreshCompetitionCompletion();
-    await logAudit("match_completed", {
-      entityType: "match",
-      entityId: match.id,
-      summary: `Match completed. Winner: ${winnerName}.`,
-      meta: { competitionId: match.competition_id, score: `${wins.team1}-${wins.team2}` },
-    });
-    setSaving(false);
-    if (competitionDone) {
-      const params = new URLSearchParams({
-        complete: "1",
-        event: competition.name,
-        winner: winnerName,
+      const winnerId = winnerSide === 1 ? teams.team1Rep : teams.team2Rep;
+      const winnerName = winnerSide === 1 ? teams.team1Label : teams.team2Label;
+      const update = await client.from("matches").update({ status: "complete", winner_player_id: winnerId }).eq("id", match.id);
+      if (update.error) {
+        setMessage(update.error.message);
+        return;
+      }
+
+      setMatch((prev) => (prev ? { ...prev, status: "complete", winner_player_id: winnerId } : prev));
+      await applyRatingsIfNeeded(winnerSide);
+      if (winnerId) await advanceKnockoutWinner(winnerId);
+      await refreshCompetitionCompletion();
+      await logAudit("match_completed", {
+        entityType: "match",
+        entityId: match.id,
+        summary: `Match completed. Winner: ${winnerName}.`,
+        meta: { competitionId: match.competition_id, score: `${wins.team1}-${wins.team2}` },
       });
-      router.push(`/?${params.toString()}`);
-      return;
+      router.replace(`/competitions/${match.competition_id}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to complete match.");
+    } finally {
+      setSaving(false);
     }
-    router.push(`/competitions/${match.competition_id}`);
   };
 
   const awardWalkover = async (winnerSide: 1 | 2) => {
@@ -2323,13 +2315,13 @@ export default function MatchPage() {
                     {admin.isAdmin ? (
                       <>
                         <button type="button" onClick={() => saveProgress(false)} disabled={saving} className={buttonSecondaryClass}>
-                          Save
+                          Save progress
                         </button>
                         <button type="button" onClick={() => saveProgress(true)} disabled={saving} className={buttonSecondaryClass}>
                           Save &amp; Back
                         </button>
                         <button type="button" onClick={saveResult} disabled={saving || !canSaveResult} className={buttonSuccessClass}>
-                          {saving ? "Saving..." : "Save result"}
+                          {saving ? "Saving..." : "Save + Complete Match"}
                         </button>
                         <button
                           type="button"
