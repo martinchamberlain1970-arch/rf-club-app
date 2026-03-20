@@ -1302,7 +1302,7 @@ export default function PlayerProfilePage() {
         const homeTeam = leagueTeamById.get(fixture.home_team_id) ?? "Home";
         const awayTeam = leagueTeamById.get(fixture.away_team_id) ?? "Away";
         const inHome = s.home_player1_id === id || s.home_player2_id === id;
-        const result = (inHome && s.winner_side === "home") || (!inHome && s.winner_side === "away") ? "W" : "L";
+        const result: "W" | "L" = (inHome && s.winner_side === "home") || (!inHome && s.winner_side === "away") ? "W" : "L";
         return [{
           key: `${s.fixture_id}-${s.slot_no}`,
           date: fixture.fixture_date,
