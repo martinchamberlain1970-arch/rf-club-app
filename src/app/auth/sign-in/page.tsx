@@ -20,10 +20,16 @@ function readSignupState(): string | null {
   return new URLSearchParams(window.location.search).get("signup");
 }
 
+function readResetState(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("reset");
+}
+
 export default function SignInPage() {
   const router = useRouter();
   const nextPath = useMemo(() => readNextPath(), []);
   const signupState = useMemo(() => readSignupState(), []);
+  const resetState = useMemo(() => readResetState(), []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,7 +38,9 @@ export default function SignInPage() {
       ? "Account created. Check your email if verification is enabled, then sign in."
       : signupState === "confirmed"
         ? "Email confirmed. You can sign in now."
-        : null
+        : resetState === "success"
+          ? "Password updated. Sign in with your new password."
+          : null
   );
   const fieldClass = "w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-200";
   const cardClass = "rounded-[28px] border border-slate-200 bg-white/95 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur";
@@ -223,7 +231,12 @@ export default function SignInPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Password</label>
+                <div className="mb-1 flex items-center justify-between gap-3">
+                  <label className="block text-sm font-medium text-slate-700">Password</label>
+                  <Link href="/auth/forgot-password" className="text-sm font-semibold text-teal-700 underline underline-offset-4">
+                    Forgot password?
+                  </Link>
+                </div>
                 <input
                   type="password"
                   required
