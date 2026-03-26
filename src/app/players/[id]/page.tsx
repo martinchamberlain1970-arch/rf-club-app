@@ -50,7 +50,14 @@ type MatchRow = {
   status: "pending" | "in_progress" | "complete" | "bye";
   updated_at: string | null;
 };
-type Competition = { id: string; name?: string | null; sport_type: "snooker" | "pool_8_ball" | "pool_9_ball"; competition_format: "knockout" | "league" };
+type Competition = {
+  id: string;
+  name?: string | null;
+  sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
+  competition_format: "knockout" | "league";
+  is_archived?: boolean | null;
+  is_completed?: boolean | null;
+};
 type RecentHistoryItem = {
   key: string;
   date: string | null;
@@ -86,6 +93,8 @@ type LeagueFrameLite = {
   home_forfeit: boolean;
   away_forfeit: boolean;
 };
+
+const LIVE_ACTIVITY_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
 
 function pct(w: number, p: number) {
   if (!p) return 0;
@@ -172,12 +181,12 @@ export default function PlayerProfilePage() {
           client
             .from("players")
             .select(
-              "id,display_name,full_name,avatar_url,location_id,age_band,guardian_consent,guardian_user_id,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker"
+              "id,display_name,full_name,avatar_url,claimed_by,location_id,age_band,guardian_consent,guardian_user_id,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker"
               + ",snooker_handicap,snooker_handicap_base"
             )
             .eq("is_archived", false),
           client.from("matches").select("id,competition_id,match_mode,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,status,updated_at"),
-          client.from("competitions").select("id,name,sport_type,competition_format"),
+          client.from("competitions").select("id,name,sport_type,competition_format,is_archived,is_completed"),
           client.from("competition_entries").select("id,competition_id,player_id,status,created_at").eq("player_id", id).order("created_at", { ascending: false }),
           client.from("frames").select("match_id,winner_player_id,is_walkover_award"),
           client.from("locations").select("id,name").order("name"),
@@ -757,27 +766,75 @@ export default function PlayerProfilePage() {
     if (!currentProfileLinkedUserId) return [] as Player[];
     return players.filter((p) => p.guardian_user_id === currentProfileLinkedUserId);
   }, [players, currentProfileLinkedUserId]);
+  const livePlayerIdsByDiscipline = useMemo(() => {
+    const competitionById = new Map(competitions.map((competition) => [competition.id, competition]));
+    const recentCutoff = Date.now() - LIVE_ACTIVITY_WINDOW_MS;
+    const result = {
+      snooker: new Set<string>(),
+      pool: new Set<string>(),
+    };
+    for (const entry of players) {
+      if (entry.claimed_by) {
+        result.snooker.add(entry.id);
+        result.pool.add(entry.id);
+      }
+    }
+    for (const match of matches) {
+      const competition = competitionById.get(match.competition_id);
+      if (!competition) continue;
+      const participantIds = [
+        match.player1_id,
+        match.player2_id,
+        match.team1_player1_id,
+        match.team1_player2_id,
+        match.team2_player1_id,
+        match.team2_player2_id,
+      ].filter((value): value is string => Boolean(value));
+      if (participantIds.length === 0) continue;
+      const disciplineKey = competition.sport_type === "snooker" ? "snooker" : "pool";
+      if (!competition.is_archived && !competition.is_completed) {
+        participantIds.forEach((playerId) => result[disciplineKey].add(playerId));
+      }
+      const playedRecently =
+        match.status === "complete" &&
+        Boolean(match.updated_at) &&
+        new Date(match.updated_at as string).getTime() >= recentCutoff;
+      if (playedRecently) {
+        participantIds.forEach((playerId) => result[disciplineKey].add(playerId));
+      }
+    }
+    return result;
+  }, [competitions, matches, players]);
+  const liveSnookerPlayers = useMemo(
+    () => players.filter((entry) => livePlayerIdsByDiscipline.snooker.has(entry.id)),
+    [livePlayerIdsByDiscipline, players]
+  );
+  const livePoolPlayers = useMemo(
+    () => players.filter((entry) => livePlayerIdsByDiscipline.pool.has(entry.id)),
+    [livePlayerIdsByDiscipline, players]
+  );
   const rankingCard = useMemo(() => {
     if (!player) return null;
-    const bySnooker = [...players].sort((a, b) => (b.rating_snooker ?? 1000) - (a.rating_snooker ?? 1000));
-    const byPool = [...players].sort((a, b) => (b.rating_pool ?? 1000) - (a.rating_pool ?? 1000));
-    const snookerRank = Math.max(1, bySnooker.findIndex((p) => p.id === player.id) + 1);
-    const poolRank = Math.max(1, byPool.findIndex((p) => p.id === player.id) + 1);
+    const bySnooker = [...liveSnookerPlayers].sort((a, b) => (b.rating_snooker ?? 1000) - (a.rating_snooker ?? 1000));
+    const byPool = [...livePoolPlayers].sort((a, b) => (b.rating_pool ?? 1000) - (a.rating_pool ?? 1000));
+    const snookerIndex = bySnooker.findIndex((p) => p.id === player.id);
+    const poolIndex = byPool.findIndex((p) => p.id === player.id);
     return {
-      poolRank,
+      poolRank: poolIndex >= 0 ? poolIndex + 1 : null,
       poolRating: player.rating_pool ?? 1000,
       poolPeak: player.peak_rating_pool ?? 1000,
       poolMatches: player.rated_matches_pool ?? 0,
-      snookerRank,
+      snookerRank: snookerIndex >= 0 ? snookerIndex + 1 : null,
       snookerRating: player.rating_snooker ?? 1000,
       snookerPeak: player.peak_rating_snooker ?? 1000,
       snookerMatches: player.rated_matches_snooker ?? 0,
-      totalPlayers: players.length,
+      snookerLivePlayers: liveSnookerPlayers.length,
+      poolLivePlayers: livePoolPlayers.length,
     };
-  }, [player, players]);
+  }, [livePoolPlayers, liveSnookerPlayers, player]);
   const snookerEloLeaderboard = useMemo(
     () =>
-      [...players]
+      [...liveSnookerPlayers]
         .sort(
           (a, b) =>
             Number(b.rating_snooker ?? 1000) - Number(a.rating_snooker ?? 1000) ||
@@ -790,7 +847,7 @@ export default function PlayerProfilePage() {
           rating: Math.round(Number(entry.rating_snooker ?? 1000)),
           handicap: Number(entry.snooker_handicap ?? 0),
         })),
-    [players]
+    [liveSnookerPlayers]
   );
   const handicapExplain = useMemo(() => {
     const current = Number(player?.snooker_handicap ?? 0);
@@ -1364,8 +1421,8 @@ export default function PlayerProfilePage() {
     { label: `Location: ${profileLocationName}`, tone: "slate" as const },
     { label: `Age band: ${ageBandLabel}`, tone: "slate" as const },
     favoriteDiscipline ? { label: `Favorite: ${favoriteDiscipline.label}`, tone: "teal" as const } : null,
-    rankingCard ? { label: `Snooker #${rankingCard.snookerRank}`, tone: "indigo" as const } : null,
-    rankingCard ? { label: `Pool #${rankingCard.poolRank}`, tone: "indigo" as const } : null,
+    rankingCard ? { label: rankingCard.snookerRank ? `Snooker #${rankingCard.snookerRank}` : "Snooker unranked", tone: "indigo" as const } : null,
+    rankingCard ? { label: rankingCard.poolRank ? `Pool #${rankingCard.poolRank}` : "Pool unranked", tone: "indigo" as const } : null,
     player?.age_band && player.age_band !== "18_plus"
       ? { label: player.guardian_consent ? "Guardian consent on file" : "Guardian consent pending", tone: "amber" as const }
       : null,
@@ -1543,8 +1600,12 @@ export default function PlayerProfilePage() {
                   </div>
                   <div className="rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Rank</p>
-                    <p className="mt-2 text-3xl font-black text-slate-950">#{rankingCard.snookerRank}</p>
-                    <p className="mt-1 text-sm text-slate-600">Out of {rankingCard.totalPlayers} active players.</p>
+                    <p className="mt-2 text-3xl font-black text-slate-950">{rankingCard.snookerRank ? `#${rankingCard.snookerRank}` : "—"}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {rankingCard.snookerRank
+                        ? `Out of ${rankingCard.snookerLivePlayers} live snooker players.`
+                        : "Not currently included in live snooker rankings."}
+                    </p>
                   </div>
                   <div className="rounded-2xl border border-teal-200 bg-white p-4 shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Current Handicap</p>
@@ -1597,7 +1658,11 @@ export default function PlayerProfilePage() {
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <p className="text-sm font-semibold text-slate-900">Snooker Rating</p>
                       <p className="mt-1 text-2xl font-bold text-slate-900">{Math.round(rankingCard.snookerRating)}</p>
-                      <p className="text-sm text-slate-600">Rank #{rankingCard.snookerRank} of {rankingCard.totalPlayers}</p>
+                      <p className="text-sm text-slate-600">
+                        {rankingCard.snookerRank
+                          ? `Rank #${rankingCard.snookerRank} of ${rankingCard.snookerLivePlayers}`
+                          : "Not currently included in live snooker rankings"}
+                      </p>
                       <p className="text-xs text-slate-500">Peak {Math.round(rankingCard.snookerPeak)} · Rated matches {rankingCard.snookerMatches}</p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-4">

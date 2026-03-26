@@ -12,6 +12,7 @@ type Player = {
   display_name: string;
   full_name: string | null;
   is_archived?: boolean;
+  claimed_by?: string | null;
   location_id?: string | null;
   rating_pool?: number | null;
   rating_snooker?: number | null;
@@ -23,6 +24,30 @@ type Player = {
   snooker_handicap_base?: number | null;
 };
 type Location = { id: string; name: string };
+type Competition = {
+  id: string;
+  sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
+  is_archived?: boolean | null;
+  is_completed?: boolean | null;
+};
+type CompetitionEntry = {
+  competition_id: string;
+  player_id: string;
+  status: "pending" | "approved" | "rejected" | "withdrawn";
+};
+type MatchRow = {
+  competition_id: string;
+  status: "pending" | "in_progress" | "complete" | "bye";
+  updated_at: string | null;
+  player1_id: string | null;
+  player2_id: string | null;
+  team1_player1_id: string | null;
+  team1_player2_id: string | null;
+  team2_player1_id: string | null;
+  team2_player2_id: string | null;
+};
+
+const LIVE_ACTIVITY_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
 
 function getDisciplineMeta(discipline: DisciplineFilter) {
   return discipline === "snooker"
@@ -43,6 +68,9 @@ function getDisciplineMeta(discipline: DisciplineFilter) {
 export default function RankingsPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [competitionEntries, setCompetitionEntries] = useState<CompetitionEntry[]>([]);
+  const [matches, setMatches] = useState<MatchRow[]>([]);
   const [discipline, setDiscipline] = useState<DisciplineFilter>("snooker");
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [message, setMessage] = useState<string | null>(null);
@@ -53,23 +81,36 @@ export default function RankingsPage() {
     let active = true;
 
     const run = async () => {
-      const [playerRes, locationRes] = await Promise.all([
+      const [playerRes, locationRes, competitionRes, entryRes, matchRes] = await Promise.all([
         client
           .from("players")
           .select(
-            "id,display_name,full_name,is_archived,location_id,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker,snooker_handicap,snooker_handicap_base"
+            "id,display_name,full_name,is_archived,claimed_by,location_id,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker,snooker_handicap,snooker_handicap_base"
           )
           .eq("is_archived", false),
         client.from("locations").select("id,name").order("name"),
+        client.from("competitions").select("id,sport_type,is_archived,is_completed"),
+        client.from("competition_entries").select("competition_id,player_id,status"),
+        client.from("matches").select("competition_id,status,updated_at,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id"),
       ]);
 
       if (!active) return;
-      if (playerRes.error || locationRes.error) {
-        setMessage(playerRes.error?.message || locationRes.error?.message || "Failed to load rankings.");
+      if (playerRes.error || locationRes.error || competitionRes.error || entryRes.error || matchRes.error) {
+        setMessage(
+          playerRes.error?.message ||
+          locationRes.error?.message ||
+          competitionRes.error?.message ||
+          entryRes.error?.message ||
+          matchRes.error?.message ||
+          "Failed to load rankings."
+        );
         return;
       }
       setPlayers((playerRes.data ?? []) as Player[]);
       setLocations((locationRes.data ?? []) as Location[]);
+      setCompetitions((competitionRes.data ?? []) as Competition[]);
+      setCompetitionEntries((entryRes.data ?? []) as CompetitionEntry[]);
+      setMatches((matchRes.data ?? []) as MatchRow[]);
     };
 
     run();
@@ -79,15 +120,67 @@ export default function RankingsPage() {
   }, []);
 
   const locationMap = useMemo(() => new Map(locations.map((location) => [location.id, location.name])), [locations]);
+  const livePlayerIdsByDiscipline = useMemo(() => {
+    const now = Date.now();
+    const recentCutoff = now - LIVE_ACTIVITY_WINDOW_MS;
+    const competitionById = new Map(competitions.map((competition) => [competition.id, competition]));
+    const result = {
+      snooker: new Set<string>(),
+      pool: new Set<string>(),
+    };
+    for (const player of players) {
+      if (player.claimed_by) {
+        result.snooker.add(player.id);
+        result.pool.add(player.id);
+      }
+    }
+    for (const entry of competitionEntries) {
+      if (entry.status === "rejected" || entry.status === "withdrawn") continue;
+      const competition = competitionById.get(entry.competition_id);
+      if (!competition || competition.is_archived || competition.is_completed) continue;
+      if (competition.sport_type === "snooker") {
+        result.snooker.add(entry.player_id);
+      } else {
+        result.pool.add(entry.player_id);
+      }
+    }
+    for (const match of matches) {
+      const competition = competitionById.get(match.competition_id);
+      if (!competition) continue;
+      const participantIds = [
+        match.player1_id,
+        match.player2_id,
+        match.team1_player1_id,
+        match.team1_player2_id,
+        match.team2_player1_id,
+        match.team2_player2_id,
+      ].filter((value): value is string => Boolean(value));
+      if (participantIds.length === 0) continue;
+      const disciplineKey = competition.sport_type === "snooker" ? "snooker" : "pool";
+      if (!competition.is_archived && !competition.is_completed) {
+        participantIds.forEach((playerId) => result[disciplineKey].add(playerId));
+      }
+      const playedRecently =
+        match.status === "complete" &&
+        Boolean(match.updated_at) &&
+        new Date(match.updated_at as string).getTime() >= recentCutoff;
+      if (playedRecently) {
+        participantIds.forEach((playerId) => result[disciplineKey].add(playerId));
+      }
+    }
+    return result;
+  }, [competitionEntries, competitions, matches, players]);
   const filteredPlayers = useMemo(() => {
-    const visible = locationFilter === "all" ? players : players.filter((player) => player.location_id === locationFilter);
+    const liveIds = livePlayerIdsByDiscipline[discipline];
+    const visible = (locationFilter === "all" ? players : players.filter((player) => player.location_id === locationFilter))
+      .filter((player) => liveIds.has(player.id));
     return [...visible].sort((a, b) => {
       const aRating = discipline === "snooker" ? a.rating_snooker ?? 1000 : a.rating_pool ?? 1000;
       const bRating = discipline === "snooker" ? b.rating_snooker ?? 1000 : b.rating_pool ?? 1000;
       if (bRating !== aRating) return bRating - aRating;
       return (a.full_name?.trim() || a.display_name).localeCompare(b.full_name?.trim() || b.display_name);
     });
-  }, [discipline, locationFilter, players]);
+  }, [discipline, livePlayerIdsByDiscipline, locationFilter, players]);
   const disciplineMeta = getDisciplineMeta(discipline);
   const topPlayer = filteredPlayers[0] ?? null;
   const highestPeak =
@@ -115,7 +208,7 @@ export default function RankingsPage() {
           <ScreenHeader
             title="Player Rankings"
             eyebrow="Stats"
-            subtitle="Elo-style leaderboards for active players, with discipline, location, and snooker handicap context."
+            subtitle="Elo-style leaderboards for live players, with discipline, location, and snooker handicap context."
           />
           {message ? <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">{message}</p> : null}
           <section className={`rounded-3xl border border-slate-200 bg-gradient-to-r ${disciplineMeta.accent} p-5 shadow-sm`}>
@@ -191,7 +284,7 @@ export default function RankingsPage() {
               <p className="text-sm font-semibold text-slate-900">
                 {discipline === "snooker" ? "Snooker" : "Pool"} rankings
               </p>
-              <p className="text-sm text-slate-600">{filteredPlayers.length} active players</p>
+              <p className="text-sm text-slate-600">{filteredPlayers.length} live players</p>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
