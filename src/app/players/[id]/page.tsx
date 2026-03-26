@@ -806,11 +806,17 @@ export default function PlayerProfilePage() {
     return result;
   }, [competitions, matches, players]);
   const liveSnookerPlayers = useMemo(
-    () => players.filter((entry) => livePlayerIdsByDiscipline.snooker.has(entry.id)),
+    () =>
+      players.filter(
+        (entry) => livePlayerIdsByDiscipline.snooker.has(entry.id) && Number(entry.rated_matches_snooker ?? 0) > 0
+      ),
     [livePlayerIdsByDiscipline, players]
   );
   const livePoolPlayers = useMemo(
-    () => players.filter((entry) => livePlayerIdsByDiscipline.pool.has(entry.id)),
+    () =>
+      players.filter(
+        (entry) => livePlayerIdsByDiscipline.pool.has(entry.id) && Number(entry.rated_matches_pool ?? 0) > 0
+      ),
     [livePlayerIdsByDiscipline, players]
   );
   const rankingCard = useMemo(() => {

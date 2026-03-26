@@ -173,7 +173,8 @@ export default function RankingsPage() {
   const filteredPlayers = useMemo(() => {
     const liveIds = livePlayerIdsByDiscipline[discipline];
     const visible = (locationFilter === "all" ? players : players.filter((player) => player.location_id === locationFilter))
-      .filter((player) => liveIds.has(player.id));
+      .filter((player) => liveIds.has(player.id))
+      .filter((player) => (discipline === "snooker" ? Number(player.rated_matches_snooker ?? 0) > 0 : Number(player.rated_matches_pool ?? 0) > 0));
     return [...visible].sort((a, b) => {
       const aRating = discipline === "snooker" ? a.rating_snooker ?? 1000 : a.rating_pool ?? 1000;
       const bRating = discipline === "snooker" ? b.rating_snooker ?? 1000 : b.rating_pool ?? 1000;
