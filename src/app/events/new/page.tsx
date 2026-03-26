@@ -27,6 +27,15 @@ function nextPowerOfTwo(n: number): number {
   return p;
 }
 
+function shuffleArray<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 export default function NewEventPage() {
   const router = useRouter();
   const premium = usePremiumStatus();
@@ -411,11 +420,13 @@ export default function NewEventPage() {
     const competitionId = compRes.data.id as string;
     const singlesReady = mode === "singles" && selected.length >= 2;
     const doublesReady = mode === "doubles" && validTeams.length >= 2;
+    const knockoutSinglesEntrants = singlesReady ? shuffleArray(selected) : [];
+    const knockoutDoublesEntrants = doublesReady ? shuffleArray(validTeams) : [];
     const matches =
       competitionFormat === "knockout"
         ? (mode === "singles"
-            ? (singlesReady ? createKnockoutMatches(competitionId, best, selected, appAssignOpeningBreak, handicapEnabled && handicapAllowed) : [])
-            : (doublesReady ? createKnockoutDoubles(competitionId, best, validTeams, appAssignOpeningBreak) : []))
+            ? createKnockoutMatches(competitionId, best, knockoutSinglesEntrants, appAssignOpeningBreak, handicapEnabled && handicapAllowed)
+            : createKnockoutDoubles(competitionId, best, knockoutDoublesEntrants, appAssignOpeningBreak))
         : [];
 
     if (matches.length > 0) {
