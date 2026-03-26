@@ -493,6 +493,39 @@ export default function PlayerProfilePage() {
     setMessage(nextArchived ? "Player archived." : "Player restored.");
   };
 
+  const onUnlinkAccount = async () => {
+    const client = supabase;
+    if (!client || !player || !hasAdminPower) return;
+    const linkedUserId =
+      player.claimed_by || appUsers.find((entry) => entry.linked_player_id === player.id)?.id || null;
+    const updates: Promise<unknown>[] = [
+      client.from("players").update({ claimed_by: null }).eq("id", player.id),
+    ];
+    if (linkedUserId) {
+      updates.push(client.from("app_users").update({ linked_player_id: null }).eq("id", linkedUserId));
+    }
+    const results = await Promise.all(updates);
+    const failed = results.find((result) => {
+      const value = result as { error?: { message?: string } | null };
+      return value.error;
+    }) as { error?: { message?: string } | null } | undefined;
+    if (failed?.error) {
+      setMessage(`Failed to unlink account: ${failed.error.message}`);
+      return;
+    }
+    await logAudit("player_account_unlinked", {
+      entityType: "player",
+      entityId: player.id,
+      summary: `${player.full_name?.trim() || player.display_name} account link removed.`,
+    });
+    setPlayer((prev) => (prev ? { ...prev, claimed_by: null } : prev));
+    setAppUsers((prev) =>
+      prev.map((entry) => (entry.id === linkedUserId || entry.linked_player_id === player.id ? { ...entry, linked_player_id: null } : entry))
+    );
+    setLinkedEmail(null);
+    setMessage("Account link removed.");
+  };
+
   const onSavePlayerEdits = async () => {
     const client = supabase;
     if (!client || !player || !admin.isSuper) return;
@@ -1958,14 +1991,34 @@ export default function PlayerProfilePage() {
                           {editingPlayer ? "Close editor" : "Edit player"}
                         </button>
                       ) : null}
-                    <button
-                      type="button"
-                      onClick={onEditFullName}
-                      disabled={savingName}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 disabled:opacity-60"
-                    >
-                      {savingName ? "Saving..." : player?.full_name ? "Edit name" : "Add name"}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={onEditFullName}
+                        disabled={savingName}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 disabled:opacity-60"
+                      >
+                        {savingName ? "Saving..." : player?.full_name ? "Edit name" : "Add name"}
+                      </button>
+                      {linkedEmail ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConfirmModal({
+                              title: "Unlink Account",
+                              description: "Remove the linked user account from this player profile? This keeps the player record, results, and stats, and only removes the account link.",
+                              confirmLabel: "Unlink account",
+                              tone: "danger",
+                              onConfirm: async () => {
+                                await onUnlinkAccount();
+                                setConfirmModal(null);
+                              },
+                            })
+                          }
+                          className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1 text-sm text-rose-800"
+                        >
+                          Unlink account
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                   {!admin.isSuper && player?.claimed_by === userId ? (
