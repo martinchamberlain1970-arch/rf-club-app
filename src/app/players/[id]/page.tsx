@@ -498,20 +498,17 @@ export default function PlayerProfilePage() {
     if (!client || !player || !hasAdminPower) return;
     const linkedUserId =
       player.claimed_by || appUsers.find((entry) => entry.linked_player_id === player.id)?.id || null;
-    const updates: Promise<unknown>[] = [
-      client.from("players").update({ claimed_by: null }).eq("id", player.id),
-    ];
-    if (linkedUserId) {
-      updates.push(client.from("app_users").update({ linked_player_id: null }).eq("id", linkedUserId));
-    }
-    const results = await Promise.all(updates);
-    const failed = results.find((result) => {
-      const value = result as { error?: { message?: string } | null };
-      return value.error;
-    }) as { error?: { message?: string } | null } | undefined;
-    if (failed?.error) {
-      setMessage(`Failed to unlink account: ${failed.error.message}`);
+    const playerUnlinkRes = await client.from("players").update({ claimed_by: null }).eq("id", player.id);
+    if (playerUnlinkRes.error) {
+      setMessage(`Failed to unlink account: ${playerUnlinkRes.error.message}`);
       return;
+    }
+    if (linkedUserId) {
+      const userUnlinkRes = await client.from("app_users").update({ linked_player_id: null }).eq("id", linkedUserId);
+      if (userUnlinkRes.error) {
+        setMessage(`Failed to unlink account: ${userUnlinkRes.error.message}`);
+        return;
+      }
     }
     await logAudit("player_account_unlinked", {
       entityType: "player",
