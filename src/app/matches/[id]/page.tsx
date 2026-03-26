@@ -307,6 +307,21 @@ function getTeamInfo(match: Match, names: Map<string, string>) {
   };
 }
 
+type ExpectedResultPreview = {
+  favoriteName: string;
+  underdogName: string;
+  favoriteExpectedPct: number;
+  underdogExpectedPct: number;
+  favoriteCurrentRating: number;
+  underdogCurrentRating: number;
+  favoriteCurrentHandicap: number | null;
+  underdogCurrentHandicap: number | null;
+  favoriteWinDelta: number;
+  favoriteLossDelta: number;
+  underdogWinDelta: number;
+  underdogLossDelta: number;
+};
+
 export default function MatchPage() {
   const params = useParams();
   const router = useRouter();
@@ -344,6 +359,7 @@ export default function MatchPage() {
     reason: string;
     comment: string;
   } | null>(null);
+  const [expectedPreviewDismissed, setExpectedPreviewDismissed] = useState(false);
 
   const openDisplay = () => {
     if (!matchId) return;
@@ -659,6 +675,50 @@ export default function MatchPage() {
       !userApprovedSubmission &&
       !pendingRescheduleForMatch &&
       !requesterPendingElsewhere
+  );
+  const expectedPreview = useMemo<ExpectedResultPreview | null>(() => {
+    if (!match || !competition || match.match_mode !== "singles" || competition.competition_format === "league") return null;
+    if (match.status === "complete" || match.status === "bye") return null;
+    if (!match.player1_id || !match.player2_id) return null;
+    const playerA = players.find((entry) => entry.id === match.player1_id) ?? null;
+    const playerB = players.find((entry) => entry.id === match.player2_id) ?? null;
+    if (!playerA || !playerB) return null;
+    const keys = ratingKeysForSport(competition.sport_type);
+    const ratingA = Number(playerA[keys.rating] ?? 1000);
+    const ratingB = Number(playerB[keys.rating] ?? 1000);
+    const matchesA = Number(playerA[keys.matches] ?? 0);
+    const matchesB = Number(playerB[keys.matches] ?? 0);
+    const expectedA = expectedScore(ratingA, ratingB);
+    const expectedB = 1 - expectedA;
+    const factor = kFactor((ratingA + ratingB) / 2, (matchesA + matchesB) / 2);
+    const deltaAWin = Math.round(factor * (1 - expectedA));
+    const deltaALoss = Math.round(factor * (0 - expectedA));
+    const deltaBWin = Math.round(factor * (1 - expectedB));
+    const deltaBLoss = Math.round(factor * (0 - expectedB));
+    const favoriteIsA = ratingA >= ratingB;
+    const favorite = favoriteIsA ? playerA : playerB;
+    const underdog = favoriteIsA ? playerB : playerA;
+    return {
+      favoriteName: favorite.full_name?.trim() || favorite.display_name,
+      underdogName: underdog.full_name?.trim() || underdog.display_name,
+      favoriteExpectedPct: Math.round((favoriteIsA ? expectedA : expectedB) * 100),
+      underdogExpectedPct: Math.round((favoriteIsA ? expectedB : expectedA) * 100),
+      favoriteCurrentRating: Math.round(favoriteIsA ? ratingA : ratingB),
+      underdogCurrentRating: Math.round(favoriteIsA ? ratingB : ratingA),
+      favoriteCurrentHandicap: competition.sport_type === "snooker" ? Number(favorite.snooker_handicap ?? 0) : null,
+      underdogCurrentHandicap: competition.sport_type === "snooker" ? Number(underdog.snooker_handicap ?? 0) : null,
+      favoriteWinDelta: favoriteIsA ? deltaAWin : deltaBWin,
+      favoriteLossDelta: favoriteIsA ? deltaALoss : deltaBLoss,
+      underdogWinDelta: favoriteIsA ? deltaBWin : deltaAWin,
+      underdogLossDelta: favoriteIsA ? deltaBLoss : deltaALoss,
+    };
+  }, [competition, match, players]);
+  const showExpectedPreview = Boolean(
+    expectedPreview &&
+      !expectedPreviewDismissed &&
+      match?.status === "pending" &&
+      submissions.length === 0 &&
+      frames.every((frame) => frame.winner_side === 0)
   );
 
   const requestLeagueReschedule = async () => {
@@ -2680,6 +2740,64 @@ export default function MatchPage() {
             </>
           ) : null}
         </RequireAuth>
+        {showExpectedPreview && expectedPreview ? (
+          <div className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/55 p-4">
+            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">Expected Result</p>
+                  <h2 className="mt-1 text-xl font-semibold text-slate-900">Projected Elo impact before the match starts</h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Based on current {isSnooker ? "snooker" : "pool"} ratings. Actual movement is applied only after the result is saved and approved.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpectedPreviewDismissed(true)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
+                  <p className="text-sm font-semibold text-emerald-900">{expectedPreview.favoriteName}</p>
+                  <p className="mt-1 text-sm text-emerald-800">
+                    Expected result: {expectedPreview.favoriteExpectedPct}% win chance
+                  </p>
+                  <p className="mt-1 text-sm text-emerald-800">Current Elo: {expectedPreview.favoriteCurrentRating}</p>
+                  {isSnooker ? (
+                    <p className="mt-1 text-sm text-emerald-800">Current handicap: {expectedPreview.favoriteCurrentHandicap && expectedPreview.favoriteCurrentHandicap > 0 ? `+${expectedPreview.favoriteCurrentHandicap}` : expectedPreview.favoriteCurrentHandicap ?? 0}</p>
+                  ) : null}
+                  <div className="mt-3 rounded-lg border border-emerald-200 bg-white/80 p-3 text-sm text-slate-700">
+                    <p>If {expectedPreview.favoriteName} wins: Elo {expectedPreview.favoriteWinDelta >= 0 ? "+" : ""}{expectedPreview.favoriteWinDelta}</p>
+                    <p>If {expectedPreview.favoriteName} loses: Elo {expectedPreview.favoriteLossDelta >= 0 ? "+" : ""}{expectedPreview.favoriteLossDelta}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+                  <p className="text-sm font-semibold text-amber-900">{expectedPreview.underdogName}</p>
+                  <p className="mt-1 text-sm text-amber-800">
+                    Expected result: {expectedPreview.underdogExpectedPct}% win chance
+                  </p>
+                  <p className="mt-1 text-sm text-amber-800">Current Elo: {expectedPreview.underdogCurrentRating}</p>
+                  {isSnooker ? (
+                    <p className="mt-1 text-sm text-amber-800">Current handicap: {expectedPreview.underdogCurrentHandicap && expectedPreview.underdogCurrentHandicap > 0 ? `+${expectedPreview.underdogCurrentHandicap}` : expectedPreview.underdogCurrentHandicap ?? 0}</p>
+                  ) : null}
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-white/80 p-3 text-sm text-slate-700">
+                    <p>If {expectedPreview.underdogName} wins: Elo {expectedPreview.underdogWinDelta >= 0 ? "+" : ""}{expectedPreview.underdogWinDelta}</p>
+                    <p>If {expectedPreview.underdogName} loses: Elo {expectedPreview.underdogLossDelta >= 0 ? "+" : ""}{expectedPreview.underdogLossDelta}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                Upsets move ratings more than expected wins. Doubles, walkovers, void outcomes, and BYE results are excluded from Elo movement.
+              </div>
+            </div>
+          </div>
+        ) : null}
         <ConfirmModal
           open={Boolean(confirmModal)}
           title={confirmModal?.title ?? ""}
