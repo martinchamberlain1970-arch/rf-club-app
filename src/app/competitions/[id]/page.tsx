@@ -50,6 +50,7 @@ type Match = {
   team2_handicap_start?: number | null;
 };
 type Player = { id: string; display_name: string; full_name: string | null; snooker_handicap?: number | null };
+type AppUserLink = { id: string; linked_player_id: string | null };
 type Entry = {
   id: string;
   competition_id: string;
@@ -345,6 +346,7 @@ export default function CompetitionPage() {
   const [competition, setCompetition] = useState<Competition | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [appUserLinks, setAppUserLinks] = useState<AppUserLink[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [frames, setFrames] = useState<Frame[]>([]);
   const [resultSubmissions, setResultSubmissions] = useState<ResultSubmission[]>([]);
@@ -363,6 +365,8 @@ export default function CompetitionPage() {
   const [refreshingFutureHandicaps, setRefreshingFutureHandicaps] = useState(false);
   const [confirmLeagueGenerationOpen, setConfirmLeagueGenerationOpen] = useState(false);
   const [entriesExpanded, setEntriesExpanded] = useState(false);
+  const [superEntryPlayerId, setSuperEntryPlayerId] = useState("");
+  const [addingSuperEntry, setAddingSuperEntry] = useState(false);
 
   const openBracketDisplay = () => {
     if (!id) return;
@@ -416,7 +420,7 @@ export default function CompetitionPage() {
         const linkedRes = await client.from("app_users").select("linked_player_id").eq("id", signedInUserId).maybeSingle();
         linkedPlayerId = (linkedRes.data?.linked_player_id as string | null) ?? null;
       }
-      const [cRes, mRes, pRes, fRes] = await Promise.all([
+      const [cRes, mRes, pRes, fRes, appUserLinkRes] = await Promise.all([
         client
           .from("competitions")
           .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,league_meetings,league_start_date,handicap_enabled")
@@ -429,8 +433,9 @@ export default function CompetitionPage() {
           .eq("is_archived", false)
           .order("round_no")
           .order("match_no"),
-        client.from("players").select("id,display_name,full_name,snooker_handicap"),
+        client.from("players").select("id,display_name,full_name,snooker_handicap").eq("is_archived", false),
         client.from("frames").select("match_id,winner_player_id"),
+        client.from("app_users").select("id,linked_player_id").not("linked_player_id", "is", null),
       ]);
       if (!active) return;
       if (cRes.error || !cRes.data) {
@@ -478,6 +483,7 @@ export default function CompetitionPage() {
       }
       setMatches(loadedMatches);
       setPlayers(((pRes.data ?? []) as unknown) as Player[]);
+      setAppUserLinks(((appUserLinkRes.data ?? []) as unknown) as AppUserLink[]);
       setFrames(((fRes.data ?? []) as unknown) as Frame[]);
       const entryRes = await client
         .from("competition_entries")
@@ -517,6 +523,81 @@ export default function CompetitionPage() {
   const pendingEntries = useMemo(() => entries.filter((e) => e.status === "pending"), [entries]);
   const approvedEntries = useMemo(() => entries.filter((e) => e.status === "approved"), [entries]);
   const approvedLeaguePlayerIds = useMemo(() => approvedEntries.map((entry) => entry.player_id), [approvedEntries]);
+  const activeEntryByPlayerId = useMemo(() => {
+    const map = new Map<string, Entry>();
+    for (const entry of entries) {
+      if (entry.status !== "approved" && entry.status !== "pending") continue;
+      map.set(entry.player_id, entry);
+    }
+    return map;
+  }, [entries]);
+  const superEntryOptions = useMemo(() => {
+    return [...players]
+      .filter((player) => !activeEntryByPlayerId.has(player.id))
+      .sort((a, b) => (a.full_name?.trim() || a.display_name).localeCompare(b.full_name?.trim() || b.display_name));
+  }, [activeEntryByPlayerId, players]);
+  const addSuperUserEntry = async () => {
+    const client = supabase;
+    if (!client || !competition || !admin.isSuper || !admin.userId) return;
+    if (!competition.signup_open) {
+      setMessage("Sign-ups are closed for this competition.");
+      return;
+    }
+    if (!superEntryPlayerId) {
+      setMessage("Choose a player to add.");
+      return;
+    }
+    if (competition.signup_deadline && new Date(competition.signup_deadline).getTime() < Date.now()) {
+      setMessage("The sign-up deadline has passed for this competition.");
+      return;
+    }
+    if (competition.max_entries && approvedEntries.length + pendingEntries.length >= competition.max_entries) {
+      setMessage("This competition is currently full.");
+      return;
+    }
+    if (activeEntryByPlayerId.has(superEntryPlayerId)) {
+      setMessage("That player is already entered for this competition.");
+      return;
+    }
+
+    const existingEntry = entries.find((entry) => entry.player_id === superEntryPlayerId) ?? null;
+    const linkedAppUserId = appUserLinks.find((row) => row.linked_player_id === superEntryPlayerId)?.id ?? admin.userId;
+    setAddingSuperEntry(true);
+    const payload = {
+      competition_id: competition.id,
+      requester_user_id: linkedAppUserId,
+      player_id: superEntryPlayerId,
+      status: "approved" as const,
+      reviewed_by_user_id: admin.userId,
+      reviewed_at: new Date().toISOString(),
+    };
+
+    const res = existingEntry
+      ? await client.from("competition_entries").update(payload).eq("id", existingEntry.id)
+      : await client.from("competition_entries").insert(payload);
+
+    setAddingSuperEntry(false);
+    if (res.error) {
+      setMessage(res.error.message);
+      return;
+    }
+    setSuperEntryPlayerId("");
+    setEntriesExpanded(true);
+    setMessage("Player added to the competition and approved.");
+
+    const refreshedEntries = await client
+      .from("competition_entries")
+      .select("id,competition_id,requester_user_id,player_id,status,created_at")
+      .eq("competition_id", competition.id)
+      .neq("status", "withdrawn")
+      .order("created_at", { ascending: false });
+    if (refreshedEntries.error) {
+      setMessage(refreshedEntries.error.message);
+      return;
+    }
+    setEntries((refreshedEntries.data ?? []) as Entry[]);
+  };
+
   const projectedLeagueRounds = useMemo(() => {
     const meetings = Number.parseInt(leagueMeetingsInput, 10);
     if (!Number.isInteger(meetings) || meetings < 1 || meetings > 4) return [];
@@ -1168,6 +1249,40 @@ export default function CompetitionPage() {
                     >
                       Save Sign-up Settings
                     </button>
+                  </div>
+                ) : null}
+                {admin.isSuper ? (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-sm font-medium text-amber-950">Super User add player</p>
+                    <p className="mt-1 text-sm text-amber-900">Add a player directly into this open competition and approve them immediately.</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <select
+                        value={superEntryPlayerId}
+                        onChange={(e) => setSuperEntryPlayerId(e.target.value)}
+                        className="min-w-[260px] rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-slate-700"
+                      >
+                        <option value="">Select player…</option>
+                        {superEntryOptions.map((player) => (
+                          <option key={player.id} value={player.id}>
+                            {fullMap.get(player.id) ?? shortMap.get(player.id) ?? "Unknown player"}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => void addSuperUserEntry()}
+                        disabled={addingSuperEntry || !competition.signup_open || superEntryOptions.length === 0}
+                        className="rounded-lg bg-amber-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {addingSuperEntry ? "Adding..." : "Add player to competition"}
+                      </button>
+                    </div>
+                    {!competition.signup_open ? (
+                      <p className="mt-2 text-xs text-amber-800">Open sign-ups first before adding players.</p>
+                    ) : null}
+                    {competition.signup_open && superEntryOptions.length === 0 ? (
+                      <p className="mt-2 text-xs text-amber-800">Everyone currently available is already entered.</p>
+                    ) : null}
                   </div>
                 ) : null}
                 {entries.length > 0 ? (
