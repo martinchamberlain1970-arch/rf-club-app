@@ -43,7 +43,7 @@ export default function usePremiumStatus(): PremiumState {
         return;
       }
 
-      let premiumUnlocked = parseFlag(data.user?.user_metadata?.premium_unlocked);
+      let premiumUnlocked = false;
       let trialEndsAt: string | null = null;
       let trialActive = false;
       let trialDaysLeft = 0;

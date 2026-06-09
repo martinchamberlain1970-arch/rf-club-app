@@ -28,7 +28,6 @@ export default function useAdminStatus(): AdminState {
       if (!active) return;
       const email = data.user?.email?.toLowerCase() ?? "";
       const isOwner = Boolean(ownerEmail && email && email === ownerEmail);
-      const metadataRole = data.user?.user_metadata?.role ?? null;
       let appRole: string | null = null;
       if (data.user?.id) {
         const { data: appUser } = await client.from("app_users").select("role").eq("id", data.user.id).maybeSingle();
@@ -36,7 +35,7 @@ export default function useAdminStatus(): AdminState {
       }
       setState({
         loading: false,
-        isAdmin: isOwner || parseRole(metadataRole) || parseRole(appRole),
+        isAdmin: isOwner || parseRole(appRole),
         userId: data.user?.id ?? null,
         email: data.user?.email ?? null,
         isSuper: isOwner,
