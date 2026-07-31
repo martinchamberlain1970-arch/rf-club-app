@@ -49,6 +49,7 @@ type GuestEntry = {
   paid_at: string | null;
   created_at: string;
   competitions: { name: string } | null;
+  suggestions: Array<{ id: string; display_name: string; full_name: string | null; claimed_by: string | null; score: number }>;
 };
 
 const sportLabel: Record<Competition["sport_type"], string> = {
@@ -74,6 +75,7 @@ export default function CompetitionSignupPage() {
   const [busyCompetitionId, setBusyCompetitionId] = useState<string | null>(null);
   const [expandedCompetitionIds, setExpandedCompetitionIds] = useState<string[]>([]);
   const [guestEntries, setGuestEntries] = useState<GuestEntry[]>([]);
+  const [guestActionId, setGuestActionId] = useState<string | null>(null);
 
   const playerNameById = useMemo(
     () => new Map(players.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name])),
@@ -275,6 +277,32 @@ export default function CompetitionSignupPage() {
     await load();
   };
 
+  const addGuestEntry = async (entry: GuestEntry, options: { playerId?: string; createProfile?: boolean; ageBand?: "18_plus" | "under_18" }) => {
+    const client = supabase;
+    if (!client) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setMessage("Please sign in again.");
+      return;
+    }
+    setGuestActionId(entry.id);
+    const response = await fetch("/api/admin/public-competition-signups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ signupId: entry.id, ...options }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setGuestActionId(null);
+    if (!response.ok) {
+      setMessage(data.error ?? "The guest could not be added.");
+      return;
+    }
+    setGuestEntries((current) => current.map((item) => item.id === entry.id ? { ...item, status: "added" } : item));
+    setMessage(`${entry.full_name} was added to the competition.`);
+    await load();
+  };
+
   const toggleCompetitionField = (competitionId: string) => {
     setExpandedCompetitionIds((prev) =>
       prev.includes(competitionId) ? prev.filter((id) => id !== competitionId) : [...prev, competitionId]
@@ -323,12 +351,48 @@ export default function CompetitionSignupPage() {
                             : entry.payment_status === "failed" ? "Payment failed" : "Payment pending"}
                         </p>
                         {entry.note ? <p className="mt-1 text-sm text-slate-600">Note: {entry.note}</p> : null}
+                        {entry.status === "pending" && entry.suggestions.length > 0 ? (
+                          <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Possible existing profiles</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {entry.suggestions.map((player) => (
+                                <button
+                                  key={player.id}
+                                  type="button"
+                                  disabled={guestActionId === entry.id}
+                                  onClick={() => void addGuestEntry(entry, { playerId: player.id })}
+                                  className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-left text-sm text-indigo-950 disabled:opacity-50"
+                                >
+                                  Link and add: {player.full_name?.trim() || player.display_name}{player.claimed_by ? " · app account" : ""}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {entry.status === "pending" ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={guestActionId === entry.id}
+                              onClick={() => void addGuestEntry(entry, { createProfile: true, ageBand: "18_plus" })}
+                              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                            >
+                              {guestActionId === entry.id ? "Adding…" : "Create adult profile and add"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={guestActionId === entry.id}
+                              onClick={() => void addGuestEntry(entry, { createProfile: true, ageBand: "under_18" })}
+                              className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-medium text-slate-800 disabled:opacity-50"
+                            >
+                              Create junior profile and add
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700">{entry.status}</span>
-                        <a href={`/competitions/${entry.competition_id}`} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white">
-                          Review
-                        </a>
+                        <a href={`/competitions/${entry.competition_id}`} className="rounded-lg border border-emerald-700 bg-white px-3 py-2 text-sm font-medium text-emerald-800">Competition</a>
                       </div>
                     </div>
                   </div>
