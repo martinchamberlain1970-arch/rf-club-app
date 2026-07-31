@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 type PublicCompetition = {
@@ -16,6 +16,7 @@ type PublicCompetition = {
   entryCount: number;
   acceptingSignups: boolean;
   closedReason: string | null;
+  entryFeePence: number | null;
 };
 
 const sportNames = {
@@ -26,12 +27,13 @@ const sportNames = {
 
 export default function PublicCompetitionSignupPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const id = String(params.id ?? "");
   const [competition, setCompetition] = useState<PublicCompetition | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(() => searchParams.get("payment") === "success");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -65,7 +67,30 @@ export default function PublicCompetitionSignupPage() {
       setError(data?.error ?? "Unable to submit your entry.");
       return;
     }
+    if (typeof data?.checkoutUrl === "string") {
+      window.location.assign(data.checkoutUrl);
+      return;
+    }
     setSubmitted(true);
+  };
+
+  const resumePayment = async () => {
+    const signupId = searchParams.get("signup");
+    if (!signupId) return;
+    setError("");
+    setBusy(true);
+    const response = await fetch(`/api/public/competitions/${id}/payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signupId }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setBusy(false);
+    if (!response.ok || typeof data?.checkoutUrl !== "string") {
+      setError(data?.error ?? "Unable to restart payment.");
+      return;
+    }
+    window.location.assign(data.checkoutUrl);
   };
 
   return (
@@ -97,13 +122,31 @@ export default function PublicCompetitionSignupPage() {
                     Entries close: {new Date(competition.signupDeadline).toLocaleString("en-GB")}
                   </p>
                 ) : null}
+                {competition.entryFeePence ? (
+                  <p className="mt-3 inline-flex rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-950">
+                    Entry fee: £{(competition.entryFeePence / 100).toFixed(2)} · secure payment by Stripe
+                  </p>
+                ) : null}
               </div>
 
               {submitted ? (
                 <div className="py-10 text-center">
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-800">✓</div>
-                  <h3 className="mt-4 text-2xl font-bold text-slate-950">You’re signed up!</h3>
-                  <p className="mt-2 text-slate-600">Your entry has been sent to the competition organiser. They’ll contact you if they need anything else.</p>
+                  <h3 className="mt-4 text-2xl font-bold text-slate-950">Entry received!</h3>
+                  <p className="mt-2 text-slate-600">
+                    {searchParams.get("payment") === "success"
+                      ? "Thank you. Stripe is confirming your £10 payment and the organiser will see it against your entry automatically."
+                      : "Your entry has been sent to the competition organiser. They’ll contact you if they need anything else."}
+                  </p>
+                </div>
+              ) : searchParams.get("payment") === "cancelled" && searchParams.get("signup") ? (
+                <div className="py-8 text-center">
+                  <h3 className="text-xl font-semibold text-slate-950">Your entry is saved</h3>
+                  <p className="mt-2 text-slate-600">Payment was cancelled, so the £10 entry fee is still outstanding.</p>
+                  {error ? <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
+                  <button type="button" onClick={() => void resumePayment()} disabled={busy} className="mt-5 w-full rounded-xl bg-emerald-700 px-4 py-3.5 text-base font-semibold text-white disabled:opacity-60">
+                    {busy ? "Preparing secure payment…" : "Return to Stripe and pay £10.00"}
+                  </button>
                 </div>
               ) : competition.acceptingSignups ? (
                 <form onSubmit={submit} className="mt-5 space-y-4">
@@ -133,7 +176,11 @@ export default function PublicCompetitionSignupPage() {
                   </label>
                   {error ? <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
                   <button disabled={busy} className="w-full rounded-xl bg-emerald-700 px-4 py-3.5 text-base font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-60">
-                    {busy ? "Sending entry…" : "Sign up to this competition"}
+                    {busy
+                      ? "Preparing secure payment…"
+                      : competition.entryFeePence
+                        ? `Sign up and pay £${(competition.entryFeePence / 100).toFixed(2)}`
+                        : "Sign up to this competition"}
                   </button>
                   <p className="text-center text-xs text-slate-500">Your details will only be used by the organiser to manage this competition and contact you about your entry.</p>
                 </form>
@@ -155,4 +202,3 @@ export default function PublicCompetitionSignupPage() {
     </main>
   );
 }
-

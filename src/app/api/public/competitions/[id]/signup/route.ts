@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getStripe } from "@/lib/stripe-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -20,7 +21,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   const { id } = await context.params;
   const result = await client
     .from("competitions")
-    .select("id,name,venue,sport_type,competition_format,match_mode,signup_open,signup_deadline,max_entries,is_archived,is_completed")
+    .select("id,name,venue,sport_type,competition_format,match_mode,signup_open,signup_deadline,max_entries,entry_fee_pence,is_archived,is_completed")
     .eq("id", id)
     .maybeSingle();
 
@@ -59,6 +60,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
       signupDeadline: competition.signup_deadline,
       maxEntries: competition.max_entries,
       entryCount,
+      entryFeePence: competition.entry_fee_pence,
       acceptingSignups: competition.signup_open && !competition.is_completed && !deadlinePassed && !full,
       closedReason: !competition.signup_open
         ? "Sign-ups are closed."
@@ -106,7 +108,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
   const competitionResult = await client
     .from("competitions")
-    .select("id,signup_open,signup_deadline,max_entries,is_archived,is_completed")
+    .select("id,name,signup_open,signup_deadline,max_entries,entry_fee_pence,is_archived,is_completed")
     .eq("id", id)
     .maybeSingle();
   const competition = competitionResult.data;
@@ -128,13 +130,20 @@ export async function POST(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "This competition is currently full." }, { status: 409 });
   }
 
-  const insert = await client.from("public_competition_signups").insert({
-    competition_id: id,
-    full_name: fullName,
-    email: email || null,
-    phone: phone || null,
-    note: note || null,
-  });
+  const entryFeePence = Number(competition.entry_fee_pence ?? 0);
+  const insert = await client
+    .from("public_competition_signups")
+    .insert({
+      competition_id: id,
+      full_name: fullName,
+      email: email || null,
+      phone: phone || null,
+      note: note || null,
+      payment_status: entryFeePence > 0 ? "pending" : "not_required",
+      payment_amount_pence: entryFeePence > 0 ? entryFeePence : null,
+    })
+    .select("id")
+    .single();
   if (insert.error) {
     if (insert.error.code === "23505") {
       return NextResponse.json({ error: "That email address or phone number is already signed up." }, { status: 409 });
@@ -142,5 +151,49 @@ export async function POST(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "We could not save your entry. Please try again." }, { status: 400 });
   }
 
-  return NextResponse.json({ ok: true });
+  if (!insert.data || entryFeePence <= 0) return NextResponse.json({ ok: true });
+
+  try {
+    const stripe = getStripe();
+    const signupId = insert.data.id as string;
+    const origin = req.nextUrl.origin;
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer_email: email || undefined,
+      client_reference_id: signupId,
+      metadata: {
+        publicCompetitionSignupId: signupId,
+        competitionId: id,
+      },
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "gbp",
+            unit_amount: entryFeePence,
+            product_data: {
+              name: `${competition.name} entry fee`,
+              metadata: { competitionId: id },
+            },
+          },
+        },
+      ],
+      success_url: `${origin}/join/${id}?payment=success&signup=${signupId}`,
+      cancel_url: `${origin}/join/${id}?payment=cancelled&signup=${signupId}`,
+    });
+    await client
+      .from("public_competition_signups")
+      .update({ stripe_checkout_session_id: session.id, updated_at: new Date().toISOString() })
+      .eq("id", signupId);
+    return NextResponse.json({ ok: true, checkoutUrl: session.url });
+  } catch {
+    await client
+      .from("public_competition_signups")
+      .update({ payment_status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", insert.data.id);
+    return NextResponse.json(
+      { error: "Your entry was saved, but payment could not be started. Please contact the organiser." },
+      { status: 502 }
+    );
+  }
 }

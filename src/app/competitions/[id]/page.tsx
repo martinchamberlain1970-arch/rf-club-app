@@ -67,6 +67,9 @@ type GuestEntry = {
   phone: string | null;
   note: string | null;
   status: "pending" | "added" | "rejected";
+  payment_status: "not_required" | "pending" | "paid" | "failed";
+  payment_amount_pence: number | null;
+  paid_at: string | null;
   created_at: string;
 };
 type ResultSubmission = {
@@ -539,7 +542,7 @@ export default function CompetitionPage() {
       if (admin.isAdmin) {
         const guestEntryRes = await client
           .from("public_competition_signups")
-          .select("id,competition_id,full_name,email,phone,note,status,created_at")
+          .select("id,competition_id,full_name,email,phone,note,status,payment_status,payment_amount_pence,paid_at,created_at")
           .eq("competition_id", id)
           .order("created_at", { ascending: false });
         if (guestEntryRes.data) setGuestEntries((guestEntryRes.data as unknown) as GuestEntry[]);
@@ -1417,6 +1420,17 @@ export default function CompetitionPage() {
                                 {entry.email ? <a href={`mailto:${entry.email}`} className="underline">{entry.email}</a> : null}
                               </div>
                               {entry.note ? <p className="mt-2 text-sm text-slate-600">Note: {entry.note}</p> : null}
+                              <p className="mt-2 text-sm">
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${entry.payment_status === "paid" ? "bg-emerald-100 text-emerald-900" : entry.payment_status === "failed" ? "bg-red-100 text-red-900" : "bg-amber-100 text-amber-900"}`}>
+                                  {entry.payment_status === "paid"
+                                    ? `Paid${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}`
+                                    : entry.payment_status === "pending"
+                                      ? "Payment pending"
+                                      : entry.payment_status === "failed"
+                                        ? "Payment failed"
+                                        : "No payment required"}
+                                </span>
+                              </p>
                               <p className="mt-1 text-xs text-slate-500">{new Date(entry.created_at).toLocaleString("en-GB")}</p>
                             </div>
                             <div className="flex items-center gap-2">
