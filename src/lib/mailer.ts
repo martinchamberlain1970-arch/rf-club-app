@@ -16,7 +16,7 @@ export function hasMailerConfig() {
   );
 }
 
-export async function sendEmail(input: { to: string; subject: string; text: string; html: string }) {
+export async function sendEmail(input: { to: string; bcc?: string; subject: string; text: string; html: string }) {
   if (!hasMailerConfig()) throw new Error("Email configuration is missing.");
   const transport = nodemailer.createTransport({
     host: requiredEnv("ZOHO_SMTP_HOST"),
@@ -29,6 +29,7 @@ export async function sendEmail(input: { to: string; subject: string; text: stri
   return transport.sendMail({
     from: `"${name.replaceAll('"', "")}" <${address}>`,
     to: input.to,
+    bcc: input.bcc,
     replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
     subject: input.subject,
     text: input.text,

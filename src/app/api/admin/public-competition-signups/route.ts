@@ -132,6 +132,7 @@ export async function POST(request: NextRequest) {
     try {
       await sendEmail({
         to: signup.email,
+        bcc: "rackandframe.app@gmail.com",
         subject: "Complete your Rack & Frame registration",
         text: `Hi ${firstName},\n\nYour player profile has been created and added to ${competitionName}. Register for the Rack & Frame Club app using the link below. Use the same name and select the existing profile when prompted.\n\n${registrationUrl}\n\nYou are already entered and your payment is recorded.`,
         html: `<p>Hi ${escapeHtml(firstName)},</p><p>Your player profile has been created and added to <strong>${escapeHtml(competitionName)}</strong>.</p><p><a href="${escapeHtml(registrationUrl)}" style="display:inline-block;background:#047857;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">Register for Rack &amp; Frame</a></p><p>Use the same name and select the existing profile when prompted. You are already entered and your payment is recorded.</p>`,
