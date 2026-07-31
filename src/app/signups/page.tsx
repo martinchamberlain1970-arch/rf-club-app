@@ -36,6 +36,20 @@ type Entry = {
 
 type AppUser = { id: string; linked_player_id: string | null };
 type Player = { id: string; display_name: string; full_name: string | null };
+type GuestEntry = {
+  id: string;
+  competition_id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  note: string | null;
+  status: "pending" | "added" | "rejected";
+  payment_status: "not_required" | "pending" | "paid" | "failed";
+  payment_amount_pence: number | null;
+  paid_at: string | null;
+  created_at: string;
+  competitions: { name: string } | null;
+};
 
 const sportLabel: Record<Competition["sport_type"], string> = {
   snooker: "Snooker",
@@ -59,6 +73,7 @@ export default function CompetitionSignupPage() {
   const [linkedPlayerId, setLinkedPlayerId] = useState<string | null>(null);
   const [busyCompetitionId, setBusyCompetitionId] = useState<string | null>(null);
   const [expandedCompetitionIds, setExpandedCompetitionIds] = useState<string[]>([]);
+  const [guestEntries, setGuestEntries] = useState<GuestEntry[]>([]);
 
   const playerNameById = useMemo(
     () => new Map(players.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name])),
@@ -123,6 +138,18 @@ export default function CompetitionSignupPage() {
     setEntries((entryRes.data ?? []) as Entry[]);
     setLinkedPlayerId(((appUserRes.data as AppUser | null)?.linked_player_id ?? null) as string | null);
     setPlayers((playerRes.data ?? []) as Player[]);
+
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (accessToken) {
+      const guestResponse = await fetch("/api/admin/public-competition-signups", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (guestResponse.ok) {
+        const guestData = await guestResponse.json();
+        setGuestEntries((guestData.entries ?? []) as GuestEntry[]);
+      }
+    }
   };
 
   useEffect(() => {
@@ -271,6 +298,44 @@ export default function CompetitionSignupPage() {
               {admin.isSuper ? " Super User entries are approved automatically." : ""}
             </p>
           </section>
+
+          {admin.isAdmin && guestEntries.length > 0 ? (
+            <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-semibold text-emerald-950">Public signup review</h2>
+                  <p className="text-sm text-emerald-800">Entries received through public registration links.</p>
+                </div>
+                <span className="rounded-full bg-emerald-700 px-3 py-1 text-sm font-semibold text-white">
+                  {guestEntries.filter((entry) => entry.status === "pending").length} pending
+                </span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {guestEntries.map((entry) => (
+                  <div key={entry.id} className="rounded-xl border border-emerald-200 bg-white p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-950">{entry.full_name}</p>
+                        <p className="text-sm text-slate-600">{entry.competitions?.name ?? "Competition"}</p>
+                        <p className={`mt-1 text-sm font-medium ${entry.payment_status === "paid" ? "text-emerald-700" : "text-amber-700"}`}>
+                          {entry.payment_status === "paid"
+                            ? `Paid${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
+                            : entry.payment_status === "failed" ? "Payment failed" : "Payment pending"}
+                        </p>
+                        {entry.note ? <p className="mt-1 text-sm text-slate-600">Note: {entry.note}</p> : null}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700">{entry.status}</span>
+                        <a href={`/competitions/${entry.competition_id}`} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white">
+                          Review
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className="space-y-3">
             {competitions.map((competition) => {
