@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authorizedClient(request);
   if (!auth) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
-  const { client } = auth;
+  const { client, user } = auth;
   const body = await request.json().catch(() => null);
   const signupId = String(body?.signupId ?? "");
   const selectedPlayerId = body?.playerId ? String(body.playerId) : null;
@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
       full_name: fullName,
       nickname: null,
       is_archived: false,
+      owner_user_id: user.id,
       claimed_by: null,
       location_id: competitionRelation?.location_id ?? null,
       age_band: ageBand,
