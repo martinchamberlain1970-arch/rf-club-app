@@ -71,16 +71,21 @@ function readSignupDraft(): SignupDraft | null {
   }
 }
 
+function invitedValue(name: "email" | "firstName" | "secondName") {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(name) ?? "";
+}
+
 export default function SignUpPage() {
   const router = useRouter();
   const [draft] = useState<SignupDraft | null>(() => readSignupDraft());
   const [step, setStep] = useState<1 | 2>(() => (draft?.step === 2 ? 2 : 1));
-  const [email, setEmail] = useState(() => (typeof draft?.email === "string" ? draft.email : ""));
+  const [email, setEmail] = useState(() => (typeof draft?.email === "string" ? draft.email : invitedValue("email")));
   const [password, setPassword] = useState(() => (typeof draft?.password === "string" ? draft.password : ""));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [firstName, setFirstName] = useState(() => (typeof draft?.firstName === "string" ? draft.firstName : ""));
-  const [secondName, setSecondName] = useState(() => (typeof draft?.secondName === "string" ? draft.secondName : ""));
+  const [firstName, setFirstName] = useState(() => (typeof draft?.firstName === "string" ? draft.firstName : invitedValue("firstName")));
+  const [secondName, setSecondName] = useState(() => (typeof draft?.secondName === "string" ? draft.secondName : invitedValue("secondName")));
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState(() => (typeof draft?.locationId === "string" ? draft.locationId : ""));
   const [requestedLocationName, setRequestedLocationName] = useState(() =>

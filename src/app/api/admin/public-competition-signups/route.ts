@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -25,6 +26,7 @@ async function authorizedClient(request: NextRequest) {
 }
 
 const normalizedName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 
 export async function GET(request: NextRequest) {
   if (!supabaseUrl || !serviceRoleKey) return NextResponse.json({ error: "Server is not configured." }, { status: 500 });
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest) {
 
   const signupResult = await client
     .from("public_competition_signups")
-    .select("id,competition_id,full_name,status,payment_status,payment_amount_pence,paid_at,competitions(location_id)")
+    .select("id,competition_id,full_name,email,status,payment_status,payment_amount_pence,paid_at,competitions(name,location_id)")
     .eq("id", signupId)
     .maybeSingle();
   const signup = signupResult.data;
@@ -114,5 +116,29 @@ export async function POST(request: NextRequest) {
     : await client.from("competition_entries").insert({ competition_id: signup.competition_id, requester_user_id: null, player_id: playerId, ...entryPayload });
   if (entryResult.error) return NextResponse.json({ error: entryResult.error.message }, { status: 400 });
   await client.from("public_competition_signups").update({ status: "added", updated_at: new Date().toISOString() }).eq("id", signup.id);
-  return NextResponse.json({ ok: true, playerId });
+
+  let invitationSent = false;
+  let invitationError: string | null = null;
+  if (createProfile && ageBand === "18_plus" && signup.email && hasMailerConfig()) {
+    const nameParts = signup.full_name.trim().split(/\s+/);
+    const firstName = nameParts.shift() ?? signup.full_name.trim();
+    const secondName = nameParts.join(" ");
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").replace(/\/$/, "");
+    const query = new URLSearchParams({ email: signup.email, firstName, secondName, invite: "competition" });
+    const registrationUrl = `${siteUrl}/auth/sign-up?${query.toString()}`;
+    const competitionRelation = signup.competitions as unknown as { name: string; location_id: string | null } | null;
+    const competitionName = competitionRelation?.name ?? "your competition";
+    try {
+      await sendEmail({
+        to: signup.email,
+        subject: "Complete your Rack & Frame registration",
+        text: `Hi ${firstName},\n\nYour player profile has been created and added to ${competitionName}. Register for the Rack & Frame Club app using the link below. Use the same name and select the existing profile when prompted.\n\n${registrationUrl}\n\nYou are already entered and your payment is recorded.`,
+        html: `<p>Hi ${escapeHtml(firstName)},</p><p>Your player profile has been created and added to <strong>${escapeHtml(competitionName)}</strong>.</p><p><a href="${escapeHtml(registrationUrl)}" style="display:inline-block;background:#047857;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">Register for Rack &amp; Frame</a></p><p>Use the same name and select the existing profile when prompted. You are already entered and your payment is recorded.</p>`,
+      });
+      invitationSent = true;
+    } catch (error) {
+      invitationError = error instanceof Error ? error.message : "Invitation email could not be sent.";
+    }
+  }
+  return NextResponse.json({ ok: true, playerId, invitationSent, invitationError });
 }

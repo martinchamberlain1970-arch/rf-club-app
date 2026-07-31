@@ -488,7 +488,7 @@ export default function CompetitionPage() {
       return;
     }
     setGuestEntries((current) => current.map((item) => item.id === entry.id ? { ...item, status: "added" } : item));
-    setMessage(`${entry.full_name} was added to the competition.`);
+    setMessage(`${entry.full_name} was added to the competition.${data.invitationSent ? " A Rack & Frame registration invitation was emailed to them." : data.invitationError ? ` The profile was added, but the invitation email failed: ${data.invitationError}` : ""}`);
   };
 
   useEffect(() => {
