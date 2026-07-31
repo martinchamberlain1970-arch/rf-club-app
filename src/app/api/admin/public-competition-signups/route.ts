@@ -22,7 +22,7 @@ async function authorizedClient(request: NextRequest) {
   const appUserResult = await client.from("app_users").select("role").eq("id", user.id).maybeSingle();
   const role = String(appUserResult.data?.role ?? "").toLowerCase();
   const isOwner = Boolean(superAdminEmail && user.email?.toLowerCase() === superAdminEmail);
-  return isOwner || ["admin", "owner", "super"].includes(role) ? { client, user } : null;
+  return isOwner || ["admin", "owner", "super"].includes(role) ? { client, user, role: isOwner ? "owner" : role } : null;
 }
 
 const normalizedName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authorizedClient(request);
   if (!auth) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
-  const { client, user } = auth;
+  const { client, user, role } = auth;
   const body = await request.json().catch(() => null);
   const signupId = String(body?.signupId ?? "");
   const selectedPlayerId = body?.playerId ? String(body.playerId) : null;
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     const competitionRelation = signup.competitions as unknown as { name: string; location_id: string | null } | null;
     const competitionName = competitionRelation?.name ?? "your competition";
     try {
-      await sendEmail({
+      const emailResult = await sendEmail({
         to: signup.email,
         bcc: "rackandframe.app@gmail.com",
         subject: "Complete your Rack & Frame registration",
@@ -138,8 +138,46 @@ export async function POST(request: NextRequest) {
         html: `<p>Hi ${escapeHtml(firstName)},</p><p>Your player profile has been created and added to <strong>${escapeHtml(competitionName)}</strong>.</p><p><a href="${escapeHtml(registrationUrl)}" style="display:inline-block;background:#047857;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">Register for Rack &amp; Frame</a></p><p>Use the same name and select the existing profile when prompted. You are already entered and your payment is recorded.</p>`,
       });
       invitationSent = true;
+      await client.from("audit_logs").insert({
+        actor_user_id: user.id,
+        actor_email: user.email ?? null,
+        actor_role: role,
+        action: "email_invitation_sent",
+        entity_type: "player",
+        entity_id: playerId,
+        summary: `Registration invitation sent to ${signup.email}.`,
+        meta: {
+          recipient: signup.email,
+          bcc: "rackandframe.app@gmail.com",
+          subject: "Complete your Rack & Frame registration",
+          provider: "Zoho SMTP",
+          sender: process.env.EMAIL_FROM_ADDRESS ?? null,
+          competition: competitionName,
+          signup_id: signup.id,
+          message_id: emailResult.messageId ?? null,
+        },
+      });
     } catch (error) {
       invitationError = error instanceof Error ? error.message : "Invitation email could not be sent.";
+      await client.from("audit_logs").insert({
+        actor_user_id: user.id,
+        actor_email: user.email ?? null,
+        actor_role: role,
+        action: "email_invitation_failed",
+        entity_type: "player",
+        entity_id: playerId,
+        summary: `Registration invitation to ${signup.email} failed.`,
+        meta: {
+          recipient: signup.email,
+          bcc: "rackandframe.app@gmail.com",
+          subject: "Complete your Rack & Frame registration",
+          provider: "Zoho SMTP",
+          sender: process.env.EMAIL_FROM_ADDRESS ?? null,
+          competition: competitionName,
+          signup_id: signup.id,
+          error: invitationError,
+        },
+      });
     }
   }
   return NextResponse.json({ ok: true, playerId, invitationSent, invitationError });

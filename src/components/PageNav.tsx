@@ -61,7 +61,7 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
     router.push("/notifications");
   };
 
-  const superManagementRoutes = ["/players", "/signup-requests", "/backup", "/audit", "/usage", "/locations", "/results"];
+  const superManagementRoutes = ["/players", "/signup-requests", "/backup", "/audit", "/emails", "/usage", "/locations", "/results"];
   const isSuperManagementPage = Boolean(admin.isSuper && pathname && superManagementRoutes.includes(pathname));
 
   const showBack = !isSuperManagementPage;
@@ -184,6 +184,13 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
             className="whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2 text-slate-700"
           >
             Results
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push("/emails")}
+            className="whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2 text-slate-700"
+          >
+            Emails
           </button>
           <button
             type="button"
