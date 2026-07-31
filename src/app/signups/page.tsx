@@ -30,6 +30,7 @@ type Entry = {
   status: "pending" | "approved" | "rejected" | "withdrawn";
   payment_status: "not_required" | "pending" | "paid" | "failed";
   payment_amount_pence: number | null;
+  paid_at: string | null;
   created_at: string;
 };
 
@@ -41,6 +42,12 @@ const sportLabel: Record<Competition["sport_type"], string> = {
   pool_8_ball: "Pool (8-ball)",
   pool_9_ball: "Pool (9-ball)",
 };
+
+const paidDateTime = (value: string) => new Date(value).toLocaleString("en-GB", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Europe/London",
+});
 
 export default function CompetitionSignupPage() {
   const admin = useAdminStatus();
@@ -99,7 +106,7 @@ export default function CompetitionSignupPage() {
         .order("created_at", { ascending: false }),
       client
         .from("competition_entries")
-        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_amount_pence,created_at")
+        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_amount_pence,paid_at,created_at")
         .order("created_at", { ascending: false }),
       client.from("app_users").select("id,linked_player_id").eq("id", uid).maybeSingle(),
       client.from("players").select("id,display_name,full_name").eq("is_archived", false),
@@ -316,6 +323,13 @@ export default function CompetitionSignupPage() {
                       {myEntry ? (
                         <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-slate-700">
                           Your status: {myEntry.status === "approved" && admin.isSuper ? "approved automatically" : myEntry.status}
+                        </span>
+                      ) : null}
+                      {myEntry && competition.entry_fee_pence ? (
+                        <span className={`rounded-full border px-2 py-0.5 ${myEntry.payment_status === "paid" ? "border-emerald-300 bg-emerald-100 text-emerald-900" : "border-amber-300 bg-amber-100 text-amber-900"}`}>
+                          {myEntry.payment_status === "paid"
+                            ? `Paid £${((myEntry.payment_amount_pence ?? competition.entry_fee_pence) / 100).toFixed(2)}${myEntry.paid_at ? ` · ${paidDateTime(myEntry.paid_at)}` : ""}`
+                            : myEntry.payment_status === "failed" ? "Payment failed" : "Payment pending"}
                         </span>
                       ) : null}
                     </div>

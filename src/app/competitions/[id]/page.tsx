@@ -57,6 +57,9 @@ type Entry = {
   requester_user_id: string;
   player_id: string;
   status: "pending" | "approved" | "rejected" | "withdrawn";
+  payment_status: "not_required" | "pending" | "paid" | "failed";
+  payment_amount_pence: number | null;
+  paid_at: string | null;
   created_at: string;
 };
 type GuestEntry = {
@@ -83,6 +86,12 @@ type Frame = {
   match_id: string;
   winner_player_id: string | null;
 };
+
+const paidDateTime = (value: string) => new Date(value).toLocaleString("en-GB", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Europe/London",
+});
 type LeaguePairing = {
   player1: string;
   player2: string | null;
@@ -534,7 +543,7 @@ export default function CompetitionPage() {
       setFrames(((fRes.data ?? []) as unknown) as Frame[]);
       const entryRes = await client
         .from("competition_entries")
-        .select("id,competition_id,requester_user_id,player_id,status,created_at")
+        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_amount_pence,paid_at,created_at")
         .eq("competition_id", id)
         .neq("status", "withdrawn")
         .order("created_at", { ascending: false });
@@ -643,7 +652,7 @@ export default function CompetitionPage() {
 
     const refreshedEntries = await client
       .from("competition_entries")
-      .select("id,competition_id,requester_user_id,player_id,status,created_at")
+      .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_amount_pence,paid_at,created_at")
       .eq("competition_id", competition.id)
       .neq("status", "withdrawn")
       .order("created_at", { ascending: false });
@@ -1371,9 +1380,16 @@ export default function CompetitionPage() {
                       <div className="mt-3 space-y-2">
                         {entries.map((entry) => (
                           <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                            <p className="text-sm text-slate-800">
-                              {fullMap.get(entry.player_id) ?? shortMap.get(entry.player_id) ?? "Unknown player"}
-                            </p>
+                            <div>
+                              <p className="text-sm text-slate-800">
+                                {fullMap.get(entry.player_id) ?? shortMap.get(entry.player_id) ?? "Unknown player"}
+                              </p>
+                              <p className={`mt-1 text-xs font-medium ${entry.payment_status === "paid" ? "text-emerald-700" : entry.payment_status === "not_required" ? "text-slate-500" : "text-amber-700"}`}>
+                                {entry.payment_status === "paid"
+                                  ? `Paid${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
+                                  : entry.payment_status === "not_required" ? "No payment required" : entry.payment_status === "failed" ? "Payment failed" : "Payment pending"}
+                              </p>
+                            </div>
                             <div className="flex items-center gap-2">
                               <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">{entry.status}</span>
                               {admin.isAdmin && entry.status === "pending" ? (
@@ -1423,7 +1439,7 @@ export default function CompetitionPage() {
                               <p className="mt-2 text-sm">
                                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${entry.payment_status === "paid" ? "bg-emerald-100 text-emerald-900" : entry.payment_status === "failed" ? "bg-red-100 text-red-900" : "bg-amber-100 text-amber-900"}`}>
                                   {entry.payment_status === "paid"
-                                    ? `Paid${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}`
+                                    ? `Paid${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
                                     : entry.payment_status === "pending"
                                       ? "Payment pending"
                                       : entry.payment_status === "failed"
