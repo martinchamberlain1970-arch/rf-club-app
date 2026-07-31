@@ -18,6 +18,7 @@ type Competition = {
   signup_open: boolean;
   signup_deadline: string | null;
   max_entries: number | null;
+  entry_fee_pence: number | null;
   created_at: string;
 };
 
@@ -27,6 +28,8 @@ type Entry = {
   requester_user_id: string;
   player_id: string;
   status: "pending" | "approved" | "rejected" | "withdrawn";
+  payment_status: "not_required" | "pending" | "paid" | "failed";
+  payment_amount_pence: number | null;
   created_at: string;
 };
 
@@ -89,14 +92,14 @@ export default function CompetitionSignupPage() {
     const [competitionRes, entryRes, appUserRes, playerRes] = await Promise.all([
       client
         .from("competitions")
-        .select("id,name,venue,sport_type,competition_format,match_mode,handicap_enabled,signup_open,signup_deadline,max_entries,created_at")
+        .select("id,name,venue,sport_type,competition_format,match_mode,handicap_enabled,signup_open,signup_deadline,max_entries,entry_fee_pence,created_at")
         .eq("signup_open", true)
         .eq("is_archived", false)
         .eq("is_completed", false)
         .order("created_at", { ascending: false }),
       client
         .from("competition_entries")
-        .select("id,competition_id,requester_user_id,player_id,status,created_at")
+        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_amount_pence,created_at")
         .order("created_at", { ascending: false }),
       client.from("app_users").select("id,linked_player_id").eq("id", uid).maybeSingle(),
       client.from("players").select("id,display_name,full_name").eq("is_archived", false),
@@ -122,6 +125,12 @@ export default function CompetitionSignupPage() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    const payment = new URLSearchParams(window.location.search).get("payment");
+    if (payment === "success") setMessage("Payment received. Stripe is confirming your competition entry.");
+    if (payment === "cancelled") setMessage("Payment was cancelled. Your entry is saved and you can try again.");
+  }, []);
+
   const enter = async (competition: Competition) => {
     const client = supabase;
     if (!client || !userId) return;
@@ -144,6 +153,28 @@ export default function CompetitionSignupPage() {
 
     const existing = myEntriesByCompetitionId.get(competition.id) ?? null;
     setBusyCompetitionId(competition.id);
+
+    if (competition.entry_fee_pence && competition.entry_fee_pence > 0) {
+      const sessionResult = await client.auth.getSession();
+      const accessToken = sessionResult.data.session?.access_token;
+      if (!accessToken) {
+        setBusyCompetitionId(null);
+        setMessage("Please sign in again.");
+        return;
+      }
+      const response = await fetch(`/api/competitions/${competition.id}/signup/payment`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      setBusyCompetitionId(null);
+      if (!response.ok || typeof data.checkoutUrl !== "string") {
+        setMessage(data.error ?? "Payment could not be started.");
+        return;
+      }
+      window.location.assign(data.checkoutUrl);
+      return;
+    }
 
     if (existing && (existing.status === "approved" || existing.status === "pending")) {
       setBusyCompetitionId(null);
@@ -268,6 +299,9 @@ export default function CompetitionSignupPage() {
                           Deadline: {new Date(competition.signup_deadline).toLocaleString()}
                         </p>
                       ) : null}
+                      <p className="mt-1 text-xs font-semibold text-slate-700">
+                        {competition.entry_fee_pence ? `Entry fee: £${(competition.entry_fee_pence / 100).toFixed(2)}` : "Free entry"}
+                      </p>
                       {competition.competition_format === "league" ? (
                         <p className="mt-1 text-xs text-slate-600">
                           Weekly fixtures are expected to be completed by 21:00 on Sunday. Unplayed fixtures are normally voided, with admins only awarding a frame or rack for a genuine no-show.
@@ -288,6 +322,16 @@ export default function CompetitionSignupPage() {
                   </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {myEntry && competition.entry_fee_pence && myEntry.payment_status !== "paid" ? (
+                      <button
+                        type="button"
+                        onClick={() => void enter(competition)}
+                        disabled={busyCompetitionId === competition.id}
+                        className="rounded-lg bg-fuchsia-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {busyCompetitionId === competition.id ? "Opening Stripe…" : `Pay £${(competition.entry_fee_pence / 100).toFixed(2)} entry fee`}
+                      </button>
+                    ) : null}
                     {myEntry && (myEntry.status === "pending" || myEntry.status === "approved") ? (
                       <button
                         type="button"
@@ -304,7 +348,9 @@ export default function CompetitionSignupPage() {
                         disabled={busyCompetitionId === competition.id || deadlinePassed || isFull}
                         className="rounded-lg bg-fuchsia-700 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {busyCompetitionId === competition.id ? "Submitting..." : "Enter competition"}
+                        {busyCompetitionId === competition.id
+                          ? competition.entry_fee_pence ? "Opening Stripe…" : "Submitting..."
+                          : competition.entry_fee_pence ? `Enter and pay £${(competition.entry_fee_pence / 100).toFixed(2)}` : "Enter competition"}
                       </button>
                     )}
 

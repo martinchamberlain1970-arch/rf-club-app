@@ -35,6 +35,21 @@ export async function POST(request: Request) {
           })
           .eq("id", signupId);
       }
+      const competitionEntryId = session.metadata?.competitionEntryId;
+      if (competitionEntryId && session.payment_status === "paid") {
+        const update: Record<string, string | number | null> = {
+          payment_status: "paid",
+          payment_amount_pence: session.amount_total ?? null,
+          stripe_checkout_session_id: session.id,
+          stripe_payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : null,
+          paid_at: new Date().toISOString(),
+        };
+        if (session.metadata?.autoApprove === "true") {
+          update.status = "approved";
+          update.reviewed_at = new Date().toISOString();
+        }
+        await client.from("competition_entries").update(update).eq("id", competitionEntryId);
+      }
     }
 
     if (event.type === "checkout.session.async_payment_failed") {
@@ -46,6 +61,10 @@ export async function POST(request: Request) {
           .update({ payment_status: "failed", updated_at: new Date().toISOString() })
           .eq("id", signupId);
       }
+      const competitionEntryId = session.metadata?.competitionEntryId;
+      if (competitionEntryId) {
+        await client.from("competition_entries").update({ payment_status: "failed" }).eq("id", competitionEntryId);
+      }
     }
 
     return NextResponse.json({ received: true });
@@ -56,4 +75,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

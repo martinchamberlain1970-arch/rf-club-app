@@ -65,6 +65,8 @@ export default function NewEventPage() {
   const [signupOpen, setSignupOpen] = useState(false);
   const [signupDeadline, setSignupDeadline] = useState("");
   const [signupMaxEntries, setSignupMaxEntries] = useState("");
+  const [paidEntry, setPaidEntry] = useState(false);
+  const [entryFeePounds, setEntryFeePounds] = useState("");
   const [handicapEnabled, setHandicapEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -87,7 +89,9 @@ export default function NewEventPage() {
     handicapEnabled ||
     signupOpen ||
     signupDeadline ||
-    signupMaxEntries
+    signupMaxEntries ||
+    paidEntry ||
+    entryFeePounds
   );
 
   useEffect(() => {
@@ -379,6 +383,12 @@ export default function NewEventPage() {
       setMessage("Max sign-up entries must be greater than zero.");
       return;
     }
+    const enteredFeePence = Math.round(Number(entryFeePounds) * 100);
+    const entryFeePence = paidEntry ? enteredFeePence : null;
+    if (paidEntry && (!Number.isFinite(enteredFeePence) || enteredFeePence < 30)) {
+      setMessage("Enter an entry fee of at least £0.30.");
+      return;
+    }
     const knockoutRoundBestOf = canUseRoundBestOf && roundBestOfEnabled
       ? {
           round1: best,
@@ -406,6 +416,7 @@ export default function NewEventPage() {
         signup_open: signupOpen,
         signup_deadline: signupDeadline ? new Date(signupDeadline).toISOString() : null,
         max_entries: signupMaxEntries ? Number.parseInt(signupMaxEntries, 10) : null,
+        entry_fee_pence: entryFeePence,
         is_archived: false,
         is_completed: false,
       })
@@ -767,6 +778,21 @@ export default function NewEventPage() {
                       value={signupMaxEntries}
                       onChange={(e) => setSignupMaxEntries(e.target.value)}
                     />
+                  </div>
+                  <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-white p-3">
+                    <label className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
+                      <span>Paid entry</span>
+                      <input type="checkbox" checked={paidEntry} onChange={(e) => setPaidEntry(e.target.checked)} />
+                    </label>
+                    {paidEntry ? (
+                      <div className="mt-3">
+                        <label className="mb-1 block text-xs font-medium text-slate-600">Entry fee (£)</label>
+                        <input type="number" min="0.30" step="0.01" className={fieldClass} value={entryFeePounds} onChange={(e) => setEntryFeePounds(e.target.value)} placeholder="10.00" />
+                        <p className="mt-1 text-xs text-slate-500">Players will be sent to secure Stripe checkout when they enter.</p>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-500">This competition is free to enter.</p>
+                    )}
                   </div>
                 </div>
               ) : null}
