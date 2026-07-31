@@ -218,7 +218,7 @@ function getLeagueFixtureWindow(scheduledFor: string | null | undefined) {
   if (!scheduledFor) return null;
   const [year, month, day] = scheduledFor.split("-").map((value) => Number.parseInt(value, 10));
   if (!year || !month || !day) return null;
-  const opensAt = new Date(year, month - 1, day, 0, 1, 0, 0);
+  const opensAt = new Date(year, month - 1, day, 13, 0, 0, 0);
   const dueAt = new Date(year, month - 1, day + 6, 21, 0, 0, 0);
   return { opensAt, dueAt };
 }
@@ -550,8 +550,16 @@ export default function MatchPage() {
       setPlayers(loadedPlayers);
       setAdminLocationId(adminLocRes ?? null);
       setViewerLinkedPlayerId(linkedPlayerId);
-      setCompetition((competitionRes.data as unknown) as CompetitionSettings);
-      setFrames(existing.length > 0 ? existing : [createEmptyFrame(1)]);
+      const loadedCompetition = (competitionRes.data as unknown) as CompetitionSettings;
+      const isFixedRackLeague = loadedCompetition.competition_format === "league" && loadedCompetition.sport_type !== "snooker";
+      setCompetition(loadedCompetition);
+      setFrames(
+        existing.length > 0
+          ? existing
+          : isFixedRackLeague
+            ? Array.from({ length: effectiveMatch.best_of }, (_, index) => createEmptyFrame(index + 1))
+            : [createEmptyFrame(1)]
+      );
       setSubmissions(effectiveSubmissionRows);
       setRescheduleRequests(effectiveRescheduleRows);
       setRequesterPendingReschedules(effectiveRequesterPendingRows);
@@ -584,18 +592,28 @@ export default function MatchPage() {
     };
   }, [frames]);
 
+  const isFixedRackLeague = Boolean(
+    competition?.competition_format === "league" && competition.sport_type !== "snooker"
+  );
+  const completedRackCount = wins.team1 + wins.team2;
+
   const canSaveResult = useMemo(() => {
     if (!match) return false;
+    if (isFixedRackLeague) return completedRackCount === match.best_of;
     const target = firstToWin(match.best_of);
     return wins.team1 >= target || wins.team2 >= target;
-  }, [match, wins.team1, wins.team2]);
+  }, [completedRackCount, isFixedRackLeague, match, wins.team1, wins.team2]);
   const matchWinnerLabel = useMemo(() => {
     if (!match || !teams) return null;
+    if (isFixedRackLeague) {
+      if (completedRackCount !== match.best_of) return null;
+      return wins.team1 > wins.team2 ? teams.team1Label : teams.team2Label;
+    }
     const target = firstToWin(match.best_of);
     if (wins.team1 >= target) return teams.team1Label;
     if (wins.team2 >= target) return teams.team2Label;
     return null;
-  }, [match, teams, wins.team1, wins.team2]);
+  }, [completedRackCount, isFixedRackLeague, match, teams, wins.team1, wins.team2]);
   const userPendingSubmission = useMemo(() => {
     if (!admin.userId) return null;
     return submissions.find((s) => s.submitted_by_user_id === admin.userId && s.status === "pending") ?? null;
@@ -894,12 +912,17 @@ export default function MatchPage() {
 
   const addFrame = () => {
     if (isByeMatch || isArchived) return;
+    if (isFixedRackLeague && match && frames.length >= match.best_of) return;
     setFrames((prev) => [...prev, createEmptyFrame(prev.length + 1)]);
   };
 
   const clearFrames = () => {
     if (isByeMatch || isArchived) return;
-    setFrames([createEmptyFrame(1)]);
+    setFrames(
+      isFixedRackLeague && match
+        ? Array.from({ length: match.best_of }, (_, index) => createEmptyFrame(index + 1))
+        : [createEmptyFrame(1)]
+    );
   };
 
   const buildFullResultRows = () => {
@@ -1400,9 +1423,17 @@ export default function MatchPage() {
     const client = supabase;
     if (!client || !match || !teams || !competition) return;
     const target = firstToWin(match.best_of);
-    const winnerSide: 0 | 1 | 2 = wins.team1 >= target ? 1 : wins.team2 >= target ? 2 : 0;
+    const winnerSide: 0 | 1 | 2 = isFixedRackLeague
+      ? completedRackCount === match.best_of
+        ? wins.team1 > wins.team2 ? 1 : 2
+        : 0
+      : wins.team1 >= target ? 1 : wins.team2 >= target ? 2 : 0;
     if (winnerSide === 0) {
-      setMessage(`Best of ${match.best_of}: first to ${target} wins.`);
+      setMessage(
+        isFixedRackLeague
+          ? `All ${match.best_of} racks must have a winner because every rack counts as one league point.`
+          : `Best of ${match.best_of}: first to ${target} wins.`
+      );
       return;
     }
 
@@ -1506,9 +1537,10 @@ export default function MatchPage() {
     setSaving(true);
     setMessage(null);
 
-    const save = await persistFrames([{
+    const awardedRackCount = isFixedRackLeague ? match.best_of : 1;
+    const save = await persistFrames(Array.from({ length: awardedRackCount }, (_, index) => ({
       match_id: match.id,
-      frame_number: 1,
+      frame_number: index + 1,
       winner_player_id: winnerId,
       break_and_run: false,
       run_out_against_break: false,
@@ -1521,7 +1553,7 @@ export default function MatchPage() {
       breaks_over_30_team2: 0,
       high_break_team1: 0,
       high_break_team2: 0,
-    }]);
+    })));
     if (!save.ok) {
       setSaving(false);
       setMessage(save.error);
@@ -1540,8 +1572,8 @@ export default function MatchPage() {
     await logAudit("match_walkover_awarded", {
       entityType: "match",
       entityId: match.id,
-      summary: `Walkover awarded to ${winnerName}.`,
-      meta: { competitionId: match.competition_id },
+      summary: isFixedRackLeague ? `5-0 forfeit awarded to ${winnerName}.` : `Walkover awarded to ${winnerName}.`,
+      meta: { competitionId: match.competition_id, awardedScore: isFixedRackLeague ? `${match.best_of}-0` : "walkover" },
     });
     setSaving(false);
     if (competitionDone) {
@@ -1781,7 +1813,11 @@ export default function MatchPage() {
       return;
     }
     if (!canSaveResult) {
-      showSubmitModal(`Best of ${match.best_of}: first to ${firstToWin(match.best_of)} wins.`);
+      showSubmitModal(
+        isFixedRackLeague
+          ? `Enter a winner for all ${match.best_of} racks. Every rack counts as one league point.`
+          : `Best of ${match.best_of}: first to ${firstToWin(match.best_of)} wins.`
+      );
       return;
     }
     const built = buildFullResultRows();
@@ -1849,6 +1885,13 @@ export default function MatchPage() {
     }
     const client = supabase;
     if (!client || !admin.userId || !match) return;
+    if (isFixedRackLeague && submission.team1_score + submission.team2_score !== match.best_of) {
+      showReviewModal(
+        `This league result must total exactly ${match.best_of} racks because every rack is played and scores one point. Reject it and ask the player to correct the score.`,
+        "Invalid League Score"
+      );
+      return;
+    }
     const winnerSide: 1 | 2 = submission.team1_score > submission.team2_score ? 1 : 2;
     const winnerId = winnerSide === 1 ? teams.team1Rep : teams.team2Rep;
     if (!winnerId) {
@@ -2194,7 +2237,16 @@ export default function MatchPage() {
                     <span>{teams.team2Label}</span>
                   </div>
                 </div>
-                <p className="mt-1 text-slate-700">Best of {match.best_of} {competition.sport_type === "snooker" ? "frames" : "racks"}</p>
+                <p className="mt-1 text-slate-700">
+                  {isFixedRackLeague
+                    ? `All ${match.best_of} racks are played · one league point per rack won`
+                    : `Best of ${match.best_of} ${competition.sport_type === "snooker" ? "frames" : "racks"}`}
+                </p>
+                {isFixedRackLeague ? (
+                  <p className="mt-2 rounded-lg border border-lime-200 bg-lime-50 px-3 py-2 text-sm text-lime-950">
+                    Fixture window: Monday 1:00pm to Sunday 9:00pm. A genuine no-show or arrival more than 15 minutes late can be awarded 5-0 by the organiser. If neither player made sufficient effort, void the fixture for no points.
+                  </p>
+                ) : null}
                 <p className="mt-1 text-slate-700">Status: {getMatchStatusLabel(match)}</p>
                 {isHandicappedSnookerMatch ? (
                   <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
@@ -2369,9 +2421,11 @@ export default function MatchPage() {
                   </section>
 
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={addFrame} className={buttonSecondaryClass}>
-                      Add {competition.sport_type === "snooker" ? "frame" : "rack"}
-                    </button>
+                    {!isFixedRackLeague ? (
+                      <button type="button" onClick={addFrame} className={buttonSecondaryClass}>
+                        Add {competition.sport_type === "snooker" ? "frame" : "rack"}
+                      </button>
+                    ) : null}
                     {admin.isAdmin ? (
                       <>
                         <button type="button" onClick={() => saveProgress(false)} disabled={saving} className={buttonSecondaryClass}>
@@ -2387,9 +2441,11 @@ export default function MatchPage() {
                           type="button"
                           onClick={() =>
                             setConfirmModal({
-                              title: "Award Walkover",
-                              description: `Award walkover to ${teams.team1Label}?`,
-                              confirmLabel: "Award",
+                              title: isFixedRackLeague ? "Award 5-0 Forfeit" : "Award Walkover",
+                              description: isFixedRackLeague
+                                ? `Award all ${match.best_of} racks to ${teams.team1Label} for a no-show or late-arrival forfeit?`
+                                : `Award walkover to ${teams.team1Label}?`,
+                              confirmLabel: isFixedRackLeague ? "Award 5-0" : "Award",
                               onConfirm: async () => {
                                 await awardWalkover(1);
                                 setConfirmModal(null);
@@ -2399,15 +2455,17 @@ export default function MatchPage() {
                           disabled={saving}
                           className={buttonSecondaryClass}
                         >
-                          Award walkover ({teams.team1Label})
+                          {isFixedRackLeague ? "Award 5-0 forfeit" : "Award walkover"} ({teams.team1Label})
                         </button>
                         <button
                           type="button"
                           onClick={() =>
                             setConfirmModal({
-                              title: "Award Walkover",
-                              description: `Award walkover to ${teams.team2Label}?`,
-                              confirmLabel: "Award",
+                              title: isFixedRackLeague ? "Award 5-0 Forfeit" : "Award Walkover",
+                              description: isFixedRackLeague
+                                ? `Award all ${match.best_of} racks to ${teams.team2Label} for a no-show or late-arrival forfeit?`
+                                : `Award walkover to ${teams.team2Label}?`,
+                              confirmLabel: isFixedRackLeague ? "Award 5-0" : "Award",
                               onConfirm: async () => {
                                 await awardWalkover(2);
                                 setConfirmModal(null);
@@ -2417,7 +2475,7 @@ export default function MatchPage() {
                           disabled={saving}
                           className={buttonSecondaryClass}
                         >
-                          Award walkover ({teams.team2Label})
+                          {isFixedRackLeague ? "Award 5-0 forfeit" : "Award walkover"} ({teams.team2Label})
                         </button>
                       </>
                     ) : (
@@ -2511,7 +2569,9 @@ export default function MatchPage() {
 
                   {!canSaveResult ? (
                     <p className="text-sm text-slate-600">
-                      Best of {match.best_of}: first to {firstToWin(match.best_of)} wins.
+                      {isFixedRackLeague
+                        ? `Play all ${match.best_of} racks. Each rack won is one league point.`
+                        : `Best of ${match.best_of}: first to ${firstToWin(match.best_of)} wins.`}
                     </p>
                   ) : null}
                 </>

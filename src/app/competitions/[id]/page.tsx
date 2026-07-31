@@ -332,7 +332,7 @@ function getLeagueFixtureWindow(scheduledFor: string | null | undefined) {
   if (!scheduledFor) return null;
   const [year, month, day] = scheduledFor.split("-").map((value) => Number.parseInt(value, 10));
   if (!year || !month || !day) return null;
-  const opensAt = new Date(year, month - 1, day, 0, 1, 0, 0);
+  const opensAt = new Date(year, month - 1, day, 13, 0, 0, 0);
   const dueAt = new Date(year, month - 1, day + 6, 21, 0, 0, 0);
   return { opensAt, dueAt };
 }
@@ -1030,6 +1030,7 @@ export default function CompetitionPage() {
     }
     return leagueFixturesByWeek;
   }, [leagueFixturesByWeek, leagueFixtureFilterMode, leagueFixtureFilterWeek, leagueFixtureFilterPlayer, fullMap, shortMap]);
+  const hasTopEightFinals = competition?.name.trim().toLowerCase() === "greenhithe legion masters 2026";
   const leagueTableRows = useMemo(() => {
     if (!competition || competition.competition_format !== "league") return [] as Array<{
       playerId: string;
@@ -1232,7 +1233,11 @@ export default function CompetitionPage() {
                 <p className="mt-1 text-slate-700">Venue: {competition.venue || "-"}</p>
                 <p className="mt-1 text-slate-700">Format: {competition.competition_format}</p>
                 <p className="mt-1 text-slate-700">Scoring: {competition.handicap_enabled ? "Handicapped" : "Scratch"}</p>
-                <p className="mt-1 text-slate-700">Best of {competition.best_of}</p>
+                <p className="mt-1 text-slate-700">
+                  {competition.competition_format === "league" && competition.sport_type !== "snooker"
+                    ? `All ${competition.best_of} racks played · one league point per rack won`
+                    : `Best of ${competition.best_of}`}
+                </p>
                 {competition.competition_format === "league" ? (
                   <>
                     <p className="mt-2 text-sm text-slate-600">
@@ -1449,7 +1454,7 @@ export default function CompetitionPage() {
                     Approved and pending player entries are shown above. Knockout-only bracket and fixture views are not used for league competitions.
                   </p>
                   <p className="mt-1 text-sm text-slate-600">
-                    Weekly fixtures should be played by 21:00 on Sunday. If a fixture is not played in time it should normally be voided, with admin awarding the frame or rack only for a genuine no-show.
+                    Fixtures run from Monday 13:00 to Sunday 21:00. Play every rack: each rack won scores one league point. A genuine no-show or late-arrival forfeit may be awarded 5-0; if neither player made sufficient effort, void the fixture for no points.
                   </p>
                   {admin.isAdmin ? (
                     <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]">
@@ -1507,7 +1512,10 @@ export default function CompetitionPage() {
                     <div className="mt-4 space-y-4">
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p className="text-sm font-semibold text-slate-900">League table</p>
-                        <p className="mt-1 text-xs text-slate-500">Points are based on frames or racks won. Completed void fixtures score no points.</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Every rack won is one point. Completed void fixtures score no points.
+                          {hasTopEightFinals ? " The top 8 positions qualify for the end-of-season knockout." : ""}
+                        </p>
                         <div className="mt-3 overflow-x-auto">
                           <table className="min-w-full text-sm">
                             <thead className="text-slate-500">
@@ -1520,6 +1528,7 @@ export default function CompetitionPage() {
                                 <th className="px-2 py-2 text-center">Void</th>
                                 <th className="px-2 py-2 text-center">Bye</th>
                                 <th className="px-2 py-2 text-center">Pts</th>
+                                {hasTopEightFinals ? <th className="px-2 py-2 text-center">Finals</th> : null}
                               </tr>
                             </thead>
                             <tbody>
@@ -1533,6 +1542,11 @@ export default function CompetitionPage() {
                                   <td className="px-2 py-2 text-center tabular-nums">{row.voided}</td>
                                   <td className="px-2 py-2 text-center tabular-nums">{row.byes}</td>
                                   <td className="px-2 py-2 text-center font-semibold tabular-nums">{row.points}</td>
+                                  {hasTopEightFinals ? (
+                                    <td className="px-2 py-2 text-center">
+                                      {index < 8 ? <span className="rounded-full bg-lime-100 px-2 py-0.5 text-xs font-semibold text-lime-900">Top 8</span> : "—"}
+                                    </td>
+                                  ) : null}
                                 </tr>
                               ))}
                             </tbody>
