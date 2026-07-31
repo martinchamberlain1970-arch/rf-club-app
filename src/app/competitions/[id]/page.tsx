@@ -59,6 +59,16 @@ type Entry = {
   status: "pending" | "approved" | "rejected" | "withdrawn";
   created_at: string;
 };
+type GuestEntry = {
+  id: string;
+  competition_id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  note: string | null;
+  status: "pending" | "added" | "rejected";
+  created_at: string;
+};
 type ResultSubmission = {
   id: string;
   match_id: string;
@@ -348,6 +358,7 @@ export default function CompetitionPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [appUserLinks, setAppUserLinks] = useState<AppUserLink[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [guestEntries, setGuestEntries] = useState<GuestEntry[]>([]);
   const [frames, setFrames] = useState<Frame[]>([]);
   const [resultSubmissions, setResultSubmissions] = useState<ResultSubmission[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -367,6 +378,25 @@ export default function CompetitionPage() {
   const [entriesExpanded, setEntriesExpanded] = useState(false);
   const [superEntryPlayerId, setSuperEntryPlayerId] = useState("");
   const [addingSuperEntry, setAddingSuperEntry] = useState(false);
+
+  const shareGuestSignup = async () => {
+    if (!competition) return;
+    const url = `${window.location.origin}/join/${competition.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Enter ${competition.name}`,
+          text: `Sign up for ${competition.name}. No app account is needed.`,
+          url,
+        });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+    await navigator.clipboard.writeText(url);
+    setMessage("Public sign-up link copied. You can now paste it into WhatsApp.");
+  };
 
   const openBracketDisplay = () => {
     if (!id) return;
@@ -406,6 +436,20 @@ export default function CompetitionPage() {
       return;
     }
     setEntries((prev) => prev.map((e) => (e.id === entryId ? { ...e, status } : e)));
+  };
+
+  const reviewGuestEntry = async (entryId: string, status: "added" | "rejected") => {
+    const client = supabase;
+    if (!client || !admin.isAdmin) return;
+    const res = await client
+      .from("public_competition_signups")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", entryId);
+    if (res.error) {
+      setMessage(res.error.message);
+      return;
+    }
+    setGuestEntries((prev) => prev.map((entry) => (entry.id === entryId ? { ...entry, status } : entry)));
   };
 
   useEffect(() => {
@@ -492,6 +536,14 @@ export default function CompetitionPage() {
         .neq("status", "withdrawn")
         .order("created_at", { ascending: false });
       if (entryRes.data) setEntries((entryRes.data as unknown) as Entry[]);
+      if (admin.isAdmin) {
+        const guestEntryRes = await client
+          .from("public_competition_signups")
+          .select("id,competition_id,full_name,email,phone,note,status,created_at")
+          .eq("competition_id", id)
+          .order("created_at", { ascending: false });
+        if (guestEntryRes.data) setGuestEntries((guestEntryRes.data as unknown) as GuestEntry[]);
+      }
       const submissionRes = loadedMatches.length
         ? await client
             .from("result_submissions")
@@ -509,7 +561,7 @@ export default function CompetitionPage() {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [admin.isAdmin, id]);
 
   const shortMap = useMemo(() => new Map(players.map((p) => [p.id, p.display_name])), [players]);
   const fullMap = useMemo(
@@ -522,6 +574,7 @@ export default function CompetitionPage() {
   );
   const pendingEntries = useMemo(() => entries.filter((e) => e.status === "pending"), [entries]);
   const approvedEntries = useMemo(() => entries.filter((e) => e.status === "approved"), [entries]);
+  const pendingGuestEntries = useMemo(() => guestEntries.filter((entry) => entry.status === "pending"), [guestEntries]);
   const approvedLeaguePlayerIds = useMemo(() => approvedEntries.map((entry) => entry.player_id), [approvedEntries]);
   const activeEntryByPlayerId = useMemo(() => {
     const map = new Map<string, Entry>();
@@ -1200,16 +1253,28 @@ export default function CompetitionPage() {
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-lg font-semibold text-slate-900">Competition Sign-ups</p>
-                  <Link href="/signups" className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50">
-                    Enter or review sign-ups
-                  </Link>
+                  <div className="flex flex-wrap gap-2">
+                    {admin.isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() => void shareGuestSignup()}
+                        className="rounded-full bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800"
+                      >
+                        Share public sign-up link
+                      </button>
+                    ) : null}
+                    <Link href="/signups" className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50">
+                      Enter or review sign-ups
+                    </Link>
+                  </div>
                 </div>
                 <p className="mt-1 text-sm text-slate-600">
-                  Status: {competition.signup_open ? "Open" : "Closed"} · Pending {pendingEntries.length} · Approved {approvedEntries.length}
+                  Status: {competition.signup_open ? "Open" : "Closed"} · Registered pending {pendingEntries.length} · Approved {approvedEntries.length}
+                  {admin.isAdmin ? ` · Guest entries ${pendingGuestEntries.length}` : ""}
                   {competition.max_entries ? ` / Max ${competition.max_entries}` : ""}
                 </p>
                 <p className="mt-1 text-sm text-slate-600">
-                  Players enter through the Competition Sign-ups page. Super User entries are approved automatically.
+                  Registered players use Competition Sign-ups. The public link lets guests enter without creating an app account.
                 </p>
                 {competition.signup_deadline ? (
                   <p className="mt-1 text-sm text-slate-600">Deadline: {new Date(competition.signup_deadline).toLocaleString()}</p>
@@ -1328,8 +1393,54 @@ export default function CompetitionPage() {
                     ) : null}
                   </div>
                 ) : (
-                  <p className="mt-2 text-sm text-slate-600">No entries yet.</p>
+                  <p className="mt-2 text-sm text-slate-600">No registered-player entries yet.</p>
                 )}
+                {admin.isAdmin && guestEntries.length > 0 ? (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <p className="font-semibold text-emerald-950">Public guest entries ({guestEntries.length})</p>
+                    <p className="mt-1 text-sm text-emerald-900">
+                      Create or find each player yourself, add them above, then mark the guest entry as added.
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {guestEntries.map((entry) => (
+                        <div key={entry.id} className="rounded-lg border border-emerald-200 bg-white px-3 py-3">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-slate-900">{entry.full_name}</p>
+                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-slate-600">
+                                {entry.phone ? <a href={`tel:${entry.phone}`} className="underline">{entry.phone}</a> : null}
+                                {entry.email ? <a href={`mailto:${entry.email}`} className="underline">{entry.email}</a> : null}
+                              </div>
+                              {entry.note ? <p className="mt-2 text-sm text-slate-600">Note: {entry.note}</p> : null}
+                              <p className="mt-1 text-xs text-slate-500">{new Date(entry.created_at).toLocaleString("en-GB")}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">{entry.status}</span>
+                              {entry.status === "pending" ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void reviewGuestEntry(entry.id, "added")}
+                                    className="rounded-lg bg-emerald-700 px-2 py-1 text-xs text-white"
+                                  >
+                                    Mark added
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void reviewGuestEntry(entry.id, "rejected")}
+                                    className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </section>
               {competition.competition_format === "league" ? (
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
