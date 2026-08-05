@@ -4,18 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const superAdminEmail =
-  process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase() ??
-  process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase() ??
-  "";
 const sharedRatingApiKey = process.env.SHARED_RATING_API_KEY?.trim() ?? "";
 const leagueSharedRatingExportUrl =
   process.env.LEAGUE_SHARED_RATING_EXPORT_URL?.trim() ?? "https://rf-league-app.vercel.app/api/rating/export-snooker-ratings";
-
-function isAdminRole(role?: string | null) {
-  const normalized = role?.trim().toLowerCase() ?? "";
-  return normalized === "admin" || normalized === "owner";
-}
 
 type LeagueRatingRow = {
   source_player_id: string;
@@ -43,15 +34,7 @@ export async function POST(req: NextRequest) {
   const user = authRes.data.user;
   if (authRes.error || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
-  const requesterEmail = user.email?.trim().toLowerCase() ?? "";
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
-  const appUserRes = await adminClient.from("app_users").select("role").eq("id", user.id).maybeSingle();
-  const appRole = (appUserRes.data?.role as string | null) ?? null;
-  const isSuper = Boolean(superAdminEmail && requesterEmail === superAdminEmail);
-  if (!isSuper && !isAdminRole(appRole)) {
-    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
-  }
-
   const playersRes = await adminClient
     .from("players")
     .select("id,rating_snooker,peak_rating_snooker,rated_matches_snooker,snooker_handicap,snooker_handicap_base")
@@ -59,7 +42,16 @@ export async function POST(req: NextRequest) {
   if (playersRes.error) {
     return NextResponse.json({ error: playersRes.error.message }, { status: 400 });
   }
-  const sourcePlayerIds = ((playersRes.data ?? []) as Array<{ id: string }>).map((player) => player.id);
+  const clubPlayers = (playersRes.data ?? []) as Array<{
+    id: string;
+    rating_snooker: number | null;
+    peak_rating_snooker: number | null;
+    rated_matches_snooker: number | null;
+    snooker_handicap: number | null;
+    snooker_handicap_base: number | null;
+  }>;
+  const sourcePlayerIds = clubPlayers.map((player) => player.id);
+  const clubPlayerById = new Map(clubPlayers.map((player) => [player.id, player]));
 
   const leagueRes = await fetch(leagueSharedRatingExportUrl, {
     method: "POST",
@@ -83,6 +75,17 @@ export async function POST(req: NextRequest) {
   const rows = leaguePayload.players ?? [];
   let updated = 0;
   for (const row of rows) {
+    const current = clubPlayerById.get(row.source_player_id);
+    if (
+      current &&
+      current.rating_snooker === row.rating_snooker &&
+      current.peak_rating_snooker === row.peak_rating_snooker &&
+      current.rated_matches_snooker === row.rated_matches_snooker &&
+      current.snooker_handicap === row.snooker_handicap &&
+      current.snooker_handicap_base === row.snooker_handicap_base
+    ) {
+      continue;
+    }
     const upd = await adminClient
       .from("players")
       .update({

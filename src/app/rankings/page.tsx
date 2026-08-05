@@ -74,6 +74,7 @@ export default function RankingsPage() {
   const [discipline, setDiscipline] = useState<DisciplineFilter>("snooker");
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [message, setMessage] = useState<string | null>(null);
+  const [activityReferenceTime] = useState(() => Date.now());
 
   useEffect(() => {
     const client = supabase;
@@ -81,6 +82,19 @@ export default function RankingsPage() {
     let active = true;
 
     const run = async () => {
+      const sessionRes = await client.auth.getSession();
+      const token = sessionRes.data.session?.access_token;
+      let refreshWarning: string | null = null;
+      if (token) {
+        const refreshRes = await fetch("/api/rating/refresh-snooker-from-league", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!refreshRes.ok) {
+          const refreshBody = (await refreshRes.json().catch(() => ({}))) as { error?: string };
+          refreshWarning = refreshBody.error ?? "Official League snooker ratings could not be refreshed.";
+        }
+      }
       const [playerRes, locationRes, competitionRes, entryRes, matchRes] = await Promise.all([
         client
           .from("players")
@@ -111,6 +125,9 @@ export default function RankingsPage() {
       setCompetitions((competitionRes.data ?? []) as Competition[]);
       setCompetitionEntries((entryRes.data ?? []) as CompetitionEntry[]);
       setMatches((matchRes.data ?? []) as MatchRow[]);
+      if (refreshWarning) {
+        setMessage(`Rankings loaded, but the League rating refresh failed: ${refreshWarning}`);
+      }
     };
 
     run();
@@ -121,8 +138,7 @@ export default function RankingsPage() {
 
   const locationMap = useMemo(() => new Map(locations.map((location) => [location.id, location.name])), [locations]);
   const livePlayerIdsByDiscipline = useMemo(() => {
-    const now = Date.now();
-    const recentCutoff = now - LIVE_ACTIVITY_WINDOW_MS;
+    const recentCutoff = activityReferenceTime - LIVE_ACTIVITY_WINDOW_MS;
     const competitionById = new Map(competitions.map((competition) => [competition.id, competition]));
     const result = {
       snooker: new Set<string>(),
@@ -169,12 +185,15 @@ export default function RankingsPage() {
       }
     }
     return result;
-  }, [competitionEntries, competitions, matches, players]);
+  }, [activityReferenceTime, competitionEntries, competitions, matches, players]);
   const filteredPlayers = useMemo(() => {
     const liveIds = livePlayerIdsByDiscipline[discipline];
     const visible = (locationFilter === "all" ? players : players.filter((player) => player.location_id === locationFilter))
-      .filter((player) => liveIds.has(player.id))
-      .filter((player) => (discipline === "snooker" ? Number(player.rated_matches_snooker ?? 0) > 0 : Number(player.rated_matches_pool ?? 0) > 0));
+      .filter((player) =>
+        discipline === "snooker"
+          ? Number(player.rated_matches_snooker ?? 0) > 0
+          : liveIds.has(player.id) && Number(player.rated_matches_pool ?? 0) > 0
+      );
     return [...visible].sort((a, b) => {
       const aRating = discipline === "snooker" ? a.rating_snooker ?? 1000 : a.rating_pool ?? 1000;
       const bRating = discipline === "snooker" ? b.rating_snooker ?? 1000 : b.rating_pool ?? 1000;
@@ -219,7 +238,7 @@ export default function RankingsPage() {
                   {disciplineMeta.label}
                 </span>
                 <p className="max-w-2xl text-sm text-slate-700">
-                  Ratings use the current Elo-style values stored on each player profile. Singles results feed the rating model; doubles, BYE, walkover, and void outcomes are excluded. Snooker current and baseline handicap are shown for review context.
+                  Ratings use the current Elo-style values stored on each player profile. Official League snooker ratings refresh automatically when this page opens. Singles results feed the rating model; doubles, BYE, walkover, and void outcomes are excluded.
                 </p>
               </div>
               <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
@@ -285,7 +304,7 @@ export default function RankingsPage() {
               <p className="text-sm font-semibold text-slate-900">
                 {discipline === "snooker" ? "Snooker" : "Pool"} rankings
               </p>
-              <p className="text-sm text-slate-600">{filteredPlayers.length} live players</p>
+              <p className="text-sm text-slate-600">{filteredPlayers.length} ranked players</p>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
