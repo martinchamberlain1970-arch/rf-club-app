@@ -569,9 +569,22 @@ export default function PlayerProfilePage() {
       }
     }
     setSavingPlayer(true);
+    const currentFullName = player.full_name?.trim() || player.display_name.trim();
+    const nameHasChanged = currentFullName.toLowerCase() !== trimmedName.toLowerCase();
+    const preferredDisplayName = parts[0] ?? trimmedName;
+    const preferredDisplayNameIsUsed = players.some(
+      (candidate) =>
+        candidate.id !== player.id &&
+        candidate.display_name.trim().toLowerCase() === preferredDisplayName.toLowerCase()
+    );
+    const displayName = nameHasChanged
+      ? preferredDisplayNameIsUsed
+        ? trimmedName
+        : preferredDisplayName
+      : player.display_name;
     const payload: Record<string, unknown> = {
       full_name: trimmedName,
-      display_name: parts[0] ?? trimmedName,
+      display_name: displayName,
       age_band: editAgeBand,
       location_id: editLocationId || null,
       guardian_consent: isMinorBand ? editGuardianConsent : false,
@@ -587,7 +600,7 @@ export default function PlayerProfilePage() {
         setMessage(null);
         setInfoModal({
           title: "Name already in use",
-          description: "A player profile with this display name already exists. Please choose a different first name/nickname.",
+          description: "A player profile with this full name already exists. Check whether this is a duplicate profile before changing the name.",
         });
         return;
       }
