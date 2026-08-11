@@ -29,6 +29,7 @@ type Entry = {
   player_id: string;
   status: "pending" | "approved" | "rejected" | "withdrawn";
   payment_status: "not_required" | "pending" | "paid" | "failed";
+  payment_method: "stripe" | "cash" | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
   created_at: string;
@@ -45,6 +46,7 @@ type GuestEntry = {
   note: string | null;
   status: "pending" | "added" | "rejected";
   payment_status: "not_required" | "pending" | "paid" | "failed";
+  payment_method: "stripe" | "cash" | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
   created_at: string;
@@ -76,6 +78,7 @@ export default function CompetitionSignupPage() {
   const [expandedCompetitionIds, setExpandedCompetitionIds] = useState<string[]>([]);
   const [guestEntries, setGuestEntries] = useState<GuestEntry[]>([]);
   const [guestActionId, setGuestActionId] = useState<string | null>(null);
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   const playerNameById = useMemo(
     () => new Map(players.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name])),
@@ -123,7 +126,7 @@ export default function CompetitionSignupPage() {
         .order("created_at", { ascending: false }),
       client
         .from("competition_entries")
-        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_amount_pence,paid_at,created_at")
+        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,created_at")
         .order("created_at", { ascending: false }),
       client.from("app_users").select("id,linked_player_id").eq("id", uid).maybeSingle(),
       client.from("players").select("id,display_name,full_name").eq("is_archived", false),
@@ -162,6 +165,11 @@ export default function CompetitionSignupPage() {
   }, []);
 
   useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTimeMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const payment = new URLSearchParams(window.location.search).get("payment");
     if (payment === "success") setMessage("Payment received. Stripe is confirming your competition entry.");
     if (payment === "cancelled") setMessage("Payment was cancelled. Your entry is saved and you can try again.");
@@ -178,7 +186,7 @@ export default function CompetitionSignupPage() {
       setMessage("Sign-ups are closed for this competition.");
       return;
     }
-    if (competition.signup_deadline && new Date(competition.signup_deadline).getTime() < Date.now()) {
+    if (competition.signup_deadline && new Date(competition.signup_deadline).getTime() < currentTimeMs) {
       setMessage("The sign-up deadline has passed for this competition.");
       return;
     }
@@ -347,7 +355,7 @@ export default function CompetitionSignupPage() {
                         <p className="text-sm text-slate-600">{entry.competitions?.name ?? "Competition"}</p>
                         <p className={`mt-1 text-sm font-medium ${entry.payment_status === "paid" ? "text-emerald-700" : "text-amber-700"}`}>
                           {entry.payment_status === "paid"
-                            ? `Paid${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
+                            ? `Paid${entry.payment_method === "cash" ? " cash" : entry.payment_method === "stripe" ? " by Stripe" : ""}${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
                             : entry.payment_status === "failed" ? "Payment failed" : "Payment pending"}
                         </p>
                         {entry.note ? <p className="mt-1 text-sm text-slate-600">Note: {entry.note}</p> : null}
@@ -412,7 +420,7 @@ export default function CompetitionSignupPage() {
               const pendingCount = visibleEntries.filter((entry) => entry.status === "pending").length;
               const isFull = Boolean(competition.max_entries && currentEntries >= competition.max_entries);
               const deadlinePassed = Boolean(
-                competition.signup_deadline && new Date(competition.signup_deadline).getTime() < Date.now()
+                competition.signup_deadline && new Date(competition.signup_deadline).getTime() < currentTimeMs
               );
               const fieldExpanded = expandedCompetitionIds.includes(competition.id);
 
@@ -457,7 +465,7 @@ export default function CompetitionSignupPage() {
                       {myEntry && competition.entry_fee_pence ? (
                         <span className={`rounded-full border px-2 py-0.5 ${myEntry.payment_status === "paid" ? "border-emerald-300 bg-emerald-100 text-emerald-900" : "border-amber-300 bg-amber-100 text-amber-900"}`}>
                           {myEntry.payment_status === "paid"
-                            ? `Paid £${((myEntry.payment_amount_pence ?? competition.entry_fee_pence) / 100).toFixed(2)}${myEntry.paid_at ? ` · ${paidDateTime(myEntry.paid_at)}` : ""}`
+                            ? `Paid${myEntry.payment_method === "cash" ? " cash" : myEntry.payment_method === "stripe" ? " by Stripe" : ""} £${((myEntry.payment_amount_pence ?? competition.entry_fee_pence) / 100).toFixed(2)}${myEntry.paid_at ? ` · ${paidDateTime(myEntry.paid_at)}` : ""}`
                             : myEntry.payment_status === "failed" ? "Payment failed" : "Payment pending"}
                         </span>
                       ) : null}

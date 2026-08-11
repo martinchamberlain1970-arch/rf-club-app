@@ -27,6 +27,7 @@ export async function POST(request: Request) {
           .from("public_competition_signups")
           .update({
             payment_status: "paid",
+            payment_method: "stripe",
             payment_amount_pence: session.amount_total ?? null,
             stripe_checkout_session_id: session.id,
             stripe_payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : null,
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
       if (competitionEntryId && session.payment_status === "paid") {
         const update: Record<string, string | number | null> = {
           payment_status: "paid",
+          payment_method: "stripe",
           payment_amount_pence: session.amount_total ?? null,
           stripe_checkout_session_id: session.id,
           stripe_payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : null,

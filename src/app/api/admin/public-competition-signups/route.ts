@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
   const result = await client
     .from("public_competition_signups")
-    .select("id,competition_id,full_name,email,phone,note,status,payment_status,payment_amount_pence,paid_at,created_at,competitions(name)")
+    .select("id,competition_id,full_name,email,phone,note,status,payment_status,payment_method,payment_amount_pence,paid_at,created_at,competitions(name)")
     .order("created_at", { ascending: false });
   if (result.error) return NextResponse.json({ error: result.error.message }, { status: 400 });
   const playersResult = await client.from("players").select("id,display_name,full_name,claimed_by").eq("is_archived", false);
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
 
   const signupResult = await client
     .from("public_competition_signups")
-    .select("id,competition_id,full_name,email,status,payment_status,payment_amount_pence,paid_at,competitions(name,location_id)")
+    .select("id,competition_id,full_name,email,status,payment_status,payment_method,payment_amount_pence,paid_at,competitions(name,location_id)")
     .eq("id", signupId)
     .maybeSingle();
   const signup = signupResult.data;
@@ -108,8 +108,10 @@ export async function POST(request: NextRequest) {
   const entryPayload = {
     status: "approved",
     payment_status: signup.payment_status,
+    payment_method: signup.payment_method,
     payment_amount_pence: signup.payment_amount_pence,
     paid_at: signup.paid_at,
+    public_signup_id: signup.id,
     reviewed_at: new Date().toISOString(),
   };
   const entryResult = existingEntry.data

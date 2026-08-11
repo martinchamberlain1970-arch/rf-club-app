@@ -35,6 +35,7 @@ type Competition = {
   league_semi_final_best_of?: number | null;
   league_final_best_of?: number | null;
   handicap_enabled?: boolean;
+  entry_fee_pence?: number | null;
 };
 type Match = {
   id: string;
@@ -62,8 +63,10 @@ type Entry = {
   player_id: string;
   status: "pending" | "approved" | "rejected" | "withdrawn";
   payment_status: "not_required" | "pending" | "paid" | "failed";
+  payment_method: "stripe" | "cash" | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
+  public_signup_id: string | null;
   created_at: string;
 };
 type GuestEntry = {
@@ -75,6 +78,7 @@ type GuestEntry = {
   note: string | null;
   status: "pending" | "added" | "rejected";
   payment_status: "not_required" | "pending" | "paid" | "failed";
+  payment_method: "stripe" | "cash" | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
   created_at: string;
@@ -97,6 +101,8 @@ const paidDateTime = (value: string) => new Date(value).toLocaleString("en-GB", 
   timeStyle: "short",
   timeZone: "Europe/London",
 });
+const paidMethodLabel = (method: Entry["payment_method"] | GuestEntry["payment_method"]) =>
+  method === "cash" ? " cash" : method === "stripe" ? " by Stripe" : "";
 type LeaguePairing = {
   player1: string;
   player2: string | null;
@@ -401,6 +407,8 @@ export default function CompetitionPage() {
   const [entriesExpanded, setEntriesExpanded] = useState(false);
   const [superEntryPlayerId, setSuperEntryPlayerId] = useState("");
   const [addingSuperEntry, setAddingSuperEntry] = useState(false);
+  const [cashPaymentTarget, setCashPaymentTarget] = useState<{ entry: Entry; reset: boolean } | null>(null);
+  const [cashPaymentEntryId, setCashPaymentEntryId] = useState<string | null>(null);
 
   const shareGuestSignup = async () => {
     if (!competition) return;
@@ -461,6 +469,35 @@ export default function CompetitionPage() {
     setEntries((prev) => prev.map((e) => (e.id === entryId ? { ...e, status } : e)));
   };
 
+  const updateCashPayment = async (entry: Entry, reset: boolean) => {
+    const client = supabase;
+    if (!client || !admin.isAdmin) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setMessage("Please sign in again.");
+      return;
+    }
+    setCashPaymentEntryId(entry.id);
+    const response = await fetch("/api/admin/competition-entry-payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ entryId: entry.id, action: reset ? "reset_cash_payment" : "mark_cash_paid" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setCashPaymentEntryId(null);
+    if (!response.ok) {
+      setMessage(data.error ?? "The payment could not be updated.");
+      return;
+    }
+    const payment = data.payment as Pick<Entry, "payment_status" | "payment_method" | "payment_amount_pence" | "paid_at">;
+    setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, ...payment } : item));
+    if (entry.public_signup_id) {
+      setGuestEntries((current) => current.map((item) => item.id === entry.public_signup_id ? { ...item, ...payment } : item));
+    }
+    setMessage(reset ? "Cash payment reset to pending." : "Cash payment recorded with the current date and time.");
+  };
+
   const reviewGuestEntry = async (entryId: string, status: "added" | "rejected") => {
     const client = supabase;
     if (!client || !admin.isAdmin) return;
@@ -515,7 +552,7 @@ export default function CompetitionPage() {
       const [cRes, mRes, pRes, fRes, appUserLinkRes] = await Promise.all([
         client
           .from("competitions")
-          .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,league_meetings,league_start_date,league_schedule_mode,league_finals_size,league_semi_final_best_of,league_final_best_of,handicap_enabled")
+          .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,entry_fee_pence,league_meetings,league_start_date,league_schedule_mode,league_finals_size,league_semi_final_best_of,league_final_best_of,handicap_enabled")
           .eq("id", id)
           .single(),
         client
@@ -579,7 +616,7 @@ export default function CompetitionPage() {
       setFrames(((fRes.data ?? []) as unknown) as Frame[]);
       const entryRes = await client
         .from("competition_entries")
-        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_amount_pence,paid_at,created_at")
+        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,public_signup_id,created_at")
         .eq("competition_id", id)
         .neq("status", "withdrawn")
         .order("created_at", { ascending: false });
@@ -693,7 +730,7 @@ export default function CompetitionPage() {
 
     const refreshedEntries = await client
       .from("competition_entries")
-      .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_amount_pence,paid_at,created_at")
+      .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,public_signup_id,created_at")
       .eq("competition_id", competition.id)
       .neq("status", "withdrawn")
       .order("created_at", { ascending: false });
@@ -1560,7 +1597,7 @@ export default function CompetitionPage() {
                               </p>
                               <p className={`mt-1 text-xs font-medium ${entry.payment_status === "paid" ? "text-emerald-700" : entry.payment_status === "not_required" ? "text-slate-500" : "text-amber-700"}`}>
                                 {entry.payment_status === "paid"
-                                  ? `Paid${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
+                                  ? `Paid${paidMethodLabel(entry.payment_method)}${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
                                   : entry.payment_status === "not_required" ? "No payment required" : entry.payment_status === "failed" ? "Payment failed" : "Payment pending"}
                               </p>
                             </div>
@@ -1583,6 +1620,26 @@ export default function CompetitionPage() {
                                     Reject
                                   </button>
                                 </>
+                              ) : null}
+                              {admin.isAdmin && competition.entry_fee_pence && entry.payment_status !== "paid" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setCashPaymentTarget({ entry, reset: false })}
+                                  disabled={cashPaymentEntryId === entry.id}
+                                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 disabled:opacity-50"
+                                >
+                                  {cashPaymentEntryId === entry.id ? "Saving…" : "Mark cash paid"}
+                                </button>
+                              ) : null}
+                              {admin.isAdmin && entry.payment_status === "paid" && entry.payment_method === "cash" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setCashPaymentTarget({ entry, reset: true })}
+                                  disabled={cashPaymentEntryId === entry.id}
+                                  className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 disabled:opacity-50"
+                                >
+                                  Undo cash payment
+                                </button>
                               ) : null}
                             </div>
                           </div>
@@ -1613,7 +1670,7 @@ export default function CompetitionPage() {
                               <p className="mt-2 text-sm">
                                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${entry.payment_status === "paid" ? "bg-emerald-100 text-emerald-900" : entry.payment_status === "failed" ? "bg-red-100 text-red-900" : "bg-amber-100 text-amber-900"}`}>
                                   {entry.payment_status === "paid"
-                                    ? `Paid${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
+                                    ? `Paid${paidMethodLabel(entry.payment_method)}${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
                                     : entry.payment_status === "pending"
                                       ? "Payment pending"
                                       : entry.payment_status === "failed"
@@ -2028,6 +2085,21 @@ export default function CompetitionPage() {
             </>
           ) : null}
         </RequireAuth>
+        <ConfirmModal
+          open={cashPaymentTarget !== null}
+          title={cashPaymentTarget?.reset ? "Undo cash payment?" : "Confirm cash received"}
+          description={cashPaymentTarget?.reset
+            ? "This will return the entrant to payment pending."
+            : `Only confirm after you have received the £${((cashPaymentTarget?.entry.payment_amount_pence ?? competition?.entry_fee_pence ?? 0) / 100).toFixed(2)} cash payment.`}
+          confirmLabel={cashPaymentTarget?.reset ? "Undo Payment" : "Mark Cash Paid"}
+          cancelLabel="Cancel"
+          onCancel={() => setCashPaymentTarget(null)}
+          onConfirm={async () => {
+            const target = cashPaymentTarget;
+            setCashPaymentTarget(null);
+            if (target) await updateCashPayment(target.entry, target.reset);
+          }}
+        />
         <ConfirmModal
           open={confirmLeagueGenerationOpen}
           title="Generate weekly league fixtures?"
