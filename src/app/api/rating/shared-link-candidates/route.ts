@@ -37,8 +37,9 @@ export async function GET(req: NextRequest) {
   const [playersRes, appUsersRes, locationsRes] = await Promise.all([
     adminClient
       .from("players")
-      .select("id,display_name,full_name,location_id,is_archived,claimed_by")
+      .select("id,display_name,full_name,location_id,is_archived,claimed_by,exclude_from_league_links")
       .eq("is_archived", false)
+      .eq("exclude_from_league_links", false)
       .order("full_name"),
     adminClient.from("app_users").select("id,email,linked_player_id"),
     adminClient.from("locations").select("id,name"),

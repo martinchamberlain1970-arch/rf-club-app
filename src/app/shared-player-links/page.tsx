@@ -147,7 +147,7 @@ export default function SharedPlayerLinksPage() {
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-sm text-slate-700">
               Suggestions are generated live each time this page opens. Already linked players are excluded. Matches are ranked by exact name, linked email,
-              club/location, and display name, with a count of how many key fields matched exactly.
+              club/location, and display name, with a count of how many key fields matched exactly. Club-only players are excluded from league suggestions.
             </p>
           </section>
 
