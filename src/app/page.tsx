@@ -23,6 +23,7 @@ const coreActionLinks = [
 ] as const;
 
 const supportLinks = [
+  { href: "/install", title: "Install App" },
   { href: "/rules", title: "Rules" },
   { href: "/help", title: "Help" },
   { href: "/help#report-an-issue", title: "Report An Issue" },

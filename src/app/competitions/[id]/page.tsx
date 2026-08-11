@@ -30,6 +30,10 @@ type Competition = {
   max_entries?: number | null;
   league_meetings?: number | null;
   league_start_date?: string | null;
+  league_schedule_mode?: "weekly" | "one_day";
+  league_finals_size?: number | null;
+  league_semi_final_best_of?: number | null;
+  league_final_best_of?: number | null;
   handicap_enabled?: boolean;
 };
 type Match = {
@@ -124,6 +128,7 @@ type FixtureRow = {
 };
 const BRACKET_CARD_HEIGHT = 112;
 const BRACKET_STEP = 136;
+const BEST_OF_OPTIONS = [1, 3, 5, 7, 9, 11, 13, 15];
 
 function getRoundLabel(roundNo: number, totalRounds: number): string {
   if (totalRounds <= 1) return "Final";
@@ -341,17 +346,19 @@ function generateLeagueRounds(playerIds: string[], meetings: number) {
   return rounds;
 }
 
-function getLeagueFixtureWindow(scheduledFor: string | null | undefined) {
+function getLeagueFixtureWindow(scheduledFor: string | null | undefined, scheduleMode: "weekly" | "one_day" = "weekly") {
   if (!scheduledFor) return null;
   const [year, month, day] = scheduledFor.split("-").map((value) => Number.parseInt(value, 10));
   if (!year || !month || !day) return null;
-  const opensAt = new Date(year, month - 1, day, 13, 0, 0, 0);
-  const dueAt = new Date(year, month - 1, day + 6, 21, 0, 0, 0);
+  const opensAt = new Date(year, month - 1, day, scheduleMode === "one_day" ? 0 : 13, 0, 0, 0);
+  const dueAt = scheduleMode === "one_day"
+    ? new Date(year, month - 1, day, 23, 59, 59, 999)
+    : new Date(year, month - 1, day + 6, 21, 0, 0, 0);
   return { opensAt, dueAt };
 }
 
-function formatLeagueFixtureDeadline(scheduledFor: string | null | undefined) {
-  const window = getLeagueFixtureWindow(scheduledFor);
+function formatLeagueFixtureDeadline(scheduledFor: string | null | undefined, scheduleMode: "weekly" | "one_day" = "weekly") {
+  const window = getLeagueFixtureWindow(scheduledFor, scheduleMode);
   if (!window) return null;
   return window.dueAt.toLocaleString("en-GB", {
     weekday: "long",
@@ -381,6 +388,8 @@ export default function CompetitionPage() {
   const [signupMaxEntriesInput, setSignupMaxEntriesInput] = useState("");
   const [leagueMeetingsInput, setLeagueMeetingsInput] = useState("2");
   const [leagueStartDateInput, setLeagueStartDateInput] = useState("");
+  const [leagueSemiBestOfInput, setLeagueSemiBestOfInput] = useState("3");
+  const [leagueFinalBestOfInput, setLeagueFinalBestOfInput] = useState("5");
   const [view, setView] = useState<View>("fixtures");
   const [leagueFixtureFilterMode, setLeagueFixtureFilterMode] = useState<LeagueFixtureFilterMode>("all");
   const [leagueFixtureFilterWeek, setLeagueFixtureFilterWeek] = useState<string>("all");
@@ -506,7 +515,7 @@ export default function CompetitionPage() {
       const [cRes, mRes, pRes, fRes, appUserLinkRes] = await Promise.all([
         client
           .from("competitions")
-          .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,league_meetings,league_start_date,handicap_enabled")
+          .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,league_meetings,league_start_date,league_schedule_mode,league_finals_size,league_semi_final_best_of,league_final_best_of,handicap_enabled")
           .eq("id", id)
           .single(),
         client
@@ -598,6 +607,8 @@ export default function CompetitionPage() {
       setSignupMaxEntriesInput(comp.max_entries ? String(comp.max_entries) : "");
       setLeagueMeetingsInput(String(comp.league_meetings ?? 2));
       setLeagueStartDateInput(comp.league_start_date ? String(comp.league_start_date) : "");
+      setLeagueSemiBestOfInput(String(comp.league_semi_final_best_of ?? 3));
+      setLeagueFinalBestOfInput(String(comp.league_final_best_of ?? 5));
     };
     load();
     return () => {
@@ -702,6 +713,10 @@ export default function CompetitionPage() {
     () => projectedLeagueRounds.reduce((total, round) => total + round.length, 0),
     [projectedLeagueRounds]
   );
+  const isOneDayLeague = competition?.competition_format === "league" && competition.league_schedule_mode === "one_day";
+  const roundRobinRoundCount = projectedLeagueRounds.length;
+  const leagueSemiFinalRound = roundRobinRoundCount + 1;
+  const leagueFinalRound = roundRobinRoundCount + 2;
 
   const generateLeagueFixtures = async () => {
     const client = supabase;
@@ -720,8 +735,13 @@ export default function CompetitionPage() {
       setMessage("Meet each opponent must be between 1 and 4.");
       return;
     }
+    const isOneDay = competition.league_schedule_mode === "one_day";
     if (!leagueStartDateInput) {
-      setMessage("Choose a start date before generating weekly fixtures.");
+      setMessage(isOneDay ? "Choose the competition date before generating fixtures." : "Choose a start date before generating weekly fixtures.");
+      return;
+    }
+    if (isOneDay && Number(competition.league_finals_size ?? 0) === 4 && approvedLeaguePlayerIds.length <= 4) {
+      setMessage("Top-four finals require more than 4 approved players.");
       return;
     }
 
@@ -737,7 +757,7 @@ export default function CompetitionPage() {
     const fixtureRows = rounds.flatMap((round, roundIndex) =>
       round.map((pairing, matchIndex) => {
         const scheduled = new Date(start);
-        scheduled.setDate(start.getDate() + (roundIndex * 7));
+        if (!isOneDay) scheduled.setDate(start.getDate() + (roundIndex * 7));
         let openingBreaker: string | null = null;
         if (!pairing.isBye && pairing.player2 && pairing.pairKey) {
           let baseBreaker = openingBreakBaseByPair.get(pairing.pairKey) ?? null;
@@ -790,7 +810,11 @@ export default function CompetitionPage() {
       setMessage(insertRes.error.message);
       return;
     }
-    setMessage(`League fixtures generated for ${rounds.length} week${rounds.length === 1 ? "" : "s"}.`);
+    setMessage(
+      isOneDay
+        ? `One-day round-robin fixtures generated across ${rounds.length} round${rounds.length === 1 ? "" : "s"}.`
+        : `League fixtures generated for ${rounds.length} week${rounds.length === 1 ? "" : "s"}.`
+    );
     setCompetition({ ...competition, league_meetings: meetings, league_start_date: leagueStartDateInput });
     const reload = await client
       .from("matches")
@@ -860,6 +884,126 @@ export default function CompetitionPage() {
     }
     if (reload.data) setMatches(reload.data as Match[]);
     setMessage(`Future handicap starts refreshed for ${futureMatches.length} fixture${futureMatches.length === 1 ? "" : "s"}.`);
+  };
+
+  const saveOneDayFinalLengths = async () => {
+    const client = supabase;
+    if (!client || !competition || !isOneDayLeague || !admin.isAdmin) return;
+    const semiBestOf = Number.parseInt(leagueSemiBestOfInput, 10);
+    const finalBestOf = Number.parseInt(leagueFinalBestOfInput, 10);
+    if (![semiBestOf, finalBestOf].every((value) => Number.isInteger(value) && value > 0 && value % 2 === 1)) {
+      setMessage("Semi-final and final Best Of values must be positive odd numbers.");
+      return;
+    }
+    const updateCompetition = await client
+      .from("competitions")
+      .update({ league_semi_final_best_of: semiBestOf, league_final_best_of: finalBestOf })
+      .eq("id", competition.id);
+    if (updateCompetition.error) {
+      setMessage(updateCompetition.error.message);
+      return;
+    }
+    const pendingSemis = matches.filter((match) => (match.round_no ?? 1) === leagueSemiFinalRound && match.status === "pending");
+    const pendingFinals = matches.filter((match) => (match.round_no ?? 1) === leagueFinalRound && match.status === "pending");
+    if (pendingSemis.length) await client.from("matches").update({ best_of: semiBestOf }).in("id", pendingSemis.map((match) => match.id));
+    if (pendingFinals.length) await client.from("matches").update({ best_of: finalBestOf }).in("id", pendingFinals.map((match) => match.id));
+    setCompetition({ ...competition, league_semi_final_best_of: semiBestOf, league_final_best_of: finalBestOf });
+    setMatches((current) => current.map((match) => {
+      if (match.status !== "pending") return match;
+      if ((match.round_no ?? 1) === leagueSemiFinalRound) return { ...match, best_of: semiBestOf };
+      if ((match.round_no ?? 1) === leagueFinalRound) return { ...match, best_of: finalBestOf };
+      return match;
+    }));
+    setMessage("Finals match lengths saved. Existing pending finals were updated.");
+  };
+
+  const createOneDaySemiFinals = async () => {
+    const client = supabase;
+    if (!client || !competition || !isOneDayLeague || !admin.isAdmin) return;
+    if (Number(competition.league_finals_size ?? 0) !== 4 || approvedLeaguePlayerIds.length <= 4) return;
+    const roundRobinMatches = matches.filter((match) => (match.round_no ?? 1) <= roundRobinRoundCount && match.status !== "bye");
+    if (!roundRobinMatches.length || roundRobinMatches.some((match) => match.status !== "complete")) {
+      setMessage("Complete every round-robin match before creating the semi-finals.");
+      return;
+    }
+    if (matches.some((match) => (match.round_no ?? 1) === leagueSemiFinalRound)) {
+      setMessage("Semi-finals have already been created.");
+      return;
+    }
+    const topFour = leagueTableRows.slice(0, 4);
+    if (topFour.length < 4) return;
+    const semiBestOf = Number(competition.league_semi_final_best_of ?? 3);
+    const seeds = [[topFour[0], topFour[3]], [topFour[1], topFour[2]]];
+    const playerHandicapById = new Map(players.map((player) => [player.id, player.snooker_handicap ?? 0]));
+    const rows = seeds.map(([left, right], index) => {
+      const starts = competition.handicap_enabled && competition.sport_type === "snooker"
+        ? calculateSnookerHandicapStarts(playerHandicapById.get(left.playerId), playerHandicapById.get(right.playerId))
+        : { team1: 0, team2: 0 };
+      return {
+        competition_id: competition.id,
+        round_no: leagueSemiFinalRound,
+        match_no: index + 1,
+        best_of: semiBestOf,
+        status: "pending" as const,
+        match_mode: "singles" as const,
+        player1_id: left.playerId,
+        player2_id: right.playerId,
+        winner_player_id: null,
+        opening_break_player_id: competition.app_assign_opening_break ? (index % 2 === 0 ? left.playerId : right.playerId) : null,
+        scheduled_for: competition.league_start_date,
+        team1_handicap_start: starts.team1,
+        team2_handicap_start: starts.team2,
+      };
+    });
+    const insert = await client.from("matches").insert(rows).select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start");
+    if (insert.error) {
+      setMessage(insert.error.message);
+      return;
+    }
+    setMatches((current) => [...current, ...((insert.data ?? []) as Match[])]);
+    setMessage("Semi-finals created: 1st vs 4th and 2nd vs 3rd.");
+  };
+
+  const createOneDayFinal = async () => {
+    const client = supabase;
+    if (!client || !competition || !isOneDayLeague || !admin.isAdmin) return;
+    const semis = matches.filter((match) => (match.round_no ?? 1) === leagueSemiFinalRound).sort((a, b) => (a.match_no ?? 0) - (b.match_no ?? 0));
+    if (semis.length !== 2 || semis.some((match) => match.status !== "complete" || !match.winner_player_id)) {
+      setMessage("Complete both semi-finals before creating the final.");
+      return;
+    }
+    if (matches.some((match) => (match.round_no ?? 1) === leagueFinalRound)) {
+      setMessage("The final has already been created.");
+      return;
+    }
+    const left = semis[0].winner_player_id as string;
+    const right = semis[1].winner_player_id as string;
+    const playerHandicapById = new Map(players.map((player) => [player.id, player.snooker_handicap ?? 0]));
+    const starts = competition.handicap_enabled && competition.sport_type === "snooker"
+      ? calculateSnookerHandicapStarts(playerHandicapById.get(left), playerHandicapById.get(right))
+      : { team1: 0, team2: 0 };
+    const row = {
+      competition_id: competition.id,
+      round_no: leagueFinalRound,
+      match_no: 1,
+      best_of: Number(competition.league_final_best_of ?? 5),
+      status: "pending" as const,
+      match_mode: "singles" as const,
+      player1_id: left,
+      player2_id: right,
+      winner_player_id: null,
+      opening_break_player_id: competition.app_assign_opening_break ? left : null,
+      scheduled_for: competition.league_start_date,
+      team1_handicap_start: starts.team1,
+      team2_handicap_start: starts.team2,
+    };
+    const insert = await client.from("matches").insert(row).select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start").single();
+    if (insert.error || !insert.data) {
+      setMessage(insert.error?.message ?? "Final could not be created.");
+      return;
+    }
+    setMatches((current) => [...current, insert.data as Match]);
+    setMessage("Final created from the two semi-final winners.");
   };
 
   const bracketRounds = useMemo(() => {
@@ -964,7 +1108,7 @@ export default function CompetitionPage() {
       }>;
     }>;
     const grouped = new Map<number, Match[]>();
-    matches.forEach((match) => {
+    matches.filter((match) => !isOneDayLeague || (match.round_no ?? 1) <= roundRobinRoundCount).forEach((match) => {
       const roundNo = match.round_no ?? 1;
       const prev = grouped.get(roundNo) ?? [];
       prev.push(match);
@@ -992,7 +1136,7 @@ export default function CompetitionPage() {
             const ownLatestSubmission = currentUserId
               ? resultSubmissions.find((submission) => submission.match_id === match.id && submission.submitted_by_user_id === currentUserId) ?? null
               : null;
-            const window = getLeagueFixtureWindow(match.scheduled_for);
+            const window = getLeagueFixtureWindow(match.scheduled_for, isOneDayLeague ? "one_day" : "weekly");
             const now = new Date();
             const isWeekOpenForPlayer = !window ? true : now >= window.opensAt && now <= window.dueAt;
             let chip = {
@@ -1038,16 +1182,16 @@ export default function CompetitionPage() {
               label: getMatchLabel(match, fullMap),
               status: getStatusLabel(match),
               isBye: match.status === "bye",
-              deadlineLabel: formatLeagueFixtureDeadline(match.scheduled_for),
+              deadlineLabel: formatLeagueFixtureDeadline(match.scheduled_for, isOneDayLeague ? "one_day" : "weekly"),
               handicapLabel,
               chip,
             };
           }),
       }));
-  }, [competition, matches, fullMap, shortMap, viewerLinkedPlayerId, currentUserId, resultSubmissions, admin.isAdmin]);
+  }, [competition, matches, fullMap, shortMap, viewerLinkedPlayerId, currentUserId, resultSubmissions, admin.isAdmin, isOneDayLeague, roundRobinRoundCount]);
   const leagueFixtureWeekOptions = useMemo(
-    () => leagueFixturesByWeek.map((week) => ({ value: String(week.week), label: `Week ${week.week}` })),
-    [leagueFixturesByWeek]
+    () => leagueFixturesByWeek.map((week) => ({ value: String(week.week), label: `${isOneDayLeague ? "Round" : "Week"} ${week.week}` })),
+    [isOneDayLeague, leagueFixturesByWeek]
   );
   const leagueFixturePlayerOptions = useMemo(
     () =>
@@ -1073,7 +1217,7 @@ export default function CompetitionPage() {
     return leagueFixturesByWeek;
   }, [leagueFixturesByWeek, leagueFixtureFilterMode, leagueFixtureFilterWeek, leagueFixtureFilterPlayer, fullMap, shortMap]);
   const hasTopEightFinals = competition?.name.trim().toLowerCase() === "greenhithe legion masters 2026";
-  const leagueTableRows = useMemo(() => {
+  const leagueTableRows = (() => {
     if (!competition || competition.competition_format !== "league") return [] as Array<{
       playerId: string;
       playerName: string;
@@ -1123,7 +1267,7 @@ export default function CompetitionPage() {
       framesByMatch.set(frame.match_id, prev);
     });
 
-    matches.forEach((match) => {
+    matches.filter((match) => !isOneDayLeague || (match.round_no ?? 1) <= roundRobinRoundCount).forEach((match) => {
       if (!match.player1_id) return;
       const row1 = ensureRow(match.player1_id);
       const row2 = match.player2_id && match.player2_id !== match.player1_id ? ensureRow(match.player2_id) : null;
@@ -1171,7 +1315,7 @@ export default function CompetitionPage() {
       a.lost - b.lost ||
       a.playerName.localeCompare(b.playerName)
     );
-  }, [competition, matches, frames, approvedLeaguePlayerIds, fullMap, shortMap]);
+  })();
   const totalBracketRounds = bracketRounds.length;
   const matchesByKey = useMemo(() => {
     const m = new Map<string, Match>();
@@ -1529,7 +1673,9 @@ export default function CompetitionPage() {
                     Approved and pending player entries are shown above. Knockout-only bracket and fixture views are not used for league competitions.
                   </p>
                   <p className="mt-1 text-sm text-slate-600">
-                    Fixtures run from Monday 13:00 to Sunday 21:00. Play every rack: each rack won scores one league point. A genuine no-show or late-arrival forfeit may be awarded 5-0; if neither player made sufficient effort, void the fixture for no points.
+                    {isOneDayLeague
+                      ? "All round-robin fixtures are played on the competition date. Play every rack: each rack won scores one league point."
+                      : "Fixtures run from Monday 13:00 to Sunday 21:00. Play every rack: each rack won scores one league point. A genuine no-show or late-arrival forfeit may be awarded 5-0; if neither player made sufficient effort, void the fixture for no points."}
                   </p>
                   {admin.isAdmin ? (
                     <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]">
@@ -1548,7 +1694,7 @@ export default function CompetitionPage() {
                         </select>
                       </label>
                       <label className="flex flex-col gap-1 text-sm text-slate-700">
-                        First week start date
+                        {isOneDayLeague ? "Competition date" : "First week start date"}
                         <input
                           type="date"
                           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
@@ -1563,8 +1709,19 @@ export default function CompetitionPage() {
                           disabled={generatingLeagueFixtures || matches.length > 0}
                           className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-60"
                         >
-                          {generatingLeagueFixtures ? "Generating..." : matches.length > 0 ? "Fixtures Generated" : "Create Weekly Fixtures"}
+                          {generatingLeagueFixtures ? "Generating..." : matches.length > 0 ? "Fixtures Generated" : isOneDayLeague ? "Create One-day Fixtures" : "Create Weekly Fixtures"}
                         </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {admin.isAdmin && isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? (
+                    <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3">
+                      <p className="text-sm font-semibold text-violet-950">Top-four finals</p>
+                      <p className="mt-1 text-xs text-violet-800">Adjust these lengths at any point; pending semi-finals or final will update when saved.</p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                        <label className="text-sm text-slate-700">Semi-finals<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={leagueSemiBestOfInput} onChange={(e) => setLeagueSemiBestOfInput(e.target.value)}>{BEST_OF_OPTIONS.map((value) => <option key={value} value={value}>Best of {value}</option>)}</select></label>
+                        <label className="text-sm text-slate-700">Final<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={leagueFinalBestOfInput} onChange={(e) => setLeagueFinalBestOfInput(e.target.value)}>{BEST_OF_OPTIONS.map((value) => <option key={value} value={value}>Best of {value}</option>)}</select></label>
+                        <div className="flex items-end"><button type="button" onClick={() => void saveOneDayFinalLengths()} className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm text-violet-900">Save lengths</button></div>
                       </div>
                     </div>
                   ) : null}
@@ -1590,6 +1747,7 @@ export default function CompetitionPage() {
                         <p className="mt-1 text-xs text-slate-500">
                           Every rack won is one point. Completed void fixtures score no points.
                           {hasTopEightFinals ? " The top 8 positions qualify for the end-of-season knockout." : ""}
+                          {isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? " The top four qualify for the semi-finals." : ""}
                         </p>
                         <div className="mt-3 overflow-x-auto">
                           <table className="min-w-full text-sm">
@@ -1603,7 +1761,7 @@ export default function CompetitionPage() {
                                 <th className="px-2 py-2 text-center">Void</th>
                                 <th className="px-2 py-2 text-center">Bye</th>
                                 <th className="px-2 py-2 text-center">Pts</th>
-                                {hasTopEightFinals ? <th className="px-2 py-2 text-center">Finals</th> : null}
+                                {hasTopEightFinals || (isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4) ? <th className="px-2 py-2 text-center">Finals</th> : null}
                               </tr>
                             </thead>
                             <tbody>
@@ -1617,9 +1775,9 @@ export default function CompetitionPage() {
                                   <td className="px-2 py-2 text-center tabular-nums">{row.voided}</td>
                                   <td className="px-2 py-2 text-center tabular-nums">{row.byes}</td>
                                   <td className="px-2 py-2 text-center font-semibold tabular-nums">{row.points}</td>
-                                  {hasTopEightFinals ? (
+                                  {hasTopEightFinals || (isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4) ? (
                                     <td className="px-2 py-2 text-center">
-                                      {index < 8 ? <span className="rounded-full bg-lime-100 px-2 py-0.5 text-xs font-semibold text-lime-900">Top 8</span> : "—"}
+                                      {index < (hasTopEightFinals ? 8 : 4) ? <span className="rounded-full bg-lime-100 px-2 py-0.5 text-xs font-semibold text-lime-900">Top {hasTopEightFinals ? 8 : 4}</span> : "—"}
                                     </td>
                                   ) : null}
                                 </tr>
@@ -1628,6 +1786,23 @@ export default function CompetitionPage() {
                           </table>
                         </div>
                       </div>
+                      {isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? (
+                        <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+                          <p className="text-sm font-semibold text-violet-950">Finals stage</p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button type="button" onClick={() => void createOneDaySemiFinals()} disabled={matches.some((match) => (match.round_no ?? 1) === leagueSemiFinalRound)} className="rounded-lg bg-violet-700 px-3 py-2 text-sm text-white disabled:opacity-50">{matches.some((match) => (match.round_no ?? 1) === leagueSemiFinalRound) ? "Semi-finals created" : "Create semi-finals from top 4"}</button>
+                            <button type="button" onClick={() => void createOneDayFinal()} disabled={matches.some((match) => (match.round_no ?? 1) === leagueFinalRound)} className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm text-violet-900 disabled:opacity-50">{matches.some((match) => (match.round_no ?? 1) === leagueFinalRound) ? "Final created" : "Create final from winners"}</button>
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            {matches.filter((match) => (match.round_no ?? 1) > roundRobinRoundCount).sort((a, b) => (a.round_no ?? 0) - (b.round_no ?? 0) || (a.match_no ?? 0) - (b.match_no ?? 0)).map((match) => (
+                              <Link key={match.id} href={`/matches/${match.id}`} className="flex items-center justify-between rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm text-slate-800">
+                                <span><strong>{(match.round_no ?? 1) === leagueFinalRound ? "Final" : `Semi-final ${match.match_no}`}</strong> · {getMatchLabel(match, fullMap)}</span>
+                                <span>Best of {match.best_of} · {getStatusLabel(match)}</span>
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="space-y-3">
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <p className="text-sm font-semibold text-slate-900">Fixture filter</p>
@@ -1644,7 +1819,7 @@ export default function CompetitionPage() {
                               onClick={() => setLeagueFixtureFilterMode("week")}
                               className={`rounded-lg border px-3 py-2 text-sm ${leagueFixtureFilterMode === "week" ? "border-teal-700 bg-teal-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
                             >
-                              By week
+                              {isOneDayLeague ? "By round" : "By week"}
                             </button>
                             <button
                               type="button"
@@ -1656,13 +1831,13 @@ export default function CompetitionPage() {
                           </div>
                           {leagueFixtureFilterMode === "week" ? (
                             <label className="mt-3 flex max-w-xs flex-col gap-1 text-sm text-slate-700">
-                              Select week
+                              {isOneDayLeague ? "Select round" : "Select week"}
                               <select
                                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                                 value={leagueFixtureFilterWeek}
                                 onChange={(e) => setLeagueFixtureFilterWeek(e.target.value)}
                               >
-                                <option value="all">All weeks</option>
+                                <option value="all">All {isOneDayLeague ? "rounds" : "weeks"}</option>
                                 {leagueFixtureWeekOptions.map((option) => (
                                   <option key={option.value} value={option.value}>
                                     {option.label}
@@ -1692,7 +1867,7 @@ export default function CompetitionPage() {
                         {filteredLeagueFixturesByWeek.map((week) => (
                           <div key={`week-${week.week}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                             <p className="text-sm font-semibold text-slate-900">
-                              Week {week.week}
+                              {isOneDayLeague ? "Round" : "Week"} {week.week}
                               {week.scheduledFor ? ` · ${week.scheduledFor}` : ""}
                             </p>
                             {week.matches.some((match) => Boolean(match.deadlineLabel)) ? (
@@ -1741,7 +1916,7 @@ export default function CompetitionPage() {
                       </div>
                     </div>
                   ) : (
-                    <p className="mt-3 text-sm text-slate-600">No weekly fixtures generated yet.</p>
+                    <p className="mt-3 text-sm text-slate-600">No {isOneDayLeague ? "one-day" : "weekly"} fixtures generated yet.</p>
                   )}
                 </section>
               ) : (
@@ -1858,8 +2033,8 @@ export default function CompetitionPage() {
           title="Generate weekly league fixtures?"
           description={
             projectedLeagueFixtureCount > 0
-              ? `This will generate ${projectedLeagueFixtureCount} weekly fixture${projectedLeagueFixtureCount === 1 ? "" : "s"} over ${projectedLeagueRounds.length} week${projectedLeagueRounds.length === 1 ? "" : "s"} for the approved league field.`
-              : "This will generate weekly fixtures for the approved league field."
+              ? `This will generate ${projectedLeagueFixtureCount} fixture${projectedLeagueFixtureCount === 1 ? "" : "s"} over ${projectedLeagueRounds.length} ${isOneDayLeague ? "round" : "week"}${projectedLeagueRounds.length === 1 ? "" : "s"} for the approved league field${isOneDayLeague ? " on one day" : ""}.`
+              : `This will generate ${isOneDayLeague ? "one-day" : "weekly"} fixtures for the approved league field.`
           }
           confirmLabel="Generate Fixtures"
           cancelLabel="Cancel"

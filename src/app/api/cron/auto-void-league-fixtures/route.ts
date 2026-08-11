@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
     .from("competitions")
     .select("id")
     .eq("competition_format", "league")
+    .neq("league_schedule_mode", "one_day")
     .eq("is_archived", false)
     .eq("is_completed", false);
 

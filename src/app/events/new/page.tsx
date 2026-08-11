@@ -16,6 +16,7 @@ import MessageModal from "@/components/MessageModal";
 type Sport = "snooker" | "pool_8_ball" | "pool_9_ball";
 type Mode = "singles" | "doubles";
 type CompetitionFormat = "knockout" | "league";
+type LeagueScheduleMode = "weekly" | "one_day";
 type Player = { id: string; display_name: string; full_name?: string | null; snooker_handicap?: number | null };
 type TeamPick = { player1: string; player2: string };
 type Location = { id: string; name: string };
@@ -52,6 +53,10 @@ export default function NewEventPage() {
   const [bestOfSemi, setBestOfSemi] = useState("5");
   const [bestOfFinal, setBestOfFinal] = useState("7");
   const [roundBestOfEnabled, setRoundBestOfEnabled] = useState(false);
+  const [leagueScheduleMode, setLeagueScheduleMode] = useState<LeagueScheduleMode>("weekly");
+  const [leagueEventDate, setLeagueEventDate] = useState("");
+  const [leagueMeetings, setLeagueMeetings] = useState("1");
+  const [leagueFinalsEnabled, setLeagueFinalsEnabled] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [search, setSearch] = useState("");
@@ -83,6 +88,10 @@ export default function NewEventPage() {
     bestOfSemi !== "5" ||
     bestOfFinal !== "7" ||
     roundBestOfEnabled ||
+    leagueScheduleMode !== "weekly" ||
+    leagueEventDate ||
+    leagueMeetings !== "1" ||
+    leagueFinalsEnabled ||
     competitionFormat !== "knockout" ||
     mode !== "singles" ||
     appAssignOpeningBreak ||
@@ -143,10 +152,6 @@ export default function NewEventPage() {
   );
   const selectedPlayerById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
   const handicapAllowed = sport === "snooker" && mode === "singles";
-
-  useEffect(() => {
-    if (!handicapAllowed && handicapEnabled) setHandicapEnabled(false);
-  }, [handicapAllowed, handicapEnabled]);
 
   const isTeamPlayerTakenElsewhere = (
     candidateId: string,
@@ -334,6 +339,25 @@ export default function NewEventPage() {
         return;
       }
     }
+    if (competitionFormat === "league" && leagueScheduleMode === "one_day") {
+      if (!leagueEventDate) {
+        setMessage("Choose the date for the one-day competition.");
+        return;
+      }
+      const meetings = Number.parseInt(leagueMeetings, 10);
+      if (!Number.isInteger(meetings) || meetings < 1 || meetings > 4) {
+        setMessage("Meet each opponent must be between 1 and 4 times.");
+        return;
+      }
+      if (leagueFinalsEnabled && !signupOpen && selected.length <= 4) {
+        setMessage("Top-four semi-finals require more than 4 players.");
+        return;
+      }
+      if (leagueFinalsEnabled && (!Number.isInteger(semi) || !Number.isInteger(final) || semi < 1 || final < 1)) {
+        setMessage("Choose valid Best Of values for the semi-finals and final.");
+        return;
+      }
+    }
     const validTeams = teams.filter((t) => t.player1 && t.player2);
     const uniqueTeamPlayerCount = new Set(selectedTeamPlayers).size;
 
@@ -413,6 +437,12 @@ export default function NewEventPage() {
         app_assign_opening_break: appAssignOpeningBreak,
         handicap_enabled: handicapEnabled && handicapAllowed,
         knockout_round_best_of: knockoutRoundBestOf,
+        league_schedule_mode: competitionFormat === "league" ? leagueScheduleMode : "weekly",
+        league_meetings: competitionFormat === "league" && leagueScheduleMode === "one_day" ? Number.parseInt(leagueMeetings, 10) : null,
+        league_start_date: competitionFormat === "league" && leagueScheduleMode === "one_day" ? leagueEventDate : null,
+        league_finals_size: competitionFormat === "league" && leagueScheduleMode === "one_day" && leagueFinalsEnabled ? 4 : 0,
+        league_semi_final_best_of: competitionFormat === "league" && leagueScheduleMode === "one_day" && leagueFinalsEnabled ? semi : null,
+        league_final_best_of: competitionFormat === "league" && leagueScheduleMode === "one_day" && leagueFinalsEnabled ? final : null,
         signup_open: signupOpen,
         signup_deadline: signupDeadline ? new Date(signupDeadline).toISOString() : null,
         max_entries: signupMaxEntries ? Number.parseInt(signupMaxEntries, 10) : null,
@@ -489,6 +519,8 @@ export default function NewEventPage() {
         handicapEnabled: handicapEnabled && handicapAllowed,
         bestOf: best,
         roundSpecificBestOf: roundBestOfEnabled ? { semi: semi, final: final } : null,
+        leagueScheduleMode: competitionFormat === "league" ? leagueScheduleMode : null,
+        leagueFinals: competitionFormat === "league" && leagueFinalsEnabled ? { size: 4, semi, final } : null,
         locationId,
         entrants: mode === "singles" ? selected.length : validTeams.length,
       },
@@ -518,6 +550,7 @@ export default function NewEventPage() {
   const competitionSummary = [
     { label: "Sport", value: sport === "snooker" ? "Snooker" : sport === "pool_9_ball" ? "Pool (9-ball)" : "Pool (8-ball)" },
     { label: "Competition", value: competitionFormat === "knockout" ? "Knockout" : "League" },
+    ...(competitionFormat === "league" ? [{ label: "Schedule", value: leagueScheduleMode === "one_day" ? "One day" : "Weekly" }] : []),
     { label: "Format", value: mode === "singles" ? "Singles" : "Doubles" },
     { label: "Scoring", value: handicapEnabled && handicapAllowed ? "Handicapped" : "Scratch" },
     { label: "Opening round", value: `Best of ${bestOf}` },
@@ -716,9 +749,32 @@ export default function NewEventPage() {
             ) : (
               <div className={mutedCardClass}>
                 <p className="text-sm font-medium text-slate-700">League format</p>
-                <p className="mt-1 text-sm text-slate-600">
-                  Club leagues are created as a competition shell with an approved player field. League fixtures are managed inside the league competition rather than auto-building a knockout bracket.
-                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => { setLeagueScheduleMode("weekly"); setLeagueFinalsEnabled(false); }} className={leagueScheduleMode === "weekly" ? pillActiveClass : pillIdleClass}>Weekly league</button>
+                  <button type="button" onClick={() => setLeagueScheduleMode("one_day")} className={leagueScheduleMode === "one_day" ? pillActiveClass : pillIdleClass}>One day / evening</button>
+                </div>
+                {leagueScheduleMode === "weekly" ? (
+                  <p className="mt-3 text-sm text-slate-600">Create the player field now, then generate weekly round-robin fixtures inside the competition.</p>
+                ) : (
+                  <div className="mt-3 space-y-3 rounded-xl border border-teal-200 bg-teal-50 p-3">
+                    <p className="text-sm text-teal-950">Every round-robin match is scheduled on the same date. You can optionally advance the top four into semi-finals and a final.</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-sm text-slate-700">Competition date<input type="date" className={`mt-1 ${fieldClass}`} value={leagueEventDate} onChange={(e) => setLeagueEventDate(e.target.value)} /></label>
+                      <label className="text-sm text-slate-700">Meet each opponent<select className={`mt-1 ${fieldClass}`} value={leagueMeetings} onChange={(e) => setLeagueMeetings(e.target.value)}>{[1, 2, 3, 4].map((value) => <option key={value} value={value}>{value} time{value === 1 ? "" : "s"}</option>)}</select></label>
+                    </div>
+                    <label className="flex items-center justify-between gap-3 rounded-xl border border-teal-200 bg-white p-3 text-sm font-medium text-slate-800">
+                      Top-four semi-finals and final
+                      <input type="checkbox" checked={leagueFinalsEnabled} onChange={(e) => setLeagueFinalsEnabled(e.target.checked)} />
+                    </label>
+                    {leagueFinalsEnabled ? (
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <label className="text-xs text-slate-600">Round robin<select className={`mt-1 ${fieldClass}`} value={bestOf} onChange={(e) => setBestOf(e.target.value)}>{BEST_OF_OPTIONS.map((n) => <option key={n} value={n}>Best of {n}</option>)}</select></label>
+                        <label className="text-xs text-slate-600">Semi-finals<select className={`mt-1 ${fieldClass}`} value={bestOfSemi} onChange={(e) => setBestOfSemi(e.target.value)}>{BEST_OF_OPTIONS.map((n) => <option key={n} value={n}>Best of {n}</option>)}</select></label>
+                        <label className="text-xs text-slate-600">Final<select className={`mt-1 ${fieldClass}`} value={bestOfFinal} onChange={(e) => setBestOfFinal(e.target.value)}>{BEST_OF_OPTIONS.map((n) => <option key={n} value={n}>Best of {n}</option>)}</select></label>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
             )}
             <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">

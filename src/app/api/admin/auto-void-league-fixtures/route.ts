@@ -37,14 +37,14 @@ export async function POST(req: NextRequest) {
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
   const competitionRes = await adminClient
     .from("competitions")
-    .select("id,name,competition_format")
+    .select("id,name,competition_format,league_schedule_mode")
     .eq("id", competitionId)
     .maybeSingle();
 
   if (competitionRes.error || !competitionRes.data) {
     return NextResponse.json({ error: competitionRes.error?.message ?? "Competition not found." }, { status: 404 });
   }
-  if (competitionRes.data.competition_format !== "league") {
+  if (competitionRes.data.competition_format !== "league" || competitionRes.data.league_schedule_mode === "one_day") {
     return NextResponse.json({ ok: true, voidedMatchIds: [] });
   }
 

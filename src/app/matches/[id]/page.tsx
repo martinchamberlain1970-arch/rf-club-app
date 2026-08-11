@@ -65,6 +65,7 @@ type CompetitionSettings = {
   app_assign_opening_break: boolean;
   knockout_round_best_of: KnockoutRoundBestOf | null;
   handicap_enabled?: boolean;
+  league_schedule_mode?: "weekly" | "one_day";
 };
 
 type FrameRow = {
@@ -214,12 +215,14 @@ function stableIndexFromSeed(seed: string, size: number): number {
   return hash % size;
 }
 
-function getLeagueFixtureWindow(scheduledFor: string | null | undefined) {
+function getLeagueFixtureWindow(scheduledFor: string | null | undefined, scheduleMode: "weekly" | "one_day" = "weekly") {
   if (!scheduledFor) return null;
   const [year, month, day] = scheduledFor.split("-").map((value) => Number.parseInt(value, 10));
   if (!year || !month || !day) return null;
-  const opensAt = new Date(year, month - 1, day, 13, 0, 0, 0);
-  const dueAt = new Date(year, month - 1, day + 6, 21, 0, 0, 0);
+  const opensAt = new Date(year, month - 1, day, scheduleMode === "one_day" ? 0 : 13, 0, 0, 0);
+  const dueAt = scheduleMode === "one_day"
+    ? new Date(year, month - 1, day, 23, 59, 59, 999)
+    : new Date(year, month - 1, day + 6, 21, 0, 0, 0);
   return { opensAt, dueAt };
 }
 
@@ -419,7 +422,7 @@ export default function MatchPage() {
           .select("id,display_name,full_name,avatar_url,rating_pool,rating_snooker,peak_rating_pool,peak_rating_snooker,rated_matches_pool,rated_matches_snooker,snooker_handicap"),
         client
           .from("competitions")
-          .select("id,name,sport_type,location_id,competition_format,is_practice,app_assign_opening_break,knockout_round_best_of,handicap_enabled")
+          .select("id,name,sport_type,location_id,competition_format,is_practice,app_assign_opening_break,knockout_round_best_of,handicap_enabled,league_schedule_mode")
           .eq("id", loadedMatch.competition_id)
           .maybeSingle(),
         client
@@ -649,8 +652,8 @@ export default function MatchPage() {
   }, [match, viewerLinkedPlayerId]);
   const leagueFixtureWindow = useMemo(() => {
     if (!match || competition?.competition_format !== "league") return null;
-    return getLeagueFixtureWindow(match.scheduled_for);
-  }, [competition?.competition_format, match]);
+    return getLeagueFixtureWindow(match.scheduled_for, competition.league_schedule_mode ?? "weekly");
+  }, [competition, match]);
   const playerLeagueWindowOpen = useMemo(() => {
     if (!leagueFixtureWindow) return true;
     const now = new Date();
@@ -682,6 +685,7 @@ export default function MatchPage() {
   const canEditFrames = canAdminEditFrames || canParticipantEditFrames;
   const canRequestReschedule = Boolean(
     competition?.competition_format === "league" &&
+      competition?.league_schedule_mode !== "one_day" &&
       !admin.isSuper &&
       viewerCanEditThisMatch &&
       !isByeMatch &&
@@ -927,7 +931,7 @@ export default function MatchPage() {
 
   const buildFullResultRows = () => {
     if (!match || !teams) return { ok: false as const, error: "Match is not ready." };
-    let rows: Array<{
+    const rows: Array<{
       match_id: string;
       frame_number: number;
       winner_player_id: string | null;
