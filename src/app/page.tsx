@@ -57,6 +57,7 @@ type PriorityCard = {
   tone: PriorityTone;
   detail: string;
 };
+type DashboardLink = { href: string; title: string; desc: string };
 
 export default function HomePage() {
   const router = useRouter();
@@ -115,6 +116,39 @@ export default function HomePage() {
     return admin.isAdmin || admin.isSuper;
   });
   const visibleSystemTools = admin.isSuper ? systemToolLinks : [];
+  const allDashboardLinks: DashboardLink[] = [
+    ...(userPlayerId
+      ? [{ href: "/my-fixtures", title: "My Fixtures", desc: "Open your last, current, and next fixture list." }]
+      : []),
+    ...visibleCoreLinks,
+    ...visibleAdminTools,
+  ];
+  const primaryHrefOrder = admin.isSuper
+    ? ["/my-fixtures", "/events", "/events/new", "/results", "/players", "/live"]
+    : admin.isAdmin
+      ? ["/my-fixtures", "/events", "/events/new", "/signups", "/results", "/players"]
+      : ["/my-fixtures", "/events", "/quick-match", "/notifications", "/rankings", "/high-breaks"];
+  const dashboardPrimaryLinks = (() => {
+    const selected: DashboardLink[] = [];
+    const selectedHrefs = new Set<string>();
+    for (const href of primaryHrefOrder) {
+      const link = allDashboardLinks.find((item) => item.href === href);
+      if (link && !selectedHrefs.has(link.href)) {
+        selected.push(link);
+        selectedHrefs.add(link.href);
+      }
+    }
+    for (const link of allDashboardLinks) {
+      if (selected.length >= 6) break;
+      if (!selectedHrefs.has(link.href)) {
+        selected.push(link);
+        selectedHrefs.add(link.href);
+      }
+    }
+    return selected;
+  })();
+  const primaryDashboardHrefs = new Set(dashboardPrimaryLinks.map((item) => item.href));
+  const dashboardMoreLinks = allDashboardLinks.filter((item) => !primaryDashboardHrefs.has(item.href));
   const cardBaseClass = "rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm";
   const subtleCardClass = "rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm";
   const pillBaseClass = "rounded-full border px-3 py-1 text-sm transition";
@@ -607,7 +641,7 @@ export default function HomePage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 sm:p-6">
+    <main className="min-h-screen bg-slate-100 p-3 sm:p-6">
       <div className="mx-auto max-w-5xl space-y-3 sm:space-y-4">
         <RequireAuth>
           <section className="rounded-2xl border border-slate-200 bg-gradient-to-r from-teal-50 via-slate-50 to-amber-50 p-3 sm:p-4 shadow-sm">
@@ -615,14 +649,12 @@ export default function HomePage() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Dashboard</p>
                 <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
-                  {admin.isSuper
-                    ? "Rack & Frame System Dashboard"
-                    : "Rack & Frame - Club Management Platform"}
+                  Rack &amp; Frame
                 </h1>
                 <p className="mt-1 text-sm text-slate-600">
                   {admin.isSuper
-                    ? "Manage approvals, users, and system tools."
-                    : "Run club competitions, player management, fixtures, and results from one place."}
+                    ? "System dashboard"
+                    : admin.isAdmin ? "Club admin dashboard" : "Player dashboard"}
                 </p>
               </div>
               <PageNav />
@@ -634,80 +666,39 @@ export default function HomePage() {
             </section>
           ) : null}
           <section className={subtleCardClass}>
-            <p className="text-sm font-semibold text-slate-900">{admin.isSuper ? "System Status" : "Club Status"}</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {!admin.isSuper ? (
-                <Link href="/events" className={pillSecondaryClass}>
-                  Open events: {openEventsCount ?? "-"}
-                </Link>
-              ) : null}
-              {(admin.isAdmin || admin.isSuper) && (
-                <Link href="/results" className={(resultsQueueCount ?? 0) > 0 ? pillPrimaryClass : pillSecondaryClass}>
-                  Results queue: {resultsQueueCount ?? "-"}
-                </Link>
-              )}
-              {pendingRequestsCount !== null && (
-                <Link
-                  href={admin.isSuper ? "/players" : admin.isAdmin ? "/players" : "/notifications"}
-                  className={pendingRequestsCount > 0 ? pillWarningClass : pillSecondaryClass}
-                >
-                  {admin.isSuper ? "Pending governance requests" : "Pending requests"}: {pendingRequestsCount}
-                </Link>
-              )}
-            </div>
-          </section>
-          <section className={subtleCardClass}>
-            <p className="text-sm text-slate-600">{admin.isSuper ? "Account" : "User Profile"}</p>
-            <div className="flex flex-wrap items-center gap-2">
-              {userPlayerId ? (
-                <Link href={`/players/${userPlayerId}`} className="text-lg font-semibold text-slate-900 underline-offset-4 hover:underline">
-                  {admin.isSuper
-                    ? userName || "Super User account"
-                    : admin.isAdmin
-                      ? userName || "Administrator account"
-                      : userName
-                        ? `Logged in as ${userName}`
-                        : "No player profile linked"}
-                </Link>
-              ) : (
-                <p className="text-lg font-semibold text-slate-900">
-                  {admin.isSuper
-                    ? userName || "Super User account"
-                    : admin.isAdmin
-                      ? userName || "Administrator account"
-                      : userName
-                        ? `Logged in as ${userName}`
-                        : "No player profile linked"}
-                </p>
-              )}
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  admin.isSuper
-                    ? "bg-amber-100 text-amber-800"
-                    : admin.isAdmin
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-slate-100 text-slate-600"
-                }`}
-              >
-                {admin.isSuper ? "Super User" : admin.isAdmin ? "Administrator" : "User"}
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Signed in</p>
+                {userPlayerId ? (
+                  <Link href={`/players/${userPlayerId}`} className="text-lg font-bold text-slate-900 underline-offset-4 hover:underline">
+                    {userName || (admin.isSuper ? "Super User account" : admin.isAdmin ? "Administrator account" : "Player account")}
+                  </Link>
+                ) : (
+                  <p className="text-lg font-bold text-slate-900">
+                    {userName || (admin.isSuper ? "Super User account" : admin.isAdmin ? "Administrator account" : "No player profile linked")}
+                  </p>
+                )}
+                {userEmail ? <p className="text-xs text-slate-500">{userEmail}</p> : null}
+              </div>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${admin.isSuper ? "bg-amber-100 text-amber-800" : admin.isAdmin ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                {admin.isSuper ? "Super User" : admin.isAdmin ? "Administrator" : "Player"}
               </span>
             </div>
-            {userEmail ? <p className="mt-1 text-sm text-slate-600">Logged in: {userEmail}</p> : null}
-            {admin.isSuper ? (
-              <p className="mt-2 text-sm text-slate-700">
-                Focus: approvals, account governance, audit visibility, and system maintenance.
-              </p>
-            ) : null}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {!admin.isSuper && userPlayerId ? (
-                <Link href={`/players/${userPlayerId}`} className={actionLinkClass}>
-                  View my profile
+            <div className="mt-3 flex flex-wrap gap-2">
+              {!admin.isSuper ? <Link href="/events" className={pillSecondaryClass}>Open events: {openEventsCount ?? "-"}</Link> : null}
+              {(admin.isAdmin || admin.isSuper) ? (
+                <Link href="/results" className={(resultsQueueCount ?? 0) > 0 ? pillPrimaryClass : pillSecondaryClass}>
+                  Results: {resultsQueueCount ?? "-"}
                 </Link>
               ) : null}
+              {pendingRequestsCount !== null ? (
+                <Link href={admin.isSuper || admin.isAdmin ? "/players" : "/notifications"} className={pendingRequestsCount > 0 ? pillWarningClass : pillSecondaryClass}>
+                  Requests: {pendingRequestsCount}
+                </Link>
+              ) : null}
+              {userPlayerId ? <Link href={`/players/${userPlayerId}`} className={pillSecondaryClass}>My profile</Link> : null}
               {!admin.isAdmin && !userName ? (
-                  <button type="button" onClick={() => setProfileModalOpen(true)} className={actionLinkClass}>
-                    Link my player profile
-                  </button>
+                <button type="button" onClick={() => setProfileModalOpen(true)} className={pillPrimaryClass}>Link player profile</button>
               ) : null}
             </div>
             {!admin.isAdmin && !userName && pendingClaim ? (
@@ -747,13 +738,11 @@ export default function HomePage() {
                   </p>
                 ) : null}
                 {!pendingAdminRequest && userPlayerId ? (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700">
-                    <p className="font-semibold text-slate-900">Club admin is for organisers, not every player.</p>
-                    <p className="mt-1">Request this only if you help run competitions, review results, and manage player activity for your club.</p>
-                    <Link href={`/players/${userPlayerId}`} className={`${actionLinkClass} mt-3`}>
-                      Request club admin access
-                    </Link>
-                  </div>
+                  <details className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                    <summary className="cursor-pointer font-semibold text-slate-900">Need club admin access?</summary>
+                    <p className="mt-2">Request this only if you help run competitions, review results, and manage player activity for your club.</p>
+                    <Link href={`/players/${userPlayerId}`} className={`${actionLinkClass} mt-2`}>Request club admin access</Link>
+                  </details>
                 ) : null}
               </div>
             ) : null}
@@ -761,176 +750,121 @@ export default function HomePage() {
           </section>
 
           <section className={subtleCardClass}>
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Operational Focus</p>
-                <h2 className="mt-1 text-xl font-black text-slate-950">Start Here</h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  The highest-priority club actions are surfaced first so the dashboard reads as an operating panel, not just a directory.
-                </p>
-              </div>
-              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                {admin.isSuper ? "System view" : admin.isAdmin ? "Club admin view" : "Player view"}
-              </div>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-bold text-slate-950">Needs attention</h2>
+              <span className="text-xs font-medium text-slate-500">Tap to open</span>
             </div>
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
               {priorityCards.map((card) => (
                 <Link
                   key={`${card.href}|${card.title}`}
                   href={card.href}
-                  className={`rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${priorityCardClass(card.tone)}`}
+                  className={`rounded-xl border p-2.5 sm:p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${priorityCardClass(card.tone)}`}
                 >
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{card.title}</p>
-                  <div className="mt-2 flex items-end justify-between gap-3">
-                    <p className={`text-4xl font-black leading-none ${priorityValueClass(card.tone)}`}>{card.value}</p>
-                    <span className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                      Open
-                    </span>
-                  </div>
-                  <p className="mt-3 text-sm font-medium text-slate-900">{card.detail}</p>
+                  <p className={`text-2xl sm:text-4xl font-black leading-none ${priorityValueClass(card.tone)}`}>{card.value}</p>
+                  <p className="mt-2 text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-700 sm:text-xs">{card.title}</p>
+                  <p className="mt-2 hidden text-sm text-slate-700 sm:block">{card.detail}</p>
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <section className={cardBaseClass}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-950">Main actions</h2>
+                <p className="text-xs text-slate-500">Your most useful shortcuts</p>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+              {dashboardPrimaryLinks.map((item) => (
+                <Link key={item.href} href={item.href} className={`${primaryCardClass(item.href)} min-h-20 p-3 sm:min-h-0 sm:p-4`}>
+                  <h3 className="text-sm font-bold text-slate-900 sm:text-lg">{item.title}</h3>
+                  <p className="mt-1 hidden text-sm text-slate-600 sm:block">{item.desc}</p>
+                  <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold sm:mt-3 sm:px-2.5 sm:py-1 sm:text-xs ${primaryTileBadgeClass(item.href)}`}>
+                    Open
+                  </span>
                 </Link>
               ))}
             </div>
           </section>
 
           <section className="space-y-3">
-              <div className="space-y-3">
-                <div className={cardBaseClass}>
-                  <p className="text-sm font-semibold text-slate-900">Main Tabs</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Central controls for club play, competitions, players, and result administration.
-                  </p>
-                  <div className="mt-3 grid gap-2 sm:gap-3 sm:grid-cols-3">
-                  {userPlayerId ? (
-                    <Link href="/my-fixtures" className={primaryCardClass("/my-fixtures")}>
-                      <h2 className="text-base sm:text-lg font-semibold text-slate-900">My Fixtures</h2>
-                      <p className="mt-1 text-sm text-slate-600">Open your last, current, and next week fixture list.</p>
-                      <span className="mt-3 inline-flex rounded-full border border-teal-300 bg-teal-100 px-2.5 py-1 text-xs font-semibold text-teal-900">
-                        Open
-                      </span>
-                    </Link>
-                  ) : null}
-                  {visibleCoreLinks.map((item) => (
+            {dashboardMoreLinks.length ? (
+              <details className={cardBaseClass}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-slate-900">
+                  <span>More competition &amp; club tools</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{dashboardMoreLinks.length}</span>
+                </summary>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+                  {dashboardMoreLinks.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={primaryCardClass(item.href)}
+                      className={`${primaryCardClass(item.href)} p-3 sm:p-4`}
                     >
-                      <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
-                      <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
-                      <span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${primaryTileBadgeClass(item.href)}`}>
-                        Open
-                      </span>
+                      <h3 className="text-sm font-bold text-slate-900 sm:text-lg">{item.title}</h3>
+                      <p className="mt-1 hidden text-sm text-slate-600 sm:block">{item.desc}</p>
                     </Link>
                   ))}
                 </div>
-              </div>
+              </details>
+            ) : null}
 
-              {visibleAdminTools.length ? (
-                <div className={cardBaseClass}>
-                  <p className="text-sm font-semibold text-slate-900">Admin Tools</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Extra controls for organisers running sign-ups, live sessions, and club operations.
-                  </p>
-                  <div className="mt-3 grid gap-2 sm:gap-3 sm:grid-cols-3">
-                    {visibleAdminTools.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={primaryCardClass(item.href)}
-                      >
-                        <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
-                        <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
-                        <span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${primaryTileBadgeClass(item.href)}`}>
-                          Open
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {visibleSystemTools.length ? (
-                <div className={cardBaseClass}>
-                  <p className="text-sm font-semibold text-slate-900">System</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Super-user governance and back-office tools, kept separate from everyday club play.
-                  </p>
-                  <div className="mt-3 grid gap-2 sm:gap-3 sm:grid-cols-3">
+            {visibleSystemTools.length ? (
+              <details className={cardBaseClass}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-slate-900">
+                  <span>System administration</span>
+                  <span className="flex items-center gap-2">
+                    {sharedLinkSuggestionsCount > 0 ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{sharedLinkSuggestionsCount} to review</span> : null}
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{visibleSystemTools.length}</span>
+                  </span>
+                </summary>
+                <p className="mt-2 text-sm text-slate-600">Governance, records, audit and back-office controls.</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
                     {visibleSystemTools.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={primaryCardClass(item.href)}
-                      >
+                      <Link key={item.href} href={item.href} className={`${primaryCardClass(item.href)} p-3 sm:p-4`}>
                         <div className="flex items-start justify-between gap-2">
-                          <h2 className="text-base sm:text-lg font-semibold text-slate-900">{item.title}</h2>
+                          <h3 className="text-sm font-bold text-slate-900 sm:text-lg">{item.title}</h3>
                           {item.href === "/shared-player-links" && sharedLinkSuggestionsCount > 0 ? (
                             <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900">
                               {sharedLinkSuggestionsCount}
                             </span>
                           ) : null}
                         </div>
-                        <p className="mt-1 text-sm text-slate-600">{item.desc}</p>
-                        {item.href === "/shared-player-links" ? (
-                          <p className="mt-2 text-xs font-medium text-slate-500">
-                            {sharedLinkSuggestionsCount > 0
-                              ? `${sharedLinkSuggestionsCount} live suggestion${sharedLinkSuggestionsCount === 1 ? "" : "s"} to review.`
-                              : "No live suggestions right now."}
-                          </p>
-                        ) : null}
-                        <span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${primaryTileBadgeClass(item.href)}`}>
-                          Open
-                        </span>
+                        <p className="mt-1 hidden text-sm text-slate-600 sm:block">{item.desc}</p>
                       </Link>
                     ))}
-                  </div>
                 </div>
-              ) : null}
-            </div>
+              </details>
+            ) : null}
 
             {admin.isSuper && sharedLinksMonthlyReviewDue ? (
-              <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-cyan-50 p-4 shadow-sm">
+              <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-cyan-50 p-3 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="max-w-3xl">
-                    <p className="text-sm font-semibold uppercase tracking-wide text-amber-700">Monthly Review</p>
-                    <p className="mt-1 text-sm text-slate-700">
-                      Shared Player Links has not been reviewed for around a month. Open it to check any new club-to-league suggestions.
-                    </p>
+                    <p className="text-sm font-semibold text-amber-800">Monthly shared-player-link review is due</p>
                   </div>
-                  <Link href="/shared-player-links" className={actionLinkClass}>
-                    Review shared links
-                  </Link>
+                  <Link href="/shared-player-links" className={actionLinkClass}>Review</Link>
                 </div>
               </div>
             ) : null}
 
             {!admin.isSuper ? (
-              <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-4 shadow-sm">
+              <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-3 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="max-w-2xl">
-                    <p className="text-sm font-semibold uppercase tracking-wide text-teal-700">Premium Access</p>
-                    <h2 className="mt-1 text-xl font-bold text-slate-900">Unlock the advanced extras</h2>
-                    <p className="mt-1 text-sm text-slate-700">
-                      See what Premium adds for players and Club Admin accounts, including doubles, stats, live overview, auto breaker, and enhanced competition tools.
-                    </p>
-                    <p className="mt-2 text-sm text-slate-600">
-                      Check the Premium page to see whether a free Premium trial is active on your account and when it expires.
-                    </p>
-                  </div>
-                  <Link href="/premium" className={actionLinkClass}>
-                    See plans and features
-                  </Link>
+                  <div><p className="text-sm font-semibold text-teal-800">Premium access</p><p className="text-xs text-slate-600">Advanced competition and player features</p></div>
+                  <Link href="/premium" className={actionLinkClass}>View Premium</Link>
                 </div>
               </div>
             ) : null}
 
             {visibleSupportLinks.length ? (
-              <div className={cardBaseClass}>
-                <p className="text-sm font-semibold text-slate-900">Support</p>
-                <p className="mt-1 text-sm text-slate-600">
-                  Help, rules, premium information, and the guided tour for new users.
-                </p>
+              <details className={cardBaseClass}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-slate-900">
+                  <span>Help, installation &amp; support</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{visibleSupportLinks.length}</span>
+                </summary>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {visibleSupportLinks.map((item) => (
                     <Link key={item.href} href={item.href} className={pillSecondaryClass}>
@@ -938,7 +872,7 @@ export default function HomePage() {
                     </Link>
                   ))}
                 </div>
-              </div>
+              </details>
             ) : null}
 
             <p className="text-center text-xs uppercase tracking-[0.18em] text-slate-500">
