@@ -74,6 +74,10 @@ export async function GET(req: NextRequest) {
       .filter((row) => row.linked_player_id && row.email)
       .map((row) => [row.linked_player_id as string, row.email as string])
   );
+  const activeClubPlayerIds = new Set(((playersRes.data ?? []) as Array<{ id: string }>).map((player) => player.id));
+  const visibleLinks = ((leaguePayload.links ?? []) as Array<{ source_player_id?: unknown }>).filter(
+    (link) => typeof link.source_player_id === "string" && activeClubPlayerIds.has(link.source_player_id)
+  );
 
   return NextResponse.json({
     ok: true,
@@ -92,6 +96,6 @@ export async function GET(req: NextRequest) {
       linked_email: linkedEmailByPlayerId.get(player.id) ?? null,
     })),
     leaguePlayers: leaguePayload.players ?? [],
-    existingLinks: leaguePayload.links ?? [],
+    existingLinks: visibleLinks,
   });
 }

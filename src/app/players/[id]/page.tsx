@@ -2150,7 +2150,11 @@ export default function PlayerProfilePage() {
                     {player?.location_id ? locations.find((loc) => loc.id === player.location_id)?.name ?? "Assigned" : "Not set"}
                   </span>
                   <span className="text-xs text-slate-500">
-                    Location changes are managed in Team Management → Transfer player.
+                    {admin.isSuper
+                      ? "Use Edit player above to change this club location."
+                      : !hasAdminPower && userId && player?.claimed_by === userId
+                        ? "Use Request profile update below to ask for a club location change."
+                        : "Only the Super User can change this club location."}
                   </span>
                 </div>
                 {!hasAdminPower && userId && player?.claimed_by === userId ? (
