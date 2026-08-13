@@ -68,6 +68,13 @@ type CompetitionSettings = {
   league_schedule_mode?: "weekly" | "one_day";
 };
 
+type FixtureContact = {
+  playerId: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+};
+
 type FrameRow = {
   frame_number: number;
   winner_player_id: string | null;
@@ -363,6 +370,7 @@ export default function MatchPage() {
     comment: string;
   } | null>(null);
   const [expectedPreviewDismissed, setExpectedPreviewDismissed] = useState(false);
+  const [fixtureContacts, setFixtureContacts] = useState<FixtureContact[]>([]);
 
   const openDisplay = () => {
     if (!matchId) return;
@@ -465,6 +473,17 @@ export default function MatchPage() {
       let effectiveRequesterPendingRows: LeagueRescheduleRequest[] = [];
       const sessionRes = await client.auth.getSession();
       const accessToken = sessionRes.data.session?.access_token ?? null;
+      if (accessToken) {
+        const contactResponse = await fetch(`/api/matches/${matchId}/contacts`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }).catch(() => null);
+        if (contactResponse?.ok) {
+          const contactData = await contactResponse.json().catch(() => ({}));
+          if (active) setFixtureContacts((contactData.contacts ?? []) as FixtureContact[]);
+        } else if (active) {
+          setFixtureContacts([]);
+        }
+      }
       if (accessToken && competitionRes.data.competition_format === "league") {
         await fetch("/api/admin/auto-void-league-fixtures", {
           method: "POST",
@@ -2250,6 +2269,27 @@ export default function MatchPage() {
                   <p className="mt-2 rounded-lg border border-lime-200 bg-lime-50 px-3 py-2 text-sm text-lime-950">
                     Fixture window: Monday 1:00pm to Sunday 9:00pm. A genuine no-show or arrival more than 15 minutes late can be awarded 5-0 by the organiser. If neither player made sufficient effort, void the fixture for no points.
                   </p>
+                ) : null}
+                {fixtureContacts.length ? (
+                  <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-sky-950">Arrange this fixture</p>
+                      <span className="text-xs text-sky-800">Visible only to fixture players and competition managers</span>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {fixtureContacts.map((contact) => (
+                        <div key={contact.playerId} className="rounded-lg border border-sky-200 bg-white p-3">
+                          <p className="font-semibold text-slate-950">{contact.name}</p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                            {contact.phone ? <a href={`tel:${contact.phone}`} className="rounded-full bg-emerald-700 px-3 py-1.5 font-medium text-white">Call {contact.phone}</a> : null}
+                            {contact.email ? <a href={`mailto:${contact.email}`} className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 font-medium text-sky-900">Email</a> : null}
+                            {!contact.phone && !contact.email ? <span className="text-slate-500">No contact details provided yet.</span> : null}
+                          </div>
+                          {contact.email ? <p className="mt-2 break-all text-xs text-slate-600">{contact.email}</p> : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
                 <p className="mt-1 text-slate-700">Status: {getMatchStatusLabel(match)}</p>
                 {isHandicappedSnookerMatch ? (

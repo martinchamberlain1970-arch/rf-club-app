@@ -15,6 +15,7 @@ type Competition = {
   id: string;
   name: string;
   venue: string | null;
+  location_id: string | null;
   sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   competition_format: "knockout" | "league";
   match_mode?: "singles" | "doubles";
@@ -56,6 +57,7 @@ type Match = {
 };
 type Player = { id: string; display_name: string; full_name: string | null; snooker_handicap?: number | null };
 type AppUserLink = { id: string; linked_player_id: string | null };
+type CompetitionContact = { entryId: string; playerId: string; name: string; email: string | null; phone: string | null; fixtureAccessToken: string | null };
 type Entry = {
   id: string;
   competition_id: string;
@@ -409,6 +411,9 @@ export default function CompetitionPage() {
   const [addingSuperEntry, setAddingSuperEntry] = useState(false);
   const [cashPaymentTarget, setCashPaymentTarget] = useState<{ entry: Entry; reset: boolean } | null>(null);
   const [cashPaymentEntryId, setCashPaymentEntryId] = useState<string | null>(null);
+  const [creatingMastersCup, setCreatingMastersCup] = useState(false);
+  const [competitionContacts, setCompetitionContacts] = useState<CompetitionContact[]>([]);
+  const [savingContactEntryId, setSavingContactEntryId] = useState<string | null>(null);
 
   const shareGuestSignup = async () => {
     if (!competition) return;
@@ -427,6 +432,12 @@ export default function CompetitionPage() {
     }
     await navigator.clipboard.writeText(url);
     setMessage("Public sign-up link copied. You can now paste it into WhatsApp.");
+  };
+
+  const copyGuestFixtureLink = async (contact: CompetitionContact) => {
+    if (!contact.fixtureAccessToken) return;
+    await navigator.clipboard.writeText(`${window.location.origin}/entrant/${contact.fixtureAccessToken}`);
+    setMessage(`${contact.name}'s private fixture link was copied. Send it only to that entrant.`);
   };
 
   const openBracketDisplay = () => {
@@ -498,6 +509,31 @@ export default function CompetitionPage() {
     setMessage(reset ? "Cash payment reset to pending." : "Cash payment recorded with the current date and time.");
   };
 
+  const saveCompetitionContact = async (contact: CompetitionContact) => {
+    const client = supabase;
+    if (!client || !admin.isAdmin) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setMessage("Please sign in again.");
+      return;
+    }
+    setSavingContactEntryId(contact.entryId);
+    const response = await fetch("/api/admin/competition-contacts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ entryId: contact.entryId, email: contact.email, phone: contact.phone }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setSavingContactEntryId(null);
+    if (!response.ok) {
+      setMessage(data.error ?? "Contact details could not be saved.");
+      return;
+    }
+    setCompetitionContacts((current) => current.map((item) => item.entryId === contact.entryId ? { ...item, email: data.email, phone: data.phone } : item));
+    setMessage(`${contact.name}'s fixture contact details were saved.`);
+  };
+
   const reviewGuestEntry = async (entryId: string, status: "added" | "rejected") => {
     const client = supabase;
     if (!client || !admin.isAdmin) return;
@@ -552,7 +588,7 @@ export default function CompetitionPage() {
       const [cRes, mRes, pRes, fRes, appUserLinkRes] = await Promise.all([
         client
           .from("competitions")
-          .select("id,name,venue,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,entry_fee_pence,league_meetings,league_start_date,league_schedule_mode,league_finals_size,league_semi_final_best_of,league_final_best_of,handicap_enabled")
+          .select("id,name,venue,location_id,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,entry_fee_pence,league_meetings,league_start_date,league_schedule_mode,league_finals_size,league_semi_final_best_of,league_final_best_of,handicap_enabled")
           .eq("id", id)
           .single(),
         client
@@ -623,12 +659,17 @@ export default function CompetitionPage() {
       if (entryRes.data) setEntries((entryRes.data as unknown) as Entry[]);
       if (admin.isAdmin) {
         if (accessToken) {
-          const guestResponse = await fetch("/api/admin/public-competition-signups", {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
+          const [guestResponse, contactResponse] = await Promise.all([
+            fetch("/api/admin/public-competition-signups", { headers: { Authorization: `Bearer ${accessToken}` } }),
+            fetch(`/api/admin/competition-contacts?competitionId=${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${accessToken}` } }),
+          ]);
           if (guestResponse.ok) {
             const guestData = await guestResponse.json();
             setGuestEntries(((guestData.entries ?? []) as GuestEntry[]).filter((entry) => entry.competition_id === id));
+          }
+          if (contactResponse.ok) {
+            const contactData = await contactResponse.json();
+            setCompetitionContacts((contactData.contacts ?? []) as CompetitionContact[]);
           }
         }
       }
@@ -1353,6 +1394,32 @@ export default function CompetitionPage() {
       a.playerName.localeCompare(b.playerName)
     );
   })();
+  const leagueStageComplete = matches.some((match) => match.status !== "bye") && matches
+    .filter((match) => match.status !== "bye")
+    .every((match) => match.status === "complete");
+  const openOrCreateMastersCup = async () => {
+    const client = supabase;
+    if (!client || !competition || !admin.isAdmin || !hasTopEightFinals) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setMessage("Please sign in again.");
+      return;
+    }
+    setCreatingMastersCup(true);
+    const response = await fetch("/api/admin/legion-masters-cup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ competitionId: competition.id }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setCreatingMastersCup(false);
+    if (!response.ok || !data.competitionId) {
+      setMessage(data.error ?? "The Legion Masters Cup could not be created.");
+      return;
+    }
+    window.location.assign(`/competitions/${data.competitionId}`);
+  };
   const totalBracketRounds = bracketRounds.length;
   const matchesByKey = useMemo(() => {
     const m = new Map<string, Match>();
@@ -1734,6 +1801,57 @@ export default function CompetitionPage() {
                       ? "All round-robin fixtures are played on the competition date. Play every rack: each rack won scores one league point."
                       : "Fixtures run from Monday 13:00 to Sunday 21:00. Play every rack: each rack won scores one league point. A genuine no-show or late-arrival forfeit may be awarded 5-0; if neither player made sufficient effort, void the fixture for no points."}
                   </p>
+                  {admin.isAdmin && competitionContacts.length ? (
+                    <details className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3" open>
+                      <summary className="cursor-pointer font-semibold text-sky-950">
+                        Fixture contact readiness · {competitionContacts.filter((contact) => contact.email && contact.phone).length}/{competitionContacts.length} have phone and email
+                      </summary>
+                      <p className="mt-1 text-xs text-sky-800">These private details are shown only to that player&apos;s fixture opponents and competition managers.</p>
+                      <div className="mt-3 space-y-2">
+                        {competitionContacts.map((contact) => (
+                          <div key={contact.entryId} className={`grid gap-2 rounded-lg border bg-white p-3 sm:grid-cols-[1fr_1fr_1fr_auto] ${contact.email && contact.phone ? "border-sky-200" : "border-amber-300"}`}>
+                            <div>
+                              <p className="font-medium text-slate-950">{contact.name}</p>
+                              {contact.email && contact.phone ? <span className="text-xs text-emerald-700">Ready</span> : <span className="text-xs font-medium text-amber-700">Contact details incomplete</span>}
+                            </div>
+                            <input
+                              type="tel"
+                              value={contact.phone ?? ""}
+                              onChange={(event) => setCompetitionContacts((current) => current.map((item) => item.entryId === contact.entryId ? { ...item, phone: event.target.value || null } : item))}
+                              placeholder="Mobile number"
+                              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            />
+                            <input
+                              type="email"
+                              value={contact.email ?? ""}
+                              onChange={(event) => setCompetitionContacts((current) => current.map((item) => item.entryId === contact.entryId ? { ...item, email: event.target.value || null } : item))}
+                              placeholder="Email address"
+                              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void saveCompetitionContact(contact)}
+                              disabled={savingContactEntryId === contact.entryId || (!contact.email && !contact.phone)}
+                              className="rounded-lg bg-sky-800 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                            >
+                              {savingContactEntryId === contact.entryId ? "Saving..." : "Save"}
+                            </button>
+                            {contact.fixtureAccessToken ? (
+                              <button
+                                type="button"
+                                onClick={() => void copyGuestFixtureLink(contact)}
+                                className="rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 sm:col-start-2 sm:col-span-3"
+                              >
+                                Copy {contact.name}&apos;s private fixture/result link
+                              </button>
+                            ) : (
+                              <p className="text-xs text-slate-500 sm:col-start-2 sm:col-span-3">Uses their registered app account for fixtures and results.</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
                   {admin.isAdmin ? (
                     <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]">
                       <label className="flex flex-col gap-1 text-sm text-slate-700">
@@ -1823,7 +1941,10 @@ export default function CompetitionPage() {
                             </thead>
                             <tbody>
                               {leagueTableRows.map((row, index) => (
-                                <tr key={row.playerId} className="border-t border-slate-200 text-slate-800">
+                                <tr
+                                  key={row.playerId}
+                                  className={`border-t text-slate-800 ${hasTopEightFinals && index < 8 ? "border-lime-300 bg-lime-50" : "border-slate-200"} ${hasTopEightFinals && index === 7 ? "border-b-4 border-b-lime-500" : ""}`}
+                                >
                                   <td className="px-2 py-2 text-center tabular-nums">{index + 1}</td>
                                   <td className="px-2 py-2 font-medium">{row.playerName}</td>
                                   <td className="px-2 py-2 text-center tabular-nums">{row.played}</td>
@@ -1834,7 +1955,7 @@ export default function CompetitionPage() {
                                   <td className="px-2 py-2 text-center font-semibold tabular-nums">{row.points}</td>
                                   {hasTopEightFinals || (isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4) ? (
                                     <td className="px-2 py-2 text-center">
-                                      {index < (hasTopEightFinals ? 8 : 4) ? <span className="rounded-full bg-lime-100 px-2 py-0.5 text-xs font-semibold text-lime-900">Top {hasTopEightFinals ? 8 : 4}</span> : "—"}
+                                      {index < (hasTopEightFinals ? 8 : 4) ? <span className="rounded-full bg-lime-200 px-2 py-0.5 text-xs font-semibold text-lime-950">{hasTopEightFinals ? "Cup place" : "Top 4"}</span> : "—"}
                                     </td>
                                   ) : null}
                                 </tr>
@@ -1843,6 +1964,28 @@ export default function CompetitionPage() {
                           </table>
                         </div>
                       </div>
+                      {hasTopEightFinals ? (
+                        <div className="rounded-xl border border-amber-300 bg-gradient-to-r from-amber-50 to-lime-50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold text-slate-950">Legion Masters Cup qualification</p>
+                              <p className="mt-1 text-xs text-slate-700">
+                                The highlighted top eight qualify. Once every league fixture is completed or voided, create the seeded knockout: 1st v 8th, 4th v 5th, 2nd v 7th and 3rd v 6th.
+                              </p>
+                            </div>
+                            {admin.isAdmin ? (
+                              <button
+                                type="button"
+                                onClick={() => void openOrCreateMastersCup()}
+                                disabled={!leagueStageComplete || leagueTableRows.length < 8 || creatingMastersCup}
+                                className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                {creatingMastersCup ? "Preparing Cup..." : leagueStageComplete ? "Create or Open Masters Cup" : "Available after league stage"}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                       {isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? (
                         <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
                           <p className="text-sm font-semibold text-violet-950">Finals stage</p>

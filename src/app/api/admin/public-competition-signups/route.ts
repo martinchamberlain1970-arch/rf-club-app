@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
 
   const signupResult = await client
     .from("public_competition_signups")
-    .select("id,competition_id,full_name,email,status,payment_status,payment_method,payment_amount_pence,paid_at,competitions(name,location_id)")
+    .select("id,competition_id,full_name,email,status,payment_status,payment_method,payment_amount_pence,paid_at,fixture_access_token,competitions(name,location_id)")
     .eq("id", signupId)
     .maybeSingle();
   const signup = signupResult.data;
@@ -129,6 +129,7 @@ export async function POST(request: NextRequest) {
     const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").replace(/\/$/, "");
     const query = new URLSearchParams({ email: signup.email, firstName, secondName, invite: "competition" });
     const registrationUrl = `${siteUrl}/auth/sign-up?${query.toString()}`;
+    const fixtureUrl = `${siteUrl}/entrant/${signup.fixture_access_token}`;
     const competitionRelation = signup.competitions as unknown as { name: string; location_id: string | null } | null;
     const competitionName = competitionRelation?.name ?? "your competition";
     try {
@@ -136,8 +137,8 @@ export async function POST(request: NextRequest) {
         to: signup.email,
         bcc: "rackandframe.app@gmail.com",
         subject: "Complete your Rack & Frame registration",
-        text: `Hi ${firstName},\n\nYour player profile has been created and added to ${competitionName}. Register for the Rack & Frame Club app using the link below. Use the same name and select the existing profile when prompted.\n\n${registrationUrl}\n\nYou are already entered and your payment is recorded.`,
-        html: `<p>Hi ${escapeHtml(firstName)},</p><p>Your player profile has been created and added to <strong>${escapeHtml(competitionName)}</strong>.</p><p><a href="${escapeHtml(registrationUrl)}" style="display:inline-block;background:#047857;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">Register for Rack &amp; Frame</a></p><p>Use the same name and select the existing profile when prompted. You are already entered and your payment is recorded.</p>`,
+        text: `Hi ${firstName},\n\nYour player profile has been created and added to ${competitionName}. You are already entered and your payment is recorded.\n\nYour private fixtures and result link (no app registration needed):\n${fixtureUrl}\n\nKeep that link private. You can optionally register for the Rack & Frame Club app here:\n${registrationUrl}\n\nUse the same name and select the existing profile when prompted.`,
+        html: `<p>Hi ${escapeHtml(firstName)},</p><p>Your player profile has been created and added to <strong>${escapeHtml(competitionName)}</strong>. You are already entered and your payment is recorded.</p><p><a href="${escapeHtml(fixtureUrl)}" style="display:inline-block;background:#047857;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">View fixtures &amp; submit results</a></p><p>This private link works without app registration. Please do not share it with anyone else.</p><p>Optionally, <a href="${escapeHtml(registrationUrl)}">register for the Rack &amp; Frame Club app</a>. Use the same name and select the existing profile when prompted.</p>`,
       });
       invitationSent = true;
       await client.from("audit_logs").insert({
