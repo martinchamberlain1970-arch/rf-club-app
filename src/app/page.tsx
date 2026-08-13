@@ -58,6 +58,16 @@ type PriorityCard = {
   detail: string;
 };
 type DashboardLink = { href: string; title: string; desc: string };
+type ExperienceMode = "player" | "manage";
+
+const playerExperienceLinks = [
+  { href: "/my-fixtures", title: "My Fixtures", desc: "See what you are playing next.", symbol: "NEXT" },
+  { href: "/events", title: "Competitions", desc: "Open events, draws and tables.", symbol: "PLAY" },
+  { href: "/rankings", title: "Rankings", desc: "See where you stand.", symbol: "RANK" },
+  { href: "/high-breaks", title: "High Breaks", desc: "Club snooker break table.", symbol: "BREAK" },
+  { href: "/quick-match", title: "Quick Match", desc: "Start a social or practice match.", symbol: "START" },
+  { href: "/notifications", title: "Updates", desc: "Results, requests and messages.", symbol: "NEWS" },
+] as const;
 
 export default function HomePage() {
   const router = useRouter();
@@ -87,6 +97,7 @@ export default function HomePage() {
   const [pendingResultSubmissionsCount, setPendingResultSubmissionsCount] = useState<number>(0);
   const [sharedLinkSuggestionsCount, setSharedLinkSuggestionsCount] = useState<number>(0);
   const [sharedLinksMonthlyReviewDue, setSharedLinksMonthlyReviewDue] = useState(false);
+  const [experienceMode, setExperienceMode] = useState<ExperienceMode>("manage");
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
   const [confirmState, setConfirmState] = useState<{
     open: boolean;
@@ -98,6 +109,8 @@ export default function HomePage() {
   }>({ open: false, title: "", description: "" });
 
   const quickMatchAllowed = Boolean(admin.userId);
+  const canManage = admin.isAdmin || admin.isSuper;
+  const isManageMode = canManage && experienceMode === "manage";
   const createCompetitionAllowed = admin.isAdmin || admin.isSuper;
   const visibleCoreLinks = coreActionLinks.filter((item) => {
     if (item.href === "/quick-match") return quickMatchAllowed;
@@ -285,6 +298,10 @@ export default function HomePage() {
     const resolver = confirmState.resolve;
     setConfirmState({ open: false, title: "", description: "" });
     resolver?.(result);
+  };
+
+  const changeExperienceMode = (mode: ExperienceMode) => {
+    setExperienceMode(mode);
   };
 
   useEffect(() => {
@@ -641,44 +658,64 @@ export default function HomePage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-100 p-3 sm:p-6">
-      <div className="mx-auto max-w-5xl space-y-3 sm:space-y-4">
+    <main className={`min-h-screen p-3 sm:p-6 ${isManageMode ? "bg-slate-950" : "bg-gradient-to-b from-emerald-950 via-teal-950 to-slate-100"}`}>
+      <div className={`mx-auto space-y-3 sm:space-y-4 ${isManageMode ? "max-w-6xl" : "max-w-5xl pb-20 sm:pb-0"}`}>
         <RequireAuth>
-          <section className="rounded-2xl border border-slate-200 bg-gradient-to-r from-teal-50 via-slate-50 to-amber-50 p-3 sm:p-4 shadow-sm">
+          <section className={`rounded-3xl border p-4 shadow-lg sm:p-5 ${isManageMode ? "border-slate-700 bg-slate-900 text-white" : "border-emerald-300/30 bg-emerald-950/80 text-white backdrop-blur"}`}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Dashboard</p>
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
+                <p className={`text-xs font-semibold uppercase tracking-[0.2em] ${isManageMode ? "text-amber-300" : "text-emerald-300"}`}>
+                  {isManageMode ? "Competition control" : "Your club. Your game."}
+                </p>
+                <h1 className="text-2xl font-black sm:text-3xl">
                   Rack &amp; Frame
                 </h1>
-                <p className="mt-1 text-sm text-slate-600">
-                  {admin.isSuper
-                    ? "System dashboard"
-                    : admin.isAdmin ? "Club admin dashboard" : "Player dashboard"}
+                <p className={`mt-1 text-sm ${isManageMode ? "text-slate-300" : "text-emerald-100"}`}>
+                  {isManageMode ? "Run competitions, entrants, fixtures and results." : `Welcome${userName ? `, ${userName.split(" ")[0]}` : ""}. Ready to play?`}
                 </p>
               </div>
               <PageNav />
             </div>
+            {canManage ? (
+              <div className="mt-4 inline-flex rounded-full border border-white/20 bg-black/20 p-1" aria-label="Choose dashboard view">
+                <button
+                  type="button"
+                  onClick={() => changeExperienceMode("player")}
+                  aria-pressed={!isManageMode}
+                  className={`rounded-full px-4 py-2 text-sm font-bold transition ${!isManageMode ? "bg-white text-emerald-950 shadow" : "text-slate-300 hover:text-white"}`}
+                >
+                  Player
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeExperienceMode("manage")}
+                  aria-pressed={isManageMode}
+                  className={`rounded-full px-4 py-2 text-sm font-bold transition ${isManageMode ? "bg-amber-300 text-slate-950 shadow" : "text-emerald-100 hover:text-white"}`}
+                >
+                  Manage
+                </button>
+              </div>
+            ) : null}
           </section>
           {completionMessage ? (
             <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-emerald-900">
               {completionMessage}
             </section>
           ) : null}
-          <section className={subtleCardClass}>
+          <section className={`${subtleCardClass} ${isManageMode ? "border-slate-700 bg-slate-900 text-white" : "border-emerald-100"}`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Signed in</p>
+                <p className={`text-xs font-semibold uppercase tracking-wide ${isManageMode ? "text-slate-400" : "text-slate-500"}`}>Signed in</p>
                 {userPlayerId ? (
-                  <Link href={`/players/${userPlayerId}`} className="text-lg font-bold text-slate-900 underline-offset-4 hover:underline">
+                  <Link href={`/players/${userPlayerId}`} className={`text-lg font-bold underline-offset-4 hover:underline ${isManageMode ? "text-white" : "text-slate-900"}`}>
                     {userName || (admin.isSuper ? "Super User account" : admin.isAdmin ? "Administrator account" : "Player account")}
                   </Link>
                 ) : (
-                  <p className="text-lg font-bold text-slate-900">
+                  <p className={`text-lg font-bold ${isManageMode ? "text-white" : "text-slate-900"}`}>
                     {userName || (admin.isSuper ? "Super User account" : admin.isAdmin ? "Administrator account" : "No player profile linked")}
                   </p>
                 )}
-                {userEmail ? <p className="text-xs text-slate-500">{userEmail}</p> : null}
+                {userEmail ? <p className={`text-xs ${isManageMode ? "text-slate-400" : "text-slate-500"}`}>{userEmail}</p> : null}
               </div>
               <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${admin.isSuper ? "bg-amber-100 text-amber-800" : admin.isAdmin ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                 {admin.isSuper ? "Super User" : admin.isAdmin ? "Administrator" : "Player"}
@@ -749,7 +786,60 @@ export default function HomePage() {
             {profileMessage ? <p className="mt-2 text-sm text-slate-700">{profileMessage}</p> : null}
           </section>
 
-          <section className={subtleCardClass}>
+          {!isManageMode ? (
+            <section className="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-xl">
+              <div className="bg-gradient-to-r from-emerald-700 to-teal-700 p-5 text-white">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-100">Player home</p>
+                <h2 className="mt-1 text-2xl font-black">Everything you need to play</h2>
+                <p className="mt-1 text-sm text-emerald-50">Fixtures, competitions and results without the management clutter.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 sm:p-5">
+                {playerExperienceLinks
+                  .filter((item) => item.href !== "/my-fixtures" || userPlayerId)
+                  .filter((item) => item.href !== "/quick-match" || quickMatchAllowed)
+                  .map((item, index) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`group min-h-32 rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-lg ${index === 0 ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}
+                    >
+                      <span className="text-[10px] font-black tracking-[0.16em] text-emerald-700">{item.symbol}</span>
+                      <h3 className="mt-4 text-lg font-black text-slate-950">{item.title}</h3>
+                      <p className="mt-1 text-xs text-slate-600">{item.desc}</p>
+                    </Link>
+                  ))}
+              </div>
+            </section>
+          ) : null}
+
+          {isManageMode ? (
+            <section className="rounded-3xl border border-amber-300/40 bg-gradient-to-br from-amber-300 via-amber-200 to-orange-200 p-4 shadow-xl sm:p-5">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-950">Launch desk</p>
+                  <h2 className="mt-1 text-2xl font-black text-slate-950">Run tomorrow&apos;s competition</h2>
+                  <p className="mt-1 text-sm text-amber-950/80">The key workflow, in order.</p>
+                </div>
+                <Link href="/events/new" className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-bold text-white shadow">Create competition</Link>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {[
+                  ["1", "Competition", "/events/new"],
+                  ["2", "Entrants", "/signups"],
+                  ["3", "Fixtures", "/events"],
+                  ["4", "Live control", "/live"],
+                  ["5", "Results", "/results"],
+                ].map(([step, label, href]) => (
+                  <Link key={label} href={href} className="rounded-2xl border border-amber-950/10 bg-white/75 p-3 text-slate-950 shadow-sm hover:bg-white">
+                    <span className="text-xs font-black text-amber-800">STEP {step}</span>
+                    <p className="mt-2 font-black">{label}</p>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {isManageMode ? <section className={subtleCardClass}>
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-base font-bold text-slate-950">Needs attention</h2>
               <span className="text-xs font-medium text-slate-500">Tap to open</span>
@@ -767,9 +857,9 @@ export default function HomePage() {
                 </Link>
               ))}
             </div>
-          </section>
+          </section> : null}
 
-          <section className={cardBaseClass}>
+          {isManageMode ? <section className={cardBaseClass}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold text-slate-950">Main actions</h2>
@@ -787,9 +877,9 @@ export default function HomePage() {
                 </Link>
               ))}
             </div>
-          </section>
+          </section> : null}
 
-          <section className="space-y-3">
+          {isManageMode ? <section className="space-y-3">
             {dashboardMoreLinks.length ? (
               <details className={cardBaseClass}>
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-slate-900">
@@ -878,7 +968,32 @@ export default function HomePage() {
             <p className="text-center text-xs uppercase tracking-[0.18em] text-slate-500">
               Designed and developed by Martin Chamberlain
             </p>
-          </section>
+          </section> : (
+            <section className="space-y-3">
+              {visibleSupportLinks.length ? (
+                <details className={cardBaseClass}>
+                  <summary className="cursor-pointer font-semibold text-slate-900">Install, help &amp; support</summary>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {visibleSupportLinks.map((item) => <Link key={item.href} href={item.href} className={pillSecondaryClass}>{item.title}</Link>)}
+                  </div>
+                </details>
+              ) : null}
+              <p className="text-center text-xs uppercase tracking-[0.18em] text-slate-500">Designed and developed by Martin Chamberlain</p>
+            </section>
+          )}
+
+          {!isManageMode ? (
+            <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 rounded-2xl border border-emerald-200 bg-white/95 p-2 shadow-2xl backdrop-blur sm:hidden" aria-label="Player shortcuts">
+              {[
+                ["Home", "/"],
+                ["Fixtures", userPlayerId ? "/my-fixtures" : "/events"],
+                ["Rankings", "/rankings"],
+                ["Profile", userPlayerId ? `/players/${userPlayerId}` : "/notifications"],
+              ].map(([label, href]) => (
+                <Link key={label} href={href} className="rounded-xl px-1 py-2 text-center text-[11px] font-bold text-emerald-950 hover:bg-emerald-50">{label}</Link>
+              ))}
+            </nav>
+          ) : null}
 
           {profileModalOpen && !admin.isAdmin ? (
             <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 p-4">
