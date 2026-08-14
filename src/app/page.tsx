@@ -47,7 +47,7 @@ const systemToolLinks = [
   { href: "/backup", title: "Data Management", desc: "Run maintenance and data cleanup tools." },
   { href: "/audit", title: "Audit Log", desc: "Check important account and system actions." },
   { href: "/emails", title: "Email History", desc: "See registration invitations sent by the app." },
-  { href: "/usage", title: "Usage Analytics", desc: "Review app activity and usage trends." },
+  { href: "/usage", title: "Accounts & Activity", desc: "See registrations, login activity, and what each person uses." },
 ] as const;
 
 type PriorityTone = "teal" | "emerald" | "indigo" | "amber" | "violet";

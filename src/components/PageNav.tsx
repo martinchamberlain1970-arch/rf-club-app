@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import useAdminStatus from "@/components/useAdminStatus";
 import ConfirmModal from "@/components/ConfirmModal";
+import { logAudit } from "@/lib/audit";
 
 type PageNavProps = {
   warnOnNavigate?: boolean;
@@ -50,7 +51,14 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
       }
     }
     const client = supabase;
-    if (client) await client.auth.signOut();
+    if (client) {
+      await logAudit("auth_sign_out", {
+        entityType: "auth",
+        summary: "User signed out.",
+        meta: { path: pathname || "/" },
+      });
+      await client.auth.signOut();
+    }
     router.replace("/auth/sign-in");
   };
 

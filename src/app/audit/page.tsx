@@ -33,6 +33,7 @@ type PlayerRow = { id: string; display_name: string; full_name: string | null };
 
 const ACTION_LABELS: Record<string, string> = {
   auth_sign_in: "Signed in",
+  auth_sign_out: "Signed out",
   auth_sign_up: "Created account",
   quick_match_created: "Created quick match",
   competition_created: "Created competition",
