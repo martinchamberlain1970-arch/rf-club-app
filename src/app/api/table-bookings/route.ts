@@ -236,11 +236,13 @@ export async function POST(request: NextRequest) {
   const notes = String(body?.notes ?? "").trim().slice(0, 240) || null;
   if (!tableId || Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return NextResponse.json({ error: "Choose a valid table, date and time." }, { status: 400 });
   const durationMinutes = (endsAt.getTime() - startsAt.getTime()) / 60000;
-  if (startsAt.getTime() < Date.now() - 5 * 60000 || durationMinutes < 30 || durationMinutes > 240) return NextResponse.json({ error: "Bookings must be 30 minutes to 4 hours and cannot start in the past." }, { status: 400 });
+  if (startsAt.getTime() < Date.now() - 5 * 60000 || durationMinutes < 30) return NextResponse.json({ error: "Bookings must be at least 30 minutes and cannot start in the past." }, { status: 400 });
   if (startsAt.getTime() > Date.now() + 60 * 24 * 60 * 60 * 1000) return NextResponse.json({ error: "Bookings can be made up to 60 days ahead." }, { status: 400 });
   const startInLondon = londonDateParts(startsAt);
   const tableResult = await auth.client.from("cue_tables").select("id,sport_type,is_active").eq("id", tableId).maybeSingle();
   if (!tableResult.data?.is_active) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
+  const maximumMinutes = tableResult.data.sport_type === "pool" ? 30 : 60;
+  if (durationMinutes > maximumMinutes) return NextResponse.json({ error: `${tableResult.data.sport_type === "pool" ? "Pool" : "Snooker"} table bookings are limited to ${maximumMinutes} minutes.` }, { status: 400 });
   const eligibleSports = await eligibility(auth);
   if (!eligibleSports.includes(tableResult.data.sport_type)) return NextResponse.json({ error: `You do not currently have ${tableResult.data.sport_type} table booking access.` }, { status: 403 });
   const endInLondon = londonDateParts(endsAt);
