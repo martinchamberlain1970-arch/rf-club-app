@@ -57,14 +57,18 @@ function londonDateParts(value: Date) {
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)?.value ?? "";
   return {
     date: `${part("year")}-${part("month")}-${part("day")}`,
-    weekday: part("weekday"),
+    weekday: ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[part("weekday")],
     minutes: Number(part("hour")) * 60 + Number(part("minute")),
   };
 }
 
-function openingMinutes(value: Date) {
-  const { weekday } = londonDateParts(value);
-  return ["Fri", "Sat", "Sun"].includes(weekday) ? 11 * 60 : 13 * 60;
+function timeMinutes(value: string) {
+  const [hour, minute] = value.slice(0, 5).split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function validTime(value: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 export async function GET(request: NextRequest) {
@@ -74,11 +78,13 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   const from = new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString();
   const to = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString();
-  const [tablesResult, reservationsResult] = await Promise.all([
+  const [tablesResult, reservationsResult, hoursResult, blocksResult] = await Promise.all([
     auth.client.from("cue_tables").select("id,name,sport_type,location_id,display_order").eq("is_active", true).order("display_order"),
     auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,booked_for_player_id,starts_at,ends_at,purpose,notes,status,created_at").eq("status", "booked").gte("ends_at", from).lte("starts_at", to).order("starts_at"),
+    auth.client.from("table_booking_hours").select("id,table_id,weekday,opens_at,closes_at").order("weekday"),
+    auth.client.from("table_booking_blocks").select("id,table_id,starts_at,ends_at,category,title,notes,created_at").gte("ends_at", from).lte("starts_at", to).order("starts_at"),
   ]);
-  const error = tablesResult.error || reservationsResult.error;
+  const error = tablesResult.error || reservationsResult.error || hoursResult.error || blocksResult.error;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   const playerIds = [...new Set((reservationsResult.data ?? []).map((reservation) => reservation.booked_for_player_id))];
   const namesResult = playerIds.length ? await auth.client.from("players").select("id,display_name,full_name").in("id", playerIds) : { data: [], error: null };
@@ -108,6 +114,8 @@ export async function GET(request: NextRequest) {
     eligibleSports,
     tables: tablesResult.data ?? [],
     reservations: (reservationsResult.data ?? []).map((reservation) => ({ ...reservation, playerName: names.get(reservation.booked_for_player_id) || "Player" })),
+    availability: hoursResult.data ?? [],
+    blocks: blocksResult.data ?? [],
     access,
     players,
   });
@@ -145,6 +153,72 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "set_availability") {
+    if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
+    const tableId = String(body?.tableId ?? "");
+    const weekday = Number(body?.weekday);
+    const enabled = Boolean(body?.enabled);
+    const opensAt = String(body?.opensAt ?? "").slice(0, 5);
+    const closesAt = String(body?.closesAt ?? "").slice(0, 5);
+    if (!tableId || !Number.isInteger(weekday) || weekday < 0 || weekday > 6) return NextResponse.json({ error: "Choose a valid table and day." }, { status: 400 });
+    if (enabled && (!validTime(opensAt) || !validTime(closesAt) || timeMinutes(closesAt) <= timeMinutes(opensAt))) return NextResponse.json({ error: "Choose valid opening and closing times." }, { status: 400 });
+    const tableResult = await auth.client.from("cue_tables").select("id").eq("id", tableId).eq("is_active", true).maybeSingle();
+    if (!tableResult.data) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
+    const now = new Date();
+    const futureReservations = await auth.client.from("table_reservations").select("starts_at,ends_at").eq("table_id", tableId).eq("status", "booked").gte("ends_at", now.toISOString()).lte("starts_at", new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString());
+    if (futureReservations.error) return NextResponse.json({ error: futureReservations.error.message }, { status: 400 });
+    const affected = (futureReservations.data ?? []).filter((reservation) => {
+      const start = londonDateParts(new Date(reservation.starts_at));
+      if (start.weekday !== weekday) return false;
+      const end = londonDateParts(new Date(reservation.ends_at));
+      return !enabled || start.date !== end.date || start.minutes < timeMinutes(opensAt) || end.minutes > timeMinutes(closesAt);
+    });
+    if (affected.length) return NextResponse.json({ error: `This change would put ${affected.length} existing reservation${affected.length === 1 ? "" : "s"} outside the available hours. Cancel or move them first.` }, { status: 409 });
+    const deleteResult = await auth.client.from("table_booking_hours").delete().eq("table_id", tableId).eq("weekday", weekday);
+    if (deleteResult.error) return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+    if (enabled) {
+      const insertResult = await auth.client.from("table_booking_hours").insert({ table_id: tableId, weekday, opens_at: opensAt, closes_at: closesAt, updated_at: new Date().toISOString() });
+      if (insertResult.error) return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
+    }
+    await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: "table_availability_updated", entity_type: "cue_table", entity_id: tableId, summary: `Table booking availability ${enabled ? `set to ${opensAt}-${closesAt}` : "closed"} for weekday ${weekday}.`, meta: { weekday, enabled, opens_at: enabled ? opensAt : null, closes_at: enabled ? closesAt : null } });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "add_block") {
+    if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
+    const tableId = body?.tableId ? String(body.tableId) : null;
+    const startsAt = new Date(String(body?.startsAt ?? ""));
+    const endsAt = new Date(String(body?.endsAt ?? ""));
+    const category = String(body?.category ?? "other");
+    const title = String(body?.title ?? "").trim().slice(0, 120);
+    const notes = String(body?.notes ?? "").trim().slice(0, 240) || null;
+    const categories = ["entertainment", "pool_home_match", "snooker_home_match", "maintenance", "private_event", "other"];
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt <= startsAt) return NextResponse.json({ error: "Choose a valid unavailable period." }, { status: 400 });
+    if (!categories.includes(category) || !title) return NextResponse.json({ error: "Choose a reason and enter a title." }, { status: 400 });
+    if (tableId) {
+      const tableResult = await auth.client.from("cue_tables").select("id").eq("id", tableId).eq("is_active", true).maybeSingle();
+      if (!tableResult.data) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
+    }
+    let conflictQuery = auth.client.from("table_reservations").select("id", { count: "exact", head: true }).eq("status", "booked").lt("starts_at", endsAt.toISOString()).gt("ends_at", startsAt.toISOString());
+    if (tableId) conflictQuery = conflictQuery.eq("table_id", tableId);
+    const conflicts = await conflictQuery;
+    if (conflicts.error) return NextResponse.json({ error: conflicts.error.message }, { status: 400 });
+    if ((conflicts.count ?? 0) > 0) return NextResponse.json({ error: `There ${conflicts.count === 1 ? "is" : "are"} ${conflicts.count} existing reservation${conflicts.count === 1 ? "" : "s"} in that period. Cancel or move them before making the table unavailable.` }, { status: 409 });
+    const insertResult = await auth.client.from("table_booking_blocks").insert({ table_id: tableId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), category, title, notes, created_by_user_id: auth.user.id }).select("id").single();
+    if (insertResult.error) return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
+    await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: "table_booking_block_added", entity_type: "table_booking_block", entity_id: insertResult.data.id, summary: `Table booking blocked: ${title}.`, meta: { table_id: tableId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), category } });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "remove_block") {
+    if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
+    const blockId = String(body?.blockId ?? "");
+    const deleteResult = await auth.client.from("table_booking_blocks").delete().eq("id", blockId);
+    if (deleteResult.error) return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+    await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: "table_booking_block_removed", entity_type: "table_booking_block", entity_id: blockId, summary: "Table booking block removed." });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "cancel") {
     const reservationId = String(body?.reservationId ?? "");
     const reservationResult = await auth.client.from("table_reservations").select("booked_by_user_id").eq("id", reservationId).maybeSingle();
@@ -165,14 +239,21 @@ export async function POST(request: NextRequest) {
   if (startsAt.getTime() < Date.now() - 5 * 60000 || durationMinutes < 30 || durationMinutes > 240) return NextResponse.json({ error: "Bookings must be 30 minutes to 4 hours and cannot start in the past." }, { status: 400 });
   if (startsAt.getTime() > Date.now() + 60 * 24 * 60 * 60 * 1000) return NextResponse.json({ error: "Bookings can be made up to 60 days ahead." }, { status: 400 });
   const startInLondon = londonDateParts(startsAt);
-  if (startInLondon.minutes < openingMinutes(startsAt)) {
-    const opens = openingMinutes(startsAt) === 11 * 60 ? "11:00" : "13:00";
-    return NextResponse.json({ error: `The club opens at ${opens} on ${startInLondon.date}. Choose a later start time.` }, { status: 400 });
-  }
   const tableResult = await auth.client.from("cue_tables").select("id,sport_type,is_active").eq("id", tableId).maybeSingle();
   if (!tableResult.data?.is_active) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
   const eligibleSports = await eligibility(auth);
   if (!eligibleSports.includes(tableResult.data.sport_type)) return NextResponse.json({ error: `You do not currently have ${tableResult.data.sport_type} table booking access.` }, { status: 403 });
+  const endInLondon = londonDateParts(endsAt);
+  const hoursResult = await auth.client.from("table_booking_hours").select("opens_at,closes_at").eq("table_id", tableId).eq("weekday", startInLondon.weekday).maybeSingle();
+  if (hoursResult.error) return NextResponse.json({ error: hoursResult.error.message }, { status: 400 });
+  const withinHours = hoursResult.data && startInLondon.date === endInLondon.date && startInLondon.minutes >= timeMinutes(hoursResult.data.opens_at) && endInLondon.minutes <= timeMinutes(hoursResult.data.closes_at);
+  if (!withinHours) {
+    const hours = hoursResult.data ? `${hoursResult.data.opens_at.slice(0, 5)}–${hoursResult.data.closes_at.slice(0, 5)}` : "closed";
+    return NextResponse.json({ error: `This table is not available for that whole period. Its booking hours on ${startInLondon.date} are ${hours}.` }, { status: 409 });
+  }
+  const blockResult = await auth.client.from("table_booking_blocks").select("title").or(`table_id.is.null,table_id.eq.${tableId}`).lt("starts_at", endsAt.toISOString()).gt("ends_at", startsAt.toISOString()).limit(1).maybeSingle();
+  if (blockResult.error) return NextResponse.json({ error: blockResult.error.message }, { status: 400 });
+  if (blockResult.data) return NextResponse.json({ error: `This table is unavailable then: ${blockResult.data.title}.` }, { status: 409 });
   const insertResult = await auth.client.from("table_reservations").insert({ table_id: tableId, booked_by_user_id: auth.user.id, booked_for_player_id: auth.playerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes }).select("id").single();
   if (insertResult.error) {
     if (insertResult.error.code === "23P01") return NextResponse.json({ error: "That table is already reserved during this time." }, { status: 409 });
