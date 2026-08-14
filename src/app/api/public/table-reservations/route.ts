@@ -1,0 +1,27 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+export async function GET() {
+  if (!supabaseUrl || !serviceRoleKey) return NextResponse.json({ error: "Display is not configured." }, { status: 500 });
+  const client = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  const now = new Date();
+  const until = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const [tablesResult, reservationsResult] = await Promise.all([
+    client.from("cue_tables").select("id,name,sport_type,display_order").eq("is_active", true).order("display_order"),
+    client.from("table_reservations").select("id,table_id,booked_for_player_id,starts_at,ends_at,purpose,notes").eq("status", "booked").gte("ends_at", now.toISOString()).lte("starts_at", until.toISOString()).order("starts_at"),
+  ]);
+  const error = tablesResult.error || reservationsResult.error;
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  const playerIds = [...new Set((reservationsResult.data ?? []).map((reservation) => reservation.booked_for_player_id))];
+  const playersResult = playerIds.length ? await client.from("players").select("id,display_name,full_name").in("id", playerIds) : { data: [], error: null };
+  if (playersResult.error) return NextResponse.json({ error: playersResult.error.message }, { status: 400 });
+  const names = new Map((playersResult.data ?? []).map((player) => [player.id, player.full_name?.trim() || player.display_name]));
+  return NextResponse.json({
+    tables: tablesResult.data ?? [],
+    reservations: (reservationsResult.data ?? []).map((reservation) => ({ ...reservation, playerName: names.get(reservation.booked_for_player_id) || "Club booking" })),
+    updatedAt: new Date().toISOString(),
+  }, { headers: { "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30" } });
+}

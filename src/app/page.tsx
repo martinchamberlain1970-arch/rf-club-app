@@ -35,6 +35,7 @@ const supportLinks = [
 const adminToolLinks = [
   { href: "/signups", title: "Competition Sign-ups", desc: "Review open sign-ups and player entry requests." },
   { href: "/live", title: "Live Overview", desc: "See active matches and competition progress at a glance." },
+  { href: "/table-bookings", title: "Table Bookings", desc: "Manage pool and snooker reservations and captain access." },
 ] as const;
 
 const systemToolLinks = [
@@ -62,6 +63,7 @@ type ExperienceMode = "player" | "manage";
 
 const playerExperienceLinks = [
   { href: "/my-fixtures", title: "My Fixtures", desc: "See what you are playing next.", symbol: "NEXT" },
+  { href: "/table-bookings", title: "Book a Table", desc: "Reserve an authorised pool or snooker table.", symbol: "BOOK" },
   { href: "/events", title: "Competitions", desc: "Open events, draws and tables.", symbol: "PLAY" },
   { href: "/rankings", title: "Rankings", desc: "See where you stand.", symbol: "RANK" },
   { href: "/high-breaks", title: "High Breaks", desc: "Club snooker break table.", symbol: "BREAK" },
