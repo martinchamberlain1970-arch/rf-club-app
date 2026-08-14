@@ -74,7 +74,6 @@ export default function TableReservationsSportDisplayPage() {
         <div>
           <p className="text-base font-bold uppercase tracking-[0.28em] text-lime-300">Greenhithe Legion Social Club</p>
           <h1 className="mt-1 text-4xl font-black">{table?.name ?? `${sport === "pool" ? "Pool" : "Snooker"} Table`} Diary</h1>
-          <p className="mt-1 text-lg text-white/75">Days down the left · times across the top · live from Rack &amp; Frame</p>
         </div>
         <button type="button" onClick={async () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()} className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold">{isFullscreen ? "Exit full screen" : "Full screen"}</button>
       </header>
