@@ -135,7 +135,6 @@ export async function POST(request: NextRequest) {
     try {
       const emailResult = await sendEmail({
         to: signup.email,
-        bcc: "rackandframe.app@gmail.com",
         subject: "Complete your Rack & Frame registration",
         text: `Hi ${firstName},\n\nYour player profile has been created and added to ${competitionName}. You are already entered and your payment is recorded.\n\nYour private fixtures and result link (no app registration needed):\n${fixtureUrl}\n\nKeep that link private. You can optionally register for the Rack & Frame Club app here:\n${registrationUrl}\n\nUse the same name and select the existing profile when prompted.`,
         html: `<p>Hi ${escapeHtml(firstName)},</p><p>Your player profile has been created and added to <strong>${escapeHtml(competitionName)}</strong>. You are already entered and your payment is recorded.</p><p><a href="${escapeHtml(fixtureUrl)}" style="display:inline-block;background:#047857;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">View fixtures &amp; submit results</a></p><p>This private link works without app registration. Please do not share it with anyone else.</p><p>Optionally, <a href="${escapeHtml(registrationUrl)}">register for the Rack &amp; Frame Club app</a>. Use the same name and select the existing profile when prompted.</p>`,
@@ -151,9 +150,8 @@ export async function POST(request: NextRequest) {
         summary: `Registration invitation sent to ${signup.email}.`,
         meta: {
           recipient: signup.email,
-          bcc: "rackandframe.app@gmail.com",
           subject: "Complete your Rack & Frame registration",
-          provider: "Zoho SMTP",
+          provider: process.env.RESEND_API_KEY ? "Resend" : "Zoho SMTP",
           sender: process.env.EMAIL_FROM_ADDRESS ?? null,
           competition: competitionName,
           signup_id: signup.id,
@@ -172,9 +170,8 @@ export async function POST(request: NextRequest) {
         summary: `Registration invitation to ${signup.email} failed.`,
         meta: {
           recipient: signup.email,
-          bcc: "rackandframe.app@gmail.com",
           subject: "Complete your Rack & Frame registration",
-          provider: "Zoho SMTP",
+          provider: process.env.RESEND_API_KEY ? "Resend" : "Zoho SMTP",
           sender: process.env.EMAIL_FROM_ADDRESS ?? null,
           competition: competitionName,
           signup_id: signup.id,

@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   const tableIds = (tablesResult.data ?? []).map((table) => table.id);
   const [reservationsResult, blocksResult, hoursResult] = await Promise.all([
     tableIds.length
-      ? client.from("table_reservations").select("id,table_id,booked_for_player_id,starts_at,ends_at,purpose,notes").in("table_id", tableIds).eq("status", "booked").gte("ends_at", approximateFrom).lte("starts_at", approximateTo).order("starts_at")
+      ? client.from("table_reservations").select("id,table_id,booked_for_player_id,starts_at,ends_at,purpose,notes,participant_one,participant_two,team_name").in("table_id", tableIds).eq("status", "booked").gte("ends_at", approximateFrom).lte("starts_at", approximateTo).order("starts_at")
       : Promise.resolve({ data: [], error: null }),
     client.from("table_booking_blocks").select("id,table_id,starts_at,ends_at,category,title,notes").gte("ends_at", approximateFrom).lte("starts_at", approximateTo).order("starts_at"),
     tableIds.length
@@ -50,7 +50,12 @@ export async function GET(request: NextRequest) {
     nextWeekStart,
     rangeEnd,
     tables: tablesResult.data ?? [],
-    reservations: reservations.map((reservation) => ({ ...reservation, playerName: names.get(reservation.booked_for_player_id) || "Club booking" })),
+    reservations: reservations.map((reservation) => ({
+      ...reservation,
+      playerName: reservation.purpose === "league_match"
+        ? reservation.team_name || names.get(reservation.booked_for_player_id) || "League booking"
+        : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || names.get(reservation.booked_for_player_id) || "Competition booking",
+    })),
     blocks,
     availability: hoursResult.data ?? [],
     updatedAt: new Date().toISOString(),

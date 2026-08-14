@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -71,6 +72,30 @@ function validTime(value: string) {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
+const bookingTitle = (reservation: { purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null }) => reservation.purpose === "league_match"
+  ? reservation.team_name || "League team booking"
+  : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || "Competition booking";
+const londonBookingTime = (startsAt: string, endsAt: string) => `${new Date(startsAt).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}–${new Date(endsAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}`;
+
+async function sendDecisionEmail(reservation: { requester_email?: string | null; starts_at: string; ends_at: string; purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null }, tableName: string, decision: "accepted" | "rejected" | "deleted", reason?: string | null) {
+  if (!reservation.requester_email || !hasMailerConfig()) return { emailSent: false, emailError: reservation.requester_email ? "Resend is not configured." : "No requester email address is available." };
+  const title = bookingTitle(reservation);
+  const when = londonBookingTime(reservation.starts_at, reservation.ends_at);
+  const decisionText = decision === "accepted" ? "has been accepted" : decision === "rejected" ? "has been rejected" : "has been removed";
+  try {
+    await sendEmail({
+      to: reservation.requester_email,
+      subject: `Table booking ${decision}`,
+      text: `Your ${tableName} booking for ${title} on ${when} ${decisionText}.${reason ? `\n\nReason: ${reason}` : ""}`,
+      html: `<p>Your <strong>${escapeHtml(tableName)}</strong> booking for <strong>${escapeHtml(title)}</strong> on ${escapeHtml(when)} ${decisionText}.</p>${reason ? `<p><strong>Reason:</strong> ${escapeHtml(reason)}</p>` : ""}`,
+    });
+    return { emailSent: true, emailError: null };
+  } catch (error) {
+    return { emailSent: false, emailError: error instanceof Error ? error.message : "The email could not be sent." };
+  }
+}
+
 export async function GET(request: NextRequest) {
   const auth = await authorize(request);
   if (!auth) return NextResponse.json({ error: "Sign in to view table bookings." }, { status: 401 });
@@ -78,9 +103,11 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   const from = new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString();
   const to = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString();
+  let reservationsQuery = auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,booked_for_player_id,starts_at,ends_at,purpose,notes,status,created_at,participant_one,participant_two,team_name,requester_email,rejection_reason,reviewed_at").gte("ends_at", from).lte("starts_at", to).order("starts_at");
+  if (!auth.isSuper) reservationsQuery = reservationsQuery.or(`status.eq.booked,booked_by_user_id.eq.${auth.user.id}`);
   const [tablesResult, reservationsResult, hoursResult, blocksResult] = await Promise.all([
     auth.client.from("cue_tables").select("id,name,sport_type,location_id,display_order").eq("is_active", true).order("display_order"),
-    auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,booked_for_player_id,starts_at,ends_at,purpose,notes,status,created_at").eq("status", "booked").gte("ends_at", from).lte("starts_at", to).order("starts_at"),
+    reservationsQuery,
     auth.client.from("table_booking_hours").select("id,table_id,weekday,opens_at,closes_at").order("weekday"),
     auth.client.from("table_booking_blocks").select("id,table_id,starts_at,ends_at,category,title,notes,created_at").gte("ends_at", from).lte("starts_at", to).order("starts_at"),
   ]);
@@ -113,7 +140,7 @@ export async function GET(request: NextRequest) {
     playerId: auth.playerId,
     eligibleSports,
     tables: tablesResult.data ?? [],
-    reservations: (reservationsResult.data ?? []).map((reservation) => ({ ...reservation, playerName: names.get(reservation.booked_for_player_id) || "Player" })),
+    reservations: (reservationsResult.data ?? []).map((reservation) => ({ ...reservation, requester_email: auth.isSuper || reservation.booked_by_user_id === auth.user.id ? reservation.requester_email : null, playerName: names.get(reservation.booked_for_player_id) || "Player" })),
     availability: hoursResult.data ?? [],
     blocks: blocksResult.data ?? [],
     access,
@@ -219,6 +246,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (["approve", "reject", "delete"].includes(action)) {
+    if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
+    const reservationId = String(body?.reservationId ?? "");
+    const reason = String(body?.reason ?? "").trim().slice(0, 240) || null;
+    const reservationResult = await auth.client.from("table_reservations").select("id,table_id,starts_at,ends_at,purpose,participant_one,participant_two,team_name,requester_email,status,cue_tables(name)").eq("id", reservationId).maybeSingle();
+    if (reservationResult.error) return NextResponse.json({ error: reservationResult.error.message }, { status: 400 });
+    const reservation = reservationResult.data;
+    if (!reservation) return NextResponse.json({ error: "Booking request not found." }, { status: 404 });
+    if (action === "approve") {
+      const startInLondon = londonDateParts(new Date(reservation.starts_at));
+      const endInLondon = londonDateParts(new Date(reservation.ends_at));
+      const [hoursResult, blockResult] = await Promise.all([
+        auth.client.from("table_booking_hours").select("opens_at,closes_at").eq("table_id", reservation.table_id).eq("weekday", startInLondon.weekday).maybeSingle(),
+        auth.client.from("table_booking_blocks").select("title").or(`table_id.is.null,table_id.eq.${reservation.table_id}`).lt("starts_at", reservation.ends_at).gt("ends_at", reservation.starts_at).limit(1).maybeSingle(),
+      ]);
+      const approvalError = hoursResult.error || blockResult.error;
+      if (approvalError) return NextResponse.json({ error: approvalError.message }, { status: 400 });
+      const withinHours = hoursResult.data && startInLondon.date === endInLondon.date && startInLondon.minutes >= timeMinutes(hoursResult.data.opens_at) && endInLondon.minutes <= timeMinutes(hoursResult.data.closes_at);
+      if (!withinHours) return NextResponse.json({ error: "This request is now outside the table's published booking hours." }, { status: 409 });
+      if (blockResult.data) return NextResponse.json({ error: `This request overlaps an unavailable period: ${blockResult.data.title}.` }, { status: 409 });
+      const updateResult = await auth.client.from("table_reservations").update({ status: "booked", reviewed_at: new Date().toISOString(), reviewed_by_user_id: auth.user.id, rejection_reason: null }).eq("id", reservationId);
+      if (updateResult.error) {
+        if (updateResult.error.code === "23P01") return NextResponse.json({ error: "This request clashes with a booking that has already been accepted." }, { status: 409 });
+        return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
+      }
+    } else if (action === "reject") {
+      if (!reason) return NextResponse.json({ error: "Enter a reason for rejecting this request." }, { status: 400 });
+      const updateResult = await auth.client.from("table_reservations").update({ status: "rejected", reviewed_at: new Date().toISOString(), reviewed_by_user_id: auth.user.id, rejection_reason: reason }).eq("id", reservationId);
+      if (updateResult.error) return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
+    } else {
+      const deleteResult = await auth.client.from("table_reservations").delete().eq("id", reservationId);
+      if (deleteResult.error) return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+    }
+    const tableRelation = reservation.cue_tables as unknown as { name?: string } | null;
+    const decision = action === "approve" ? "accepted" : action === "reject" ? "rejected" : "deleted";
+    const email = await sendDecisionEmail(reservation, tableRelation?.name || "cue table", decision, reason);
+    await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: `table_booking_${decision}`, entity_type: "table_reservation", entity_id: reservationId, summary: `Table booking ${decision}: ${bookingTitle(reservation)}.`, meta: { email_sent: email.emailSent, email_error: email.emailError } });
+    return NextResponse.json({ ok: true, ...email });
+  }
+
   if (action === "cancel") {
     const reservationId = String(body?.reservationId ?? "");
     const reservationResult = await auth.client.from("table_reservations").select("booked_by_user_id").eq("id", reservationId).maybeSingle();
@@ -232,8 +299,12 @@ export async function POST(request: NextRequest) {
   const tableId = String(body?.tableId ?? "");
   const startsAt = new Date(String(body?.startsAt ?? ""));
   const endsAt = new Date(String(body?.endsAt ?? ""));
-  const purpose = ["fixture", "league_match", "practice", "other"].includes(body?.purpose) ? body.purpose : "fixture";
-  const notes = String(body?.notes ?? "").trim().slice(0, 240) || null;
+  const purpose = body?.purpose === "league_match" ? "league_match" : "fixture";
+  const participantOne = String(body?.participantOne ?? "").trim().slice(0, 80) || null;
+  const participantTwo = String(body?.participantTwo ?? "").trim().slice(0, 80) || null;
+  const teamName = String(body?.teamName ?? "").trim().slice(0, 120) || null;
+  if (purpose === "fixture" && !participantOne) return NextResponse.json({ error: "Enter at least one player name for the competition booking." }, { status: 400 });
+  if (purpose === "league_match" && !teamName) return NextResponse.json({ error: "Enter the pool or snooker team name." }, { status: 400 });
   if (!tableId || Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return NextResponse.json({ error: "Choose a valid table, date and time." }, { status: 400 });
   const durationMinutes = (endsAt.getTime() - startsAt.getTime()) / 60000;
   if (startsAt.getTime() < Date.now() - 5 * 60000 || durationMinutes < 30 || durationMinutes > 360) return NextResponse.json({ error: "Bookings must be between 30 minutes and 6 hours and cannot start in the past." }, { status: 400 });
@@ -256,11 +327,15 @@ export async function POST(request: NextRequest) {
   const blockResult = await auth.client.from("table_booking_blocks").select("title").or(`table_id.is.null,table_id.eq.${tableId}`).lt("starts_at", endsAt.toISOString()).gt("ends_at", startsAt.toISOString()).limit(1).maybeSingle();
   if (blockResult.error) return NextResponse.json({ error: blockResult.error.message }, { status: 400 });
   if (blockResult.data) return NextResponse.json({ error: `This table is unavailable then: ${blockResult.data.title}.` }, { status: 409 });
-  const insertResult = await auth.client.from("table_reservations").insert({ table_id: tableId, booked_by_user_id: auth.user.id, booked_for_player_id: auth.playerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes }).select("id").single();
+  const bookedConflict = await auth.client.from("table_reservations").select("id", { count: "exact", head: true }).eq("table_id", tableId).eq("status", "booked").lt("starts_at", endsAt.toISOString()).gt("ends_at", startsAt.toISOString());
+  if (bookedConflict.error) return NextResponse.json({ error: bookedConflict.error.message }, { status: 400 });
+  if ((bookedConflict.count ?? 0) > 0) return NextResponse.json({ error: "That table is already booked during this time." }, { status: 409 });
+  const status = auth.isSuper ? "booked" : "pending";
+  const insertResult = await auth.client.from("table_reservations").insert({ table_id: tableId, booked_by_user_id: auth.user.id, booked_for_player_id: auth.playerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, requester_email: auth.user.email ?? null, status, reviewed_at: auth.isSuper ? new Date().toISOString() : null, reviewed_by_user_id: auth.isSuper ? auth.user.id : null }).select("id").single();
   if (insertResult.error) {
     if (insertResult.error.code === "23P01") return NextResponse.json({ error: "That table is already reserved during this time." }, { status: 409 });
     return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
   }
-  await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: "table_reserved", entity_type: "table_reservation", entity_id: insertResult.data.id, summary: `Cue table reserved from ${startsAt.toISOString()} to ${endsAt.toISOString()}.`, meta: { table_id: tableId, player_id: auth.playerId, purpose } });
-  return NextResponse.json({ ok: true, id: insertResult.data.id });
+  await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: auth.isSuper ? "table_reserved" : "table_booking_requested", entity_type: "table_reservation", entity_id: insertResult.data.id, summary: `${auth.isSuper ? "Cue table reserved" : "Cue table booking requested"} from ${startsAt.toISOString()} to ${endsAt.toISOString()}.`, meta: { table_id: tableId, player_id: auth.playerId, purpose } });
+  return NextResponse.json({ ok: true, id: insertResult.data.id, status });
 }
