@@ -21,6 +21,7 @@ type MatchRow = {
   scheduled_for: string | null;
   round_no: number | null;
   match_no: number | null;
+  opening_break_player_id: string | null;
 };
 
 type CompetitionRow = {
@@ -78,7 +79,7 @@ export default function MyFixturesPage() {
 
       const matchesRes = await client
         .from("matches")
-        .select("id,competition_id,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,status,scheduled_for,round_no,match_no")
+        .select("id,competition_id,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,status,scheduled_for,round_no,match_no,opening_break_player_id")
         .eq("is_archived", false)
         .or(
           `player1_id.eq.${playerId},player2_id.eq.${playerId},team1_player1_id.eq.${playerId},team1_player2_id.eq.${playerId},team2_player1_id.eq.${playerId},team2_player2_id.eq.${playerId}`
@@ -244,6 +245,7 @@ export default function MyFixturesPage() {
                     {competition?.competition_format === "league" ? `Week ${match.round_no ?? 1}` : `Round ${match.round_no ?? 1} · Match ${match.match_no ?? 1}`}
                     {match.scheduled_for ? ` · Plays by ${new Date(`${match.scheduled_for}T21:00:00`).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}` : ""}
                   </p>
+                  {match.opening_break_player_id ? <p className="mt-2 text-xs font-semibold text-emerald-700">Opening break: {playerNameById.get(match.opening_break_player_id) ?? "Assigned player"}</p> : null}
                   <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open fixture</p>
                 </Link>
               ))}

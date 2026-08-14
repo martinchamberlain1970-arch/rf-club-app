@@ -25,7 +25,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     client.from("competition_entries").select("player_id").eq("competition_id", id).eq("status", "approved"),
     client
       .from("matches")
-      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,scheduled_for")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for")
       .eq("competition_id", id)
       .eq("is_archived", false)
       .order("round_no")
@@ -107,6 +107,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       scheduledFor: match.scheduled_for,
       player1: nameById.get(match.player1_id ?? "") || "TBC",
       player2: isBye ? "BYE" : nameById.get(match.player2_id ?? "") || "TBC",
+      openingBreaker: isBye ? null : nameById.get(match.opening_break_player_id ?? "") || null,
       score: match.status === "complete" && !isBye ? { player1: player1Score, player2: player2Score, void: !match.winner_player_id } : null,
     };
   });

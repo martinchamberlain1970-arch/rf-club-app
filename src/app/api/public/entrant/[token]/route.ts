@@ -38,7 +38,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     client.from("competitions").select("id,name,venue,sport_type,competition_format,best_of").eq("id", entry.competition_id).maybeSingle(),
     client
       .from("matches")
-      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,scheduled_for")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for")
       .eq("competition_id", entry.competition_id)
       .eq("is_archived", false)
       .or(`player1_id.eq.${entry.player_id},player2_id.eq.${entry.player_id}`)
@@ -103,6 +103,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       bestOf: match.best_of,
       status: match.status,
       scheduledFor: match.scheduled_for,
+      openingBreaker: match.opening_break_player_id
+        ? players.get(match.opening_break_player_id)?.full_name?.trim() || players.get(match.opening_break_player_id)?.display_name || "Assigned player"
+        : null,
+      entrantBreaksFirst: match.opening_break_player_id === entry.player_id,
       opponent: {
         name: opponent?.full_name?.trim() || opponent?.display_name || "Opponent to be confirmed",
         email: override?.email || opponentSignup?.email || (opponentId ? userEmails.get(opponentId) : null) || null,

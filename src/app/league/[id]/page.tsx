@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { isLegionMastersLeague } from "@/lib/legion-masters";
 
-type Fixture = { id: string; week: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; score: { player1: number; player2: number; void: boolean } | null };
+type Fixture = { id: string; week: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; score: { player1: number; player2: number; void: boolean } | null };
 type TableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number };
 type LeagueData = { competition: { id: string; name: string; venue: string | null; sport_type: string; league_schedule_mode: string | null; league_finals_size: number | null }; fixtures: Fixture[]; table: TableRow[]; updatedAt: string };
 
@@ -39,7 +40,7 @@ export default function PublicLeaguePage() {
 
   if (error) return <main className="min-h-screen bg-slate-950 p-5 text-white"><div className="mx-auto max-w-3xl rounded-2xl bg-white p-6 text-slate-900">{error}</div></main>;
   if (!data) return <main className="min-h-screen bg-slate-950 p-5 text-white"><p className="mx-auto max-w-3xl">Loading league…</p></main>;
-  const isMasters = data.competition.name.trim().toLowerCase() === "greenhithe legion masters 2026";
+  const isMasters = isLegionMastersLeague(data.competition.name);
   const unit = data.competition.sport_type === "snooker" ? "frames" : "racks";
 
   return (
@@ -75,6 +76,7 @@ export default function PublicLeaguePage() {
                   <p className="font-bold">{fixture.player2}</p>
                 </div>
                 <p className="mt-2 text-center text-xs text-slate-500">Play all {fixture.bestOf} {unit} · {fixture.status.replace("_", " ")}</p>
+                {fixture.openingBreaker ? <p className="mt-2 text-center text-xs font-bold text-emerald-700">Opening break: {fixture.openingBreaker}</p> : null}
               </article>
             ))}
             {!visibleFixtures.length ? <p className="text-sm text-slate-600">No fixtures have been published for this week.</p> : null}

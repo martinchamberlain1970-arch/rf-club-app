@@ -10,6 +10,7 @@ import useAdminStatus from "@/components/useAdminStatus";
 import MessageModal from "@/components/MessageModal";
 import ConfirmModal from "@/components/ConfirmModal";
 import { calculateSnookerHandicapStarts, MAX_SNOOKER_START } from "@/lib/snooker-handicap";
+import { isLegionMastersLeague } from "@/lib/legion-masters";
 
 type Competition = {
   id: string;
@@ -52,6 +53,7 @@ type Match = {
   team2_player1_id?: string | null;
   team2_player2_id?: string | null;
   winner_player_id: string | null;
+  opening_break_player_id?: string | null;
   scheduled_for?: string | null;
   team1_handicap_start?: number | null;
   team2_handicap_start?: number | null;
@@ -505,7 +507,7 @@ export default function CompetitionPage() {
     setCompetition({ ...competition, league_break_weeks: savedBreaks });
     const reload = await client
       .from("matches")
-      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
       .eq("competition_id", competition.id)
       .eq("is_archived", false)
       .order("round_no")
@@ -667,7 +669,7 @@ export default function CompetitionPage() {
           .single(),
         client
           .from("matches")
-          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
+          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
           .eq("competition_id", id)
           .eq("is_archived", false)
           .order("round_no")
@@ -696,7 +698,7 @@ export default function CompetitionPage() {
       }
       const refreshedMatchRes = await client
         .from("matches")
-        .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
+        .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
         .eq("competition_id", id)
         .eq("is_archived", false)
         .order("round_no")
@@ -713,7 +715,7 @@ export default function CompetitionPage() {
       if (changed) {
         const refreshed = await client
           .from("matches")
-          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
+          .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
           .eq("competition_id", id)
           .eq("is_archived", false)
           .order("round_no")
@@ -923,7 +925,7 @@ export default function CompetitionPage() {
     const fixtureRows = rounds.flatMap((round, roundIndex) =>
       round.map((pairing, matchIndex) => {
         let openingBreaker: string | null = null;
-        if (!pairing.isBye && pairing.player2 && pairing.pairKey) {
+        if (competition.app_assign_opening_break && !pairing.isBye && pairing.player2 && pairing.pairKey) {
           let baseBreaker = openingBreakBaseByPair.get(pairing.pairKey) ?? null;
           if (!baseBreaker) {
             baseBreaker = Math.random() < 0.5 ? pairing.player1 : pairing.player2;
@@ -983,7 +985,7 @@ export default function CompetitionPage() {
     setCompetition({ ...competition, league_meetings: meetings, league_start_date: leagueStartDateInput, league_break_weeks: isOneDay ? [] : [...breakWeekSet].sort() });
     const reload = await client
       .from("matches")
-      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
       .eq("competition_id", competition.id)
       .eq("is_archived", false)
       .order("round_no")
@@ -1037,7 +1039,7 @@ export default function CompetitionPage() {
 
     const reload = await client
       .from("matches")
-      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
       .eq("competition_id", competition.id)
       .eq("is_archived", false)
       .order("round_no")
@@ -1120,7 +1122,7 @@ export default function CompetitionPage() {
         team2_handicap_start: starts.team2,
       };
     });
-    const insert = await client.from("matches").insert(rows).select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start");
+    const insert = await client.from("matches").insert(rows).select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start");
     if (insert.error) {
       setMessage(insert.error.message);
       return;
@@ -1162,7 +1164,7 @@ export default function CompetitionPage() {
       team1_handicap_start: starts.team1,
       team2_handicap_start: starts.team2,
     };
-    const insert = await client.from("matches").insert(row).select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start").single();
+    const insert = await client.from("matches").insert(row).select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start").single();
     if (insert.error || !insert.data) {
       setMessage(insert.error?.message ?? "Final could not be created.");
       return;
@@ -1266,6 +1268,7 @@ export default function CompetitionPage() {
         isBye: boolean;
         deadlineLabel: string | null;
         handicapLabel: string | null;
+        openingBreakerLabel: string | null;
         chip: {
           label: string;
           className: string;
@@ -1342,6 +1345,9 @@ export default function CompetitionPage() {
               }
             }
             }
+            const openingBreakerLabel = match.status === "bye" || !match.opening_break_player_id
+              ? null
+              : fullMap.get(match.opening_break_player_id) ?? shortMap.get(match.opening_break_player_id) ?? "Assigned player";
             return {
               id: match.id,
               label: getMatchLabel(match, fullMap),
@@ -1349,6 +1355,7 @@ export default function CompetitionPage() {
               isBye: match.status === "bye",
               deadlineLabel: formatLeagueFixtureDeadline(match.scheduled_for, isOneDayLeague ? "one_day" : "weekly"),
               handicapLabel,
+              openingBreakerLabel,
               chip,
             };
           }),
@@ -1381,7 +1388,7 @@ export default function CompetitionPage() {
     }
     return leagueFixturesByWeek;
   }, [leagueFixturesByWeek, leagueFixtureFilterMode, leagueFixtureFilterWeek, leagueFixtureFilterPlayer, fullMap, shortMap]);
-  const hasTopEightFinals = competition?.name.trim().toLowerCase() === "greenhithe legion masters 2026";
+  const hasTopEightFinals = isLegionMastersLeague(competition?.name);
   const leagueTableRows = (() => {
     if (!competition || competition.competition_format !== "league") return [] as Array<{
       playerId: string;
@@ -2077,7 +2084,7 @@ export default function CompetitionPage() {
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p className="text-sm font-semibold text-slate-900">League table</p>
                         <p className="mt-1 text-xs text-slate-500">
-                          Every rack won is one point. Completed void fixtures score no points.
+                          Every {competition.sport_type === "snooker" ? "frame" : "rack"} won is one point. Completed void fixtures score no points.
                           {hasTopEightFinals ? " The top 8 positions qualify for the end-of-season knockout." : ""}
                           {isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? " The top four qualify for the semi-finals." : ""}
                         </p>
@@ -2254,6 +2261,11 @@ export default function CompetitionPage() {
                                       <span className="block">{match.label}</span>
                                       {match.handicapLabel ? (
                                         <span className="mt-1 block text-xs text-sky-700">{match.handicapLabel}</span>
+                                      ) : null}
+                                      {match.openingBreakerLabel ? (
+                                        <span className="mt-1 block text-xs font-semibold text-emerald-700">
+                                          Opening break: {match.openingBreakerLabel}
+                                        </span>
                                       ) : null}
                                     </span>
                                     <span className={`rounded-full border px-2 py-0.5 text-xs ${match.chip.className}`}>

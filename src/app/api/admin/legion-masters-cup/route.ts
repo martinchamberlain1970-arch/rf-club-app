@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { legionMastersCupName } from "@/lib/legion-masters";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const superAdminEmail = (process.env.SUPER_ADMIN_EMAIL ?? process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL ?? "").trim().toLowerCase();
-const LEAGUE_NAME = "greenhithe legion masters 2026";
-const CUP_NAME = "Greenhithe Legion Masters Cup 2026";
 
 type MatchRow = {
   id: string;
@@ -40,15 +39,16 @@ export async function POST(request: NextRequest) {
     .eq("id", competitionId)
     .maybeSingle();
   const source = sourceResult.data;
-  if (!source || source.name.trim().toLowerCase() !== LEAGUE_NAME) {
-    return NextResponse.json({ error: "This action is only available for Greenhithe Legion Masters 2026." }, { status: 400 });
+  const cupName = source ? legionMastersCupName(source.name, source.sport_type) : null;
+  if (!source || !cupName) {
+    return NextResponse.json({ error: "This action is only available for a supported Greenhithe Legion Masters league." }, { status: 400 });
   }
 
   const existingResult = await client
     .from("competitions")
     .select("id")
     .eq("location_id", source.location_id)
-    .ilike("name", CUP_NAME)
+    .ilike("name", cupName)
     .eq("is_archived", false)
     .maybeSingle();
   if (existingResult.data?.id) return NextResponse.json({ ok: true, competitionId: existingResult.data.id, existing: true });
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
 
   const bestOf = Number(source.best_of ?? 5);
   const cupResult = await client.from("competitions").insert({
-    name: CUP_NAME,
+    name: cupName,
     venue: source.venue,
     location_id: source.location_id,
     sport_type: source.sport_type,
