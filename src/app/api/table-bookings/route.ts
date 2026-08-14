@@ -236,7 +236,7 @@ export async function POST(request: NextRequest) {
   const notes = String(body?.notes ?? "").trim().slice(0, 240) || null;
   if (!tableId || Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return NextResponse.json({ error: "Choose a valid table, date and time." }, { status: 400 });
   const durationMinutes = (endsAt.getTime() - startsAt.getTime()) / 60000;
-  if (startsAt.getTime() < Date.now() - 5 * 60000 || durationMinutes < 30 || durationMinutes > 240) return NextResponse.json({ error: "Bookings must be between 30 minutes and 4 hours and cannot start in the past." }, { status: 400 });
+  if (startsAt.getTime() < Date.now() - 5 * 60000 || durationMinutes < 30 || durationMinutes > 360) return NextResponse.json({ error: "Bookings must be between 30 minutes and 6 hours and cannot start in the past." }, { status: 400 });
   if (startsAt.getTime() > Date.now() + 60 * 24 * 60 * 60 * 1000) return NextResponse.json({ error: "Bookings can be made up to 60 days ahead." }, { status: 400 });
   const startInLondon = londonDateParts(startsAt);
   const tableResult = await auth.client.from("cue_tables").select("id,sport_type,is_active").eq("id", tableId).maybeSingle();
