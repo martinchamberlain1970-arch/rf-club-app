@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-function getLeagueFixtureDeadline(scheduledFor: string | null | undefined) {
-  if (!scheduledFor) return null;
-  const [year, month, day] = scheduledFor.split("-").map((value) => Number.parseInt(value, 10));
-  if (!year || !month || !day) return null;
-  return new Date(year, month - 1, day + 6, 21, 0, 0, 0);
-}
 
 export async function POST(req: NextRequest) {
   if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
@@ -86,56 +80,17 @@ export async function POST(req: NextRequest) {
   }
 
   const now = new Date();
-  const overdueMatchIds = matches
+  const reviewMatchIds = matches
     .filter((match) => {
       const deadline = getLeagueFixtureDeadline(match.scheduled_for);
       if (!deadline || now <= deadline) return false;
       const submissions = submissionsByMatch.get(match.id) ?? [];
-      return !submissions.some((submission) => submission.status === "pending" || submission.status === "approved");
+      return !submissions.some((submission) => submission.status === "approved");
     })
     .map((match) => match.id);
 
-  if (!overdueMatchIds.length) {
-    return NextResponse.json({ ok: true, voidedMatchIds: [] });
-  }
-
-  const frameDeleteRes = await adminClient.from("frames").delete().in("match_id", overdueMatchIds);
-  if (frameDeleteRes.error) {
-    return NextResponse.json({ error: frameDeleteRes.error.message }, { status: 400 });
-  }
-
-  const matchUpdateRes = await adminClient
-    .from("matches")
-    .update({ status: "complete", winner_player_id: null })
-    .in("id", overdueMatchIds);
-  if (matchUpdateRes.error) {
-    return NextResponse.json({ error: matchUpdateRes.error.message }, { status: 400 });
-  }
-
-  const submissionUpdateRes = await adminClient
-    .from("result_submissions")
-    .update({
-      status: "rejected",
-      reviewed_by_user_id: authData.user.id,
-      reviewed_at: new Date().toISOString(),
-      note: "Fixture auto-voided after deadline without a submitted result.",
-    })
-    .in("match_id", overdueMatchIds)
-    .neq("status", "rejected");
-  if (submissionUpdateRes.error) {
-    return NextResponse.json({ error: submissionUpdateRes.error.message }, { status: 400 });
-  }
-
-  await adminClient.from("audit_logs").insert({
-    actor_user_id: authData.user.id,
-    actor_email: authData.user.email ?? null,
-    actor_role: "system",
-    action: "league_fixture_auto_voided",
-    entity_type: "competition",
-    entity_id: competitionId,
-    summary: `Auto-voided ${overdueMatchIds.length} overdue league fixture${overdueMatchIds.length === 1 ? "" : "s"}.`,
-    meta: { voidedMatchIds: overdueMatchIds },
-  });
-
-  return NextResponse.json({ ok: true, voidedMatchIds: overdueMatchIds });
+  // The deadline now creates an organiser decision rather than changing the
+  // result automatically. A single submission remains available to approve;
+  // a fixture with no submission can be awarded or voided by the Super User.
+  return NextResponse.json({ ok: true, voidedMatchIds: [], reviewMatchIds });
 }

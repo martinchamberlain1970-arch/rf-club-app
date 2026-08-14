@@ -28,7 +28,7 @@ const faqs: { question: string; answer: string }[] = [
   {
     question: "What happens if a weekly league fixture is not played?",
     answer:
-      "If the weekly deadline passes and there is no valid result pending approval, the fixture can be voided with no points awarded. A walkover should only be used for a genuine no-show.",
+      "After the Sunday deadline, the Super User reviews unresolved fixtures. One submitted result can be accepted without chasing the opponent; with no submission, the Super User can award a genuine no-show 5-0 or void the fixture for no points.",
   },
   {
     question: "Can a fixture be rescheduled?",
@@ -143,7 +143,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
         "Open matches to record rack/frame scoring live.",
         "Complete a match once a player reaches the required racks/frames.",
         "League fixtures open weekly and are intended to be played by the listed Sunday 21:00 deadline.",
-        "If a fixture is not played and no valid result is pending approval, it can be voided with no points awarded.",
+        "Unresolved fixtures remain open for a Monday Super User decision instead of being auto-voided. A genuine no-show can be awarded; otherwise the fixture can be voided for no points.",
         "Walkovers and BYEs do not count toward player stats.",
       ],
     },

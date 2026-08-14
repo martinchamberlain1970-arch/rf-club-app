@@ -2229,7 +2229,7 @@ export default function CompetitionPage() {
                             </p>
                             {week.matches.some((match) => Boolean(match.deadlineLabel)) ? (
                               <p className="mt-1 text-xs text-slate-500">
-                                Play by {week.matches.find((match) => match.deadlineLabel)?.deadlineLabel}. If no result is submitted by then, the fixture is normally void with no points awarded. Request a walkover only for a genuine no-show.
+                                Play by {week.matches.find((match) => match.deadlineLabel)?.deadlineLabel}. Unresolved fixtures then go to the Super User for a Monday decision. A 5–0 award is only for a genuine no-show; otherwise the fixture may be voided.
                               </p>
                             ) : null}
                             <div className="mt-2 space-y-2">

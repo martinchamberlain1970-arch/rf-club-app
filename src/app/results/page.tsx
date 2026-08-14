@@ -45,6 +45,19 @@ type CompetitionRow = {
 
 type Player = { id: string; display_name: string; full_name?: string | null };
 type EntryLink = { id: string; player_id: string };
+type DeadlineFixture = {
+  id: string;
+  competitionName: string;
+  week: number;
+  scheduledFor: string | null;
+  deadline: string | null;
+  player1: string;
+  player2: string;
+  bestOf: number;
+  submissionCount: number;
+  decision: "no_submission" | "single_submission" | "agreed" | "dispute";
+  submissions: Array<{ id: string; team1Score: number; team2Score: number; submittedAt: string }>;
+};
 
 function getRoleSummary(isSuper: boolean, isAdmin: boolean) {
   if (isSuper) {
@@ -99,6 +112,7 @@ export default function ResultsQueuePage() {
   const [competitions, setCompetitions] = useState<CompetitionRow[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [entryLinks, setEntryLinks] = useState<EntryLink[]>([]);
+  const [deadlineFixtures, setDeadlineFixtures] = useState<DeadlineFixture[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(0);
 
@@ -225,6 +239,29 @@ export default function ResultsQueuePage() {
     return () => window.clearTimeout(timer);
   }, [admin.loading, admin.isAdmin, admin.isSuper, admin.userId]);
 
+  useEffect(() => {
+    if (!admin.isSuper) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      const client = supabase;
+      const sessionResult = client ? await client.auth.getSession() : null;
+      const accessToken = sessionResult?.data.session?.access_token;
+      if (!accessToken) return;
+      const response = await fetch("/api/admin/league-deadline-review", { headers: { Authorization: `Bearer ${accessToken}` } });
+      const payload = await response.json().catch(() => ({}));
+      if (!active) return;
+      if (!response.ok) {
+        setMessage(payload.error || "Deadline decisions could not be loaded.");
+        return;
+      }
+      setDeadlineFixtures((payload.fixtures ?? []) as DeadlineFixture[]);
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [admin.isSuper]);
+
   const nameMap = useMemo(() => new Map(players.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name])), [players]);
   const compMap = useMemo(() => new Map(competitions.map((c) => [c.id, c.name])), [competitions]);
   const matchMap = useMemo(() => new Map(matches.map((m) => [m.id, m])), [matches]);
@@ -338,6 +375,36 @@ export default function ResultsQueuePage() {
           ) : (
             <>
               <MessageModal message={message} onClose={() => setMessage(null)} />
+              {admin.isSuper && deadlineFixtures.length ? (
+                <section className="rounded-3xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">
+                  <h2 className="text-xl font-semibold text-amber-950">Monday deadline decisions ({deadlineFixtures.length})</h2>
+                  <p className="mt-1 text-sm text-amber-900">These fixtures passed Sunday at 9pm without an approved result. You can accept a sole submission without chasing the opponent, enter the result yourself, award a genuine no-show 5–0, or void the fixture.</p>
+                  <div className="mt-4 space-y-3">
+                    {deadlineFixtures.map((fixture) => {
+                      const label = fixture.decision === "single_submission"
+                        ? "One player submitted — accept or override"
+                        : fixture.decision === "no_submission"
+                          ? "No result submitted — award or void"
+                          : fixture.decision === "dispute"
+                            ? "Different scores submitted — decide result"
+                            : "Both players agree — approve result";
+                      return (
+                        <article key={fixture.id} className="rounded-2xl border border-amber-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">{fixture.competitionName} · Week {fixture.week}</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-950">{fixture.player1} vs {fixture.player2}</p>
+                          <p className="mt-2 text-sm font-medium text-amber-900">{label}</p>
+                          {fixture.submissions.length ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {fixture.submissions.map((submission) => <span key={submission.id} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-semibold">{fixture.player1} {submission.team1Score}–{submission.team2Score} {fixture.player2}</span>)}
+                            </div>
+                          ) : null}
+                          <Link href={`/matches/${fixture.id}`} className="mt-3 inline-flex rounded-xl bg-amber-800 px-4 py-2 text-sm font-semibold text-white">Review and decide</Link>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
               {disputedMatchIds.size ? (
                 <section className="rounded-3xl border-2 border-red-300 bg-red-50 p-5 shadow-sm">
                   <h2 className="text-xl font-semibold text-red-950">Disputes ({disputedMatchIds.size})</h2>

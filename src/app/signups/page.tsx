@@ -448,7 +448,7 @@ export default function CompetitionSignupPage() {
                       </p>
                       {competition.competition_format === "league" ? (
                         <p className="mt-1 text-xs text-slate-600">
-                          Weekly fixtures are expected to be completed by 21:00 on Sunday. Unplayed fixtures are normally voided, with admins only awarding a frame or rack for a genuine no-show.
+                          Weekly fixtures are expected to be completed by 21:00 on Sunday. Unresolved fixtures then go to the Super User, who can accept a sole submission, award a genuine no-show, or void the fixture.
                         </p>
                       ) : null}
                     </div>

@@ -25,7 +25,7 @@ export default function TermsPage() {
           <li>Snooker Elo updates from valid approved singles results only; no-show, walkover, void, and doubles outcomes are excluded.</li>
           <li>Snooker handicap is reviewed from Elo and may be overridden manually by the Super User when needed.</li>
           <li>League fixtures may be scheduled weekly and are expected to be completed by the listed deadline unless a valid reschedule is approved.</li>
-          <li>Where a weekly league fixture is not played and no valid result is pending approval, it may be voided with no points awarded.</li>
+          <li>After the weekly deadline, unresolved fixtures are decided by the Super User. A sole submitted result may be accepted; a genuine no-show may be awarded 5–0; otherwise the fixture may be voided with no points awarded.</li>
           <li>Reschedule requests are limited and remain subject to Super User approval.</li>
           <li>Handicapped snooker fixtures must be submitted using the adjusted frame score including the points start shown on the fixture.</li>
           <li>Accounts and profiles may be suspended or removed for misuse, fraud, or policy violations.</li>
