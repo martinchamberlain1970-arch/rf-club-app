@@ -66,6 +66,10 @@ export default function EntrantFixturesPage() {
       setNotice("Enter the rack total for both players.");
       return;
     }
+    if (entrantScore < 0 || opponentScore < 0 || entrantScore > fixture.bestOf || opponentScore > fixture.bestOf) {
+      setNotice(`Neither player can be awarded more than ${fixture.bestOf} racks.`);
+      return;
+    }
     if (entrantScore + opponentScore !== fixture.bestOf) {
       setNotice(`The two scores must total ${fixture.bestOf} racks.`);
       return;
@@ -119,7 +123,7 @@ export default function EntrantFixturesPage() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Week {fixture.roundNo ?? "–"}{fixture.scheduledFor ? ` · from ${londonDate(fixture.scheduledFor)}` : ""}</p>
                   <h2 className="mt-1 text-xl font-bold text-slate-950">vs {fixture.opponent.name}</h2>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">All {fixture.bestOf} racks count</span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Play all {fixture.bestOf} racks</span>
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-sm">
                 {fixture.opponent.phone ? <a href={phoneHref(fixture.opponent.phone)} className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-800">Call {fixture.opponent.phone}</a> : null}
@@ -144,6 +148,7 @@ export default function EntrantFixturesPage() {
               {canSubmit ? (
                 <div className="mt-4 rounded-xl border border-lime-200 bg-lime-50 p-4">
                   <p className="text-sm font-semibold text-slate-900">Enter both rack totals</p>
+                  <p className="mt-1 text-xs text-slate-700">This is {fixture.bestOf} racks in total—not a race to {fixture.bestOf}. Valid scores must add up to {fixture.bestOf}, for example 3–2.</p>
                   <div className="mt-2 grid grid-cols-2 gap-3">
                     <label className="text-sm text-slate-700">{data.entrant.name}<select value={chosen ?? ""} onChange={(event) => setScores((current) => ({ ...current, [fixture.id]: Number(event.target.value) }))} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base"><option value="" disabled>Racks</option>{Array.from({ length: fixture.bestOf + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}</select></label>
                     <label className="text-sm text-slate-700">{fixture.opponent.name}<select value={chosenOpponentScore ?? ""} onChange={(event) => setOpponentScores((current) => ({ ...current, [fixture.id]: Number(event.target.value) }))} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base"><option value="" disabled>Racks</option>{Array.from({ length: fixture.bestOf + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}</select></label>

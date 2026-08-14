@@ -74,7 +74,7 @@ export default function PublicLeaguePage() {
                   <div className="min-w-20 rounded-xl bg-slate-900 px-3 py-2 font-black text-white">{fixture.score ? (fixture.score.void ? "VOID" : `${fixture.score.player1} – ${fixture.score.player2}`) : "v"}</div>
                   <p className="font-bold">{fixture.player2}</p>
                 </div>
-                <p className="mt-2 text-center text-xs text-slate-500">Best of {fixture.bestOf} {unit} · {fixture.status.replace("_", " ")}</p>
+                <p className="mt-2 text-center text-xs text-slate-500">Play all {fixture.bestOf} {unit} · {fixture.status.replace("_", " ")}</p>
               </article>
             ))}
             {!visibleFixtures.length ? <p className="text-sm text-slate-600">No fixtures have been published for this week.</p> : null}

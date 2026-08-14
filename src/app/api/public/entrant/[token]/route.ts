@@ -147,8 +147,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const match = matchResult.data;
   if (!match || (match.player1_id !== entry.player_id && match.player2_id !== entry.player_id)) return NextResponse.json({ error: "Fixture not found." }, { status: 404 });
   if (!["pending", "in_progress"].includes(match.status)) return NextResponse.json({ error: "This fixture is no longer open for a result." }, { status: 409 });
+  if (entrantScore > match.best_of || opponentScore > match.best_of) {
+    return NextResponse.json({ error: `Neither player can be awarded more than ${match.best_of} racks.` }, { status: 400 });
+  }
   if (entrantScore + opponentScore !== match.best_of || entrantScore === opponentScore) {
-    return NextResponse.json({ error: `All ${match.best_of} racks must be entered. The two scores must total ${match.best_of}.` }, { status: 400 });
+    return NextResponse.json({ error: `Play all ${match.best_of} racks. The two scores must total exactly ${match.best_of}.` }, { status: 400 });
   }
   const pendingResult = await client.from("result_submissions").select("id").eq("match_id", match.id).eq("competition_entry_id", entry.id).eq("status", "pending").maybeSingle();
   if (pendingResult.data) return NextResponse.json({ error: "You already have a result awaiting comparison or approval for this fixture." }, { status: 409 });
