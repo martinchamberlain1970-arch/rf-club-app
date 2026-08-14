@@ -115,6 +115,8 @@ export default function EntrantFixturesPage() {
         {orderedFixtures.map((fixture) => {
           const chosen = scores[fixture.id];
           const chosenOpponentScore = opponentScores[fixture.id];
+          const entrantMaximum = Number.isInteger(chosenOpponentScore) ? fixture.bestOf - chosenOpponentScore : fixture.bestOf;
+          const opponentMaximum = Number.isInteger(chosen) ? fixture.bestOf - chosen : fixture.bestOf;
           const canSubmit = ["pending", "in_progress"].includes(fixture.status) && fixture.submission?.status !== "pending";
           return (
             <section key={fixture.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -150,8 +152,16 @@ export default function EntrantFixturesPage() {
                   <p className="text-sm font-semibold text-slate-900">Enter both rack totals</p>
                   <p className="mt-1 text-xs text-slate-700">This is {fixture.bestOf} racks in total—not a race to {fixture.bestOf}. Valid scores must add up to {fixture.bestOf}, for example 3–2.</p>
                   <div className="mt-2 grid grid-cols-2 gap-3">
-                    <label className="text-sm text-slate-700">{data.entrant.name}<select value={chosen ?? ""} onChange={(event) => setScores((current) => ({ ...current, [fixture.id]: Number(event.target.value) }))} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base"><option value="" disabled>Racks</option>{Array.from({ length: fixture.bestOf + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}</select></label>
-                    <label className="text-sm text-slate-700">{fixture.opponent.name}<select value={chosenOpponentScore ?? ""} onChange={(event) => setOpponentScores((current) => ({ ...current, [fixture.id]: Number(event.target.value) }))} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base"><option value="" disabled>Racks</option>{Array.from({ length: fixture.bestOf + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}</select></label>
+                    <label className="text-sm text-slate-700">{data.entrant.name}<select value={chosen ?? ""} onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setScores((current) => ({ ...current, [fixture.id]: value }));
+                      setOpponentScores((current) => Number.isInteger(current[fixture.id]) && current[fixture.id] > fixture.bestOf - value ? { ...current, [fixture.id]: fixture.bestOf - value } : current);
+                    }} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base"><option value="" disabled>Racks</option>{Array.from({ length: entrantMaximum + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}</select></label>
+                    <label className="text-sm text-slate-700">{fixture.opponent.name}<select value={chosenOpponentScore ?? ""} onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setOpponentScores((current) => ({ ...current, [fixture.id]: value }));
+                      setScores((current) => Number.isInteger(current[fixture.id]) && current[fixture.id] > fixture.bestOf - value ? { ...current, [fixture.id]: fixture.bestOf - value } : current);
+                    }} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base"><option value="" disabled>Racks</option>{Array.from({ length: opponentMaximum + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}</select></label>
                   </div>
                   {Number.isInteger(chosen) && Number.isInteger(chosenOpponentScore) ? <p className="mt-2 text-sm text-slate-700">Result: <strong>{data.entrant.name} {chosen}–{chosenOpponentScore} {fixture.opponent.name}</strong></p> : null}
                   <button type="button" onClick={() => void submitResult(fixture)} disabled={submittingId === fixture.id || !Number.isInteger(chosen) || !Number.isInteger(chosenOpponentScore)} className="mt-3 w-full rounded-lg bg-emerald-800 px-4 py-3 font-semibold text-white disabled:opacity-50">
