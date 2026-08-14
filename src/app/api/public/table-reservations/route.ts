@@ -54,7 +54,9 @@ export async function GET(request: NextRequest) {
       ...reservation,
       playerName: reservation.purpose === "league_match"
         ? reservation.team_name || names.get(reservation.booked_for_player_id) || "League booking"
-        : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || names.get(reservation.booked_for_player_id) || "Competition booking",
+        : reservation.purpose === "other"
+          ? reservation.notes || "Other booking"
+          : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || names.get(reservation.booked_for_player_id) || "Competition booking",
     })),
     blocks,
     availability: hoursResult.data ?? [],

@@ -22,6 +22,7 @@ async function authorize(request: NextRequest) {
 
 async function eligibility(auth: NonNullable<Awaited<ReturnType<typeof authorize>>>) {
   const sports = new Set<string>();
+  let canBookOther = auth.isSuper;
   if (auth.isSuper) {
     sports.add("pool");
     sports.add("snooker");
@@ -39,9 +40,12 @@ async function eligibility(auth: NonNullable<Awaited<ReturnType<typeof authorize
     if (mastersResult.error) throw mastersResult.error;
     if (grantsResult.error) throw grantsResult.error;
     if ((mastersResult.data ?? []).length) sports.add("pool");
-    for (const grant of grantsResult.data ?? []) sports.add(grant.sport_type);
+    for (const grant of grantsResult.data ?? []) {
+      sports.add(grant.sport_type);
+      if (["captain", "vice_captain"].includes(grant.access_role)) canBookOther = true;
+    }
   }
-  return [...sports];
+  return { eligibleSports: [...sports], canBookOther };
 }
 
 function londonDateParts(value: Date) {
@@ -73,12 +77,14 @@ function validTime(value: string) {
 }
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
-const bookingTitle = (reservation: { purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null }) => reservation.purpose === "league_match"
+const bookingTitle = (reservation: { purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null; notes?: string | null }) => reservation.purpose === "league_match"
   ? reservation.team_name || "League team booking"
-  : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || "Competition booking";
+  : reservation.purpose === "other"
+    ? reservation.notes || "Other table booking"
+    : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || "Competition booking";
 const londonBookingTime = (startsAt: string, endsAt: string) => `${new Date(startsAt).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}–${new Date(endsAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}`;
 
-async function sendDecisionEmail(reservation: { requester_email?: string | null; starts_at: string; ends_at: string; purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null }, tableName: string, decision: "accepted" | "rejected" | "deleted", reason?: string | null) {
+async function sendDecisionEmail(reservation: { requester_email?: string | null; starts_at: string; ends_at: string; purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null; notes?: string | null }, tableName: string, decision: "accepted" | "rejected" | "deleted", reason?: string | null) {
   if (!reservation.requester_email || !hasMailerConfig()) return { emailSent: false, emailError: reservation.requester_email ? "Resend is not configured." : "No requester email address is available." };
   const title = bookingTitle(reservation);
   const when = londonBookingTime(reservation.starts_at, reservation.ends_at);
@@ -99,7 +105,7 @@ async function sendDecisionEmail(reservation: { requester_email?: string | null;
 export async function GET(request: NextRequest) {
   const auth = await authorize(request);
   if (!auth) return NextResponse.json({ error: "Sign in to view table bookings." }, { status: 401 });
-  const eligibleSports = await eligibility(auth);
+  const { eligibleSports, canBookOther } = await eligibility(auth);
   const now = new Date();
   const from = new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString();
   const to = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString();
@@ -139,6 +145,7 @@ export async function GET(request: NextRequest) {
     isSuper: auth.isSuper,
     playerId: auth.playerId,
     eligibleSports,
+    canBookOther,
     tables: tablesResult.data ?? [],
     reservations: (reservationsResult.data ?? []).map((reservation) => ({ ...reservation, requester_email: auth.isSuper || reservation.booked_by_user_id === auth.user.id ? reservation.requester_email : null, playerName: names.get(reservation.booked_for_player_id) || "Player" })),
     availability: hoursResult.data ?? [],
@@ -250,7 +257,8 @@ export async function POST(request: NextRequest) {
     if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
     const reservationId = String(body?.reservationId ?? "");
     const reason = String(body?.reason ?? "").trim().slice(0, 240) || null;
-    const reservationResult = await auth.client.from("table_reservations").select("id,table_id,starts_at,ends_at,purpose,participant_one,participant_two,team_name,requester_email,status,cue_tables(name)").eq("id", reservationId).maybeSingle();
+    if (action === "reject" && !reason) return NextResponse.json({ error: "Enter a reason or comment before declining the booking." }, { status: 400 });
+    const reservationResult = await auth.client.from("table_reservations").select("id,table_id,starts_at,ends_at,purpose,notes,participant_one,participant_two,team_name,requester_email,status,cue_tables(name)").eq("id", reservationId).maybeSingle();
     if (reservationResult.error) return NextResponse.json({ error: reservationResult.error.message }, { status: 400 });
     const reservation = reservationResult.data;
     if (!reservation) return NextResponse.json({ error: "Booking request not found." }, { status: 404 });
@@ -299,12 +307,15 @@ export async function POST(request: NextRequest) {
   const tableId = String(body?.tableId ?? "");
   const startsAt = new Date(String(body?.startsAt ?? ""));
   const endsAt = new Date(String(body?.endsAt ?? ""));
-  const purpose = body?.purpose === "league_match" ? "league_match" : "fixture";
+  const requestedPurpose = String(body?.purpose ?? "fixture");
+  const purpose = ["fixture", "league_match", "other"].includes(requestedPurpose) ? requestedPurpose : "fixture";
   const participantOne = String(body?.participantOne ?? "").trim().slice(0, 80) || null;
   const participantTwo = String(body?.participantTwo ?? "").trim().slice(0, 80) || null;
   const teamName = String(body?.teamName ?? "").trim().slice(0, 120) || null;
+  const otherReason = String(body?.otherReason ?? "").trim().slice(0, 240) || null;
   if (purpose === "fixture" && !participantOne) return NextResponse.json({ error: "Enter at least one player name for the competition booking." }, { status: 400 });
   if (purpose === "league_match" && !teamName) return NextResponse.json({ error: "Enter the pool or snooker team name." }, { status: 400 });
+  if (purpose === "other" && !otherReason) return NextResponse.json({ error: "Enter a reason for the other booking, such as team practice night." }, { status: 400 });
   if (!tableId || Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return NextResponse.json({ error: "Choose a valid table, date and time." }, { status: 400 });
   const durationMinutes = (endsAt.getTime() - startsAt.getTime()) / 60000;
   if (startsAt.getTime() < Date.now() - 5 * 60000 || durationMinutes < 30 || durationMinutes > 360) return NextResponse.json({ error: "Bookings must be between 30 minutes and 6 hours and cannot start in the past." }, { status: 400 });
@@ -314,8 +325,9 @@ export async function POST(request: NextRequest) {
   if (!tableResult.data?.is_active) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
   const maximumMinutes = tableResult.data.sport_type === "pool" ? 30 : 60;
   if (!auth.isSuper && durationMinutes > maximumMinutes) return NextResponse.json({ error: `${tableResult.data.sport_type === "pool" ? "Pool" : "Snooker"} table bookings are limited to ${maximumMinutes} minutes.` }, { status: 400 });
-  const eligibleSports = await eligibility(auth);
+  const { eligibleSports, canBookOther } = await eligibility(auth);
   if (!eligibleSports.includes(tableResult.data.sport_type)) return NextResponse.json({ error: `You do not currently have ${tableResult.data.sport_type} table booking access.` }, { status: 403 });
+  if (purpose === "other" && !canBookOther) return NextResponse.json({ error: "Other bookings are limited to team captains, vice-captains and the Super User." }, { status: 403 });
   const endInLondon = londonDateParts(endsAt);
   const hoursResult = await auth.client.from("table_booking_hours").select("opens_at,closes_at").eq("table_id", tableId).eq("weekday", startInLondon.weekday).maybeSingle();
   if (hoursResult.error) return NextResponse.json({ error: hoursResult.error.message }, { status: 400 });
@@ -331,7 +343,7 @@ export async function POST(request: NextRequest) {
   if (bookedConflict.error) return NextResponse.json({ error: bookedConflict.error.message }, { status: 400 });
   if ((bookedConflict.count ?? 0) > 0) return NextResponse.json({ error: "That table is already booked during this time." }, { status: 409 });
   const status = auth.isSuper ? "booked" : "pending";
-  const insertResult = await auth.client.from("table_reservations").insert({ table_id: tableId, booked_by_user_id: auth.user.id, booked_for_player_id: auth.playerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, requester_email: auth.user.email ?? null, status, reviewed_at: auth.isSuper ? new Date().toISOString() : null, reviewed_by_user_id: auth.isSuper ? auth.user.id : null }).select("id").single();
+  const insertResult = await auth.client.from("table_reservations").insert({ table_id: tableId, booked_by_user_id: auth.user.id, booked_for_player_id: auth.playerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, requester_email: auth.user.email ?? null, status, reviewed_at: auth.isSuper ? new Date().toISOString() : null, reviewed_by_user_id: auth.isSuper ? auth.user.id : null }).select("id").single();
   if (insertResult.error) {
     if (insertResult.error.code === "23P01") return NextResponse.json({ error: "That table is already reserved during this time." }, { status: 409 });
     return NextResponse.json({ error: insertResult.error.message }, { status: 400 });

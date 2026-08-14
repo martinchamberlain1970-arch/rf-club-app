@@ -4,22 +4,25 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import RequireAuth from "@/components/RequireAuth";
 import PageNav from "@/components/PageNav";
 import MessageModal from "@/components/MessageModal";
+import TableBookingCalendar from "@/components/TableBookingCalendar";
 import { supabase } from "@/lib/supabase";
 
 type CueTable = { id: string; name: string; sport_type: "pool" | "snooker"; location_id: string };
-type Reservation = { id: string; table_id: string; booked_by_user_id: string; booked_for_player_id: string; starts_at: string; ends_at: string; purpose: "fixture" | "league_match"; notes: string | null; status: "pending" | "booked" | "rejected" | "cancelled"; participant_one: string | null; participant_two: string | null; team_name: string | null; requester_email: string | null; rejection_reason: string | null; playerName: string };
+type Reservation = { id: string; table_id: string; booked_by_user_id: string; booked_for_player_id: string; starts_at: string; ends_at: string; purpose: "fixture" | "league_match" | "other"; notes: string | null; status: "pending" | "booked" | "rejected" | "cancelled"; participant_one: string | null; participant_two: string | null; team_name: string | null; requester_email: string | null; rejection_reason: string | null; playerName: string };
 type AccessGrant = { id: string; player_id: string; sport_type: "pool" | "snooker"; access_role: "captain" | "vice_captain"; playerName: string };
 type Player = { id: string; display_name: string; full_name: string | null };
 type AvailabilityWindow = { id: string; table_id: string; weekday: number; opens_at: string; closes_at: string };
 type BookingBlock = { id: string; table_id: string | null; starts_at: string; ends_at: string; category: string; title: string; notes: string | null };
-type BookingData = { isSuper: boolean; playerId: string | null; eligibleSports: string[]; tables: CueTable[]; reservations: Reservation[]; availability: AvailabilityWindow[]; blocks: BookingBlock[]; access: AccessGrant[]; players: Player[] };
+type BookingData = { isSuper: boolean; playerId: string | null; eligibleSports: string[]; canBookOther: boolean; tables: CueTable[]; reservations: Reservation[]; availability: AvailabilityWindow[]; blocks: BookingBlock[]; access: AccessGrant[]; players: Player[] };
 
 const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const londonDateTime = (value: string) => new Date(value).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
 const londonTime = (value: string) => new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
 const reservationTitle = (reservation: Reservation) => reservation.purpose === "league_match"
   ? reservation.team_name || "League team booking"
-  : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || reservation.playerName;
+  : reservation.purpose === "other"
+    ? reservation.notes || "Other table booking"
+    : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || reservation.playerName;
 const localInputValue = (date: Date) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
@@ -37,6 +40,7 @@ export default function TableBookingsPage() {
   const [participantOne, setParticipantOne] = useState("");
   const [participantTwo, setParticipantTwo] = useState("");
   const [teamName, setTeamName] = useState("");
+  const [otherReason, setOtherReason] = useState("");
   const [grantPlayerId, setGrantPlayerId] = useState("");
   const [grantSport, setGrantSport] = useState<"pool" | "snooker">("pool");
   const [grantRole, setGrantRole] = useState<"captain" | "vice_captain">("captain");
@@ -102,8 +106,8 @@ export default function TableBookingsPage() {
     const end = new Date(start.getTime() + Number(duration) * 60000);
     setSaving(true);
     try {
-      const result = await request({ action: "book", tableId, startsAt: start.toISOString(), endsAt: end.toISOString(), purpose, participantOne, participantTwo, teamName });
-      setParticipantTwo(""); setTeamName(""); setMessage(result.status === "pending" ? "Booking request sent to the Super User for approval." : "Table reserved successfully."); await load();
+      const result = await request({ action: "book", tableId, startsAt: start.toISOString(), endsAt: end.toISOString(), purpose, participantOne, participantTwo, teamName, otherReason });
+      setParticipantTwo(""); setTeamName(""); setOtherReason(""); setMessage(result.status === "pending" ? "Booking request sent to the Super User for approval." : "Table reserved successfully."); await load();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Reservation failed."); }
     finally { setSaving(false); }
   };
@@ -176,16 +180,17 @@ export default function TableBookingsPage() {
     <MessageModal message={message} onClose={() => setMessage(null)} />
     {loading ? <section className="rounded-2xl bg-white p-5 shadow">Loading reservations…</section> : null}
     {data ? <>
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div><h2 className="text-2xl font-black text-slate-950">Request a table</h2><p className="mt-1 text-sm text-slate-600">Choose a competition fixture or a home league match. Player requests are sent to the Super User for approval; Super User bookings are confirmed immediately.</p></div>
+      {!data.isSuper && eligibleTables.length ? <TableBookingCalendar tables={eligibleTables} reservations={data.reservations} availability={data.availability} blocks={data.blocks} onChooseSlot={(chosenTableId, chosenStartsAt, chosenDuration) => { setTableId(chosenTableId); setStartsAt(localInputValue(new Date(chosenStartsAt))); setDuration(String(chosenDuration)); }} /> : null}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div><h2 className="text-2xl font-black text-slate-950">Request a table</h2><p className="mt-1 text-sm text-slate-600">Choose a competition fixture, home league match or—where authorised—another reason. Player requests are sent to the Super User for approval; Super User bookings are confirmed immediately.</p></div>
         {!data.playerId ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-amber-900">Link your app account to a player profile before booking.</p> : null}
         {data.playerId && !eligibleTables.length ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-amber-900">Your account does not currently have table-booking access. Ask the Super User if you are a captain or vice-captain.</p> : null}
         {eligibleTables.length ? <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="text-sm font-medium text-slate-700">Table<select value={tableId} onChange={(event) => { const nextTableId = event.target.value; setTableId(nextTableId); if (!data.isSuper && eligibleTables.find((table) => table.id === nextTableId)?.sport_type === "pool") setDuration("30"); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">{eligibleTables.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}</select></label>
-          <label className="text-sm font-medium text-slate-700">Booking type<select value={purpose} onChange={(event) => setPurpose(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="fixture">Competition fixture</option><option value="league_match">Home league match</option></select></label>
+          <label className="text-sm font-medium text-slate-700">Booking type<select value={purpose} onChange={(event) => setPurpose(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="fixture">Competition fixture</option><option value="league_match">Home league match</option>{data.canBookOther ? <option value="other">Other</option> : null}</select></label>
           <label className="text-sm font-medium text-slate-700">Starts<input type="datetime-local" min={localInputValue(new Date())} value={startsAt} onChange={(event) => setStartsAt(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
           <label className="text-sm font-medium text-slate-700">Length<select value={duration} onChange={(event) => setDuration(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">{durationOptions.map((minutes) => <option key={minutes} value={minutes}>{minutes < 60 ? `${minutes} mins` : `${minutes / 60} hour${minutes === 60 ? "" : "s"}`}</option>)}</select><span className="mt-1 block text-xs text-slate-500">Maximum: {data.isSuper ? "6 hours (Super User)" : selectedTable?.sport_type === "snooker" ? "1 hour" : "30 minutes"}</span></label>
-          {purpose === "fixture" ? <><label className="text-sm font-medium text-slate-700 sm:col-span-1 lg:col-span-2">Player one<input value={participantOne} maxLength={80} onChange={(event) => setParticipantOne(event.target.value)} placeholder="e.g. Martin Chamberlain" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label><label className="text-sm font-medium text-slate-700 sm:col-span-1 lg:col-span-2">Player two (optional)<input value={participantTwo} maxLength={80} onChange={(event) => setParticipantTwo(event.target.value)} placeholder="e.g. Jim Smith" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label></> : <label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">Home team name<input value={teamName} maxLength={120} onChange={(event) => setTeamName(event.target.value)} placeholder="e.g. Greenhithe Legion A" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>}
-          <button type="button" disabled={saving || !tableId || !startsAt || (purpose === "fixture" ? !participantOne.trim() : !teamName.trim())} onClick={() => void book()} className="rounded-lg bg-emerald-800 px-4 py-2.5 font-bold text-white disabled:opacity-50 sm:col-span-2 lg:col-span-4">{saving ? "Saving…" : data.isSuper ? "Confirm booking" : "Send booking request"}</button>
+          {purpose === "fixture" ? <><label className="text-sm font-medium text-slate-700 sm:col-span-1 lg:col-span-2">Player one<input value={participantOne} maxLength={80} onChange={(event) => setParticipantOne(event.target.value)} placeholder="e.g. Joe Bloggs" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label><label className="text-sm font-medium text-slate-700 sm:col-span-1 lg:col-span-2">Player two (optional)<input value={participantTwo} maxLength={80} onChange={(event) => setParticipantTwo(event.target.value)} placeholder="e.g. Jim Smith" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label></> : purpose === "league_match" ? <label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">Home team name<input value={teamName} maxLength={120} onChange={(event) => setTeamName(event.target.value)} placeholder="e.g. Greenhithe Legion A" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label> : <label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">Reason<input value={otherReason} maxLength={240} required onChange={(event) => setOtherReason(event.target.value)} placeholder="e.g. Team practice night" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs text-slate-500">Other bookings are limited to team captains, vice-captains and the Super User.</span></label>}
+          <button type="button" disabled={saving || !tableId || !startsAt || (purpose === "fixture" ? !participantOne.trim() : purpose === "league_match" ? !teamName.trim() : !otherReason.trim())} onClick={() => void book()} className="rounded-lg bg-emerald-800 px-4 py-2.5 font-bold text-white disabled:opacity-50 sm:col-span-2 lg:col-span-4">{saving ? "Saving…" : data.isSuper ? "Confirm booking" : "Send booking request"}</button>
         </div> : null}
       </section>
 
