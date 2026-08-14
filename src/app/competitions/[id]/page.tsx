@@ -424,6 +424,8 @@ export default function CompetitionPage() {
   const [leagueFixtureFilterPlayer, setLeagueFixtureFilterPlayer] = useState<string>("all");
   const [message, setMessage] = useState<string | null>(null);
   const [generatingLeagueFixtures, setGeneratingLeagueFixtures] = useState(false);
+  const [savingLeagueBreakWeeks, setSavingLeagueBreakWeeks] = useState(false);
+  const [confirmBreakScheduleOpen, setConfirmBreakScheduleOpen] = useState(false);
   const [refreshingFutureHandicaps, setRefreshingFutureHandicaps] = useState(false);
   const [confirmLeagueGenerationOpen, setConfirmLeagueGenerationOpen] = useState(false);
   const [entriesExpanded, setEntriesExpanded] = useState(false);
@@ -468,6 +470,41 @@ export default function CompetitionPage() {
     }
     setLeagueBreakWeeksInput((current) => [...new Set([...current, monday])].sort());
     setLeagueBreakWeekInput("");
+  };
+
+  const saveLeagueBreakSchedule = async () => {
+    const client = supabase;
+    if (!client || !competition || !admin.isAdmin || isOneDayLeague) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setMessage("Please sign in again.");
+      return;
+    }
+    setSavingLeagueBreakWeeks(true);
+    const response = await fetch("/api/admin/competition-break-weeks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ competitionId: competition.id, breakWeeks: leagueBreakWeeksInput }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setSavingLeagueBreakWeeks(false);
+    if (!response.ok) {
+      setMessage(data.error ?? "Break weeks could not be saved.");
+      return;
+    }
+    const savedBreaks = (data.breakWeeks ?? []) as string[];
+    setLeagueBreakWeeksInput(savedBreaks);
+    setCompetition({ ...competition, league_break_weeks: savedBreaks });
+    const reload = await client
+      .from("matches")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
+      .eq("competition_id", competition.id)
+      .eq("is_archived", false)
+      .order("round_no")
+      .order("match_no");
+    if (reload.data) setMatches(reload.data as Match[]);
+    setMessage(`Break weeks saved. ${Number(data.movedFixtures ?? 0)} future fixture${Number(data.movedFixtures ?? 0) === 1 ? " was" : "s were"} rescheduled; started and past fixtures were left unchanged.`);
   };
 
   const openBracketDisplay = () => {
@@ -1937,10 +1974,14 @@ export default function CompetitionPage() {
                         </button>
                       </div>
                     </div>
-                    {!isOneDayLeague && matches.length === 0 ? (
+                    {!isOneDayLeague ? (
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
                         <p className="text-sm font-semibold text-amber-950">Fixture break weeks</p>
-                        <p className="mt-1 text-xs text-amber-800">Optional: choose any date in a week to pause fixtures. The app records the Monday of that week and moves every later round back by seven days.</p>
+                        <p className="mt-1 text-xs text-amber-800">
+                          {matches.length
+                            ? "Add or remove break weeks at any time. Saving moves only future pending rounds; current, completed and in-progress fixtures stay fixed."
+                            : "Optional: choose any date in a week to pause fixtures. The app records the Monday of that week and moves every later round back by seven days."}
+                        </p>
                         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                           <input
                             type="date"
@@ -1975,6 +2016,16 @@ export default function CompetitionPage() {
                             ))}
                           </div>
                         ) : <p className="mt-2 text-xs text-amber-800">No break weeks selected.</p>}
+                        {matches.length ? (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmBreakScheduleOpen(true)}
+                            disabled={savingLeagueBreakWeeks}
+                            className="mt-3 rounded-lg bg-amber-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                          >
+                            {savingLeagueBreakWeeks ? "Updating calendar..." : "Save Break Weeks & Move Future Fixtures"}
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                     </>
@@ -2331,6 +2382,18 @@ export default function CompetitionPage() {
             const target = cashPaymentTarget;
             setCashPaymentTarget(null);
             if (target) await updateCashPayment(target.entry, target.reset);
+          }}
+        />
+        <ConfirmModal
+          open={confirmBreakScheduleOpen}
+          title="Update fixture break weeks?"
+          description="This recalculates only future pending rounds. Current, completed, in-progress and past fixtures remain on their existing dates. Pending player reschedule requests for fixtures that move will be closed as superseded."
+          confirmLabel="Save & Move Future Fixtures"
+          cancelLabel="Cancel"
+          onCancel={() => setConfirmBreakScheduleOpen(false)}
+          onConfirm={async () => {
+            setConfirmBreakScheduleOpen(false);
+            await saveLeagueBreakSchedule();
           }}
         />
         <ConfirmModal
