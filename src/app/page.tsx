@@ -815,26 +815,21 @@ export default function HomePage() {
           ) : null}
 
           {isManageMode ? (
-            <section className="rounded-3xl border border-amber-300/40 bg-gradient-to-br from-amber-300 via-amber-200 to-orange-200 p-4 shadow-xl sm:p-5">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-950">Launch desk</p>
-                  <h2 className="mt-1 text-2xl font-black text-slate-950">Run tomorrow&apos;s competition</h2>
-                  <p className="mt-1 text-sm text-amber-950/80">The key workflow, in order.</p>
-                </div>
-                <Link href="/events/new" className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-bold text-white shadow">Create competition</Link>
+            <section className={`${subtleCardClass} flex flex-wrap items-center gap-3`}>
+              <div className="mr-auto">
+                <h2 className="text-base font-bold text-slate-950">Competition shortcuts</h2>
+                <p className="mt-0.5 text-xs text-slate-500">Create and manage competitions.</p>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <div className="flex flex-wrap gap-2">
                 {[
-                  ["1", "Competition", "/events/new"],
-                  ["2", "Entrants", "/signups"],
-                  ["3", "Fixtures", "/events"],
-                  ["4", "Live control", "/live"],
-                  ["5", "Results", "/results"],
-                ].map(([step, label, href]) => (
-                  <Link key={label} href={href} className="rounded-2xl border border-amber-950/10 bg-white/75 p-3 text-slate-950 shadow-sm hover:bg-white">
-                    <span className="text-xs font-black text-amber-800">STEP {step}</span>
-                    <p className="mt-2 font-black">{label}</p>
+                  ["Create", "/events/new"],
+                  ["Entrants", "/signups"],
+                  ["Fixtures", "/events"],
+                  ["Live", "/live"],
+                  ["Results", "/results"],
+                ].map(([label, href]) => (
+                  <Link key={label} href={href} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-900">
+                    {label}
                   </Link>
                 ))}
               </div>

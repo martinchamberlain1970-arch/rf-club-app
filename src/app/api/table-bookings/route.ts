@@ -143,6 +143,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     isSuper: auth.isSuper,
+    userId: auth.user.id,
     playerId: auth.playerId,
     eligibleSports,
     canBookOther,
@@ -304,6 +305,14 @@ export async function POST(request: NextRequest) {
   }
 
   if (!auth.playerId) return NextResponse.json({ error: "Link your app account to a player profile before booking." }, { status: 409 });
+  const editingReservationId = action === "edit" ? String(body?.reservationId ?? "") : null;
+  if (action !== "book" && action !== "edit") return NextResponse.json({ error: "Unknown table-booking action." }, { status: 400 });
+  if (editingReservationId) {
+    const existingResult = await auth.client.from("table_reservations").select("id,booked_by_user_id,status").eq("id", editingReservationId).maybeSingle();
+    if (existingResult.error) return NextResponse.json({ error: existingResult.error.message }, { status: 400 });
+    if (!existingResult.data || existingResult.data.status !== "booked") return NextResponse.json({ error: "That confirmed booking could not be found." }, { status: 404 });
+    if (!auth.isSuper && existingResult.data.booked_by_user_id !== auth.user.id) return NextResponse.json({ error: "Only the person who made this booking or the Super User can edit it." }, { status: 403 });
+  }
   const tableId = String(body?.tableId ?? "");
   const startsAt = new Date(String(body?.startsAt ?? ""));
   const endsAt = new Date(String(body?.endsAt ?? ""));
@@ -339,10 +348,21 @@ export async function POST(request: NextRequest) {
   const blockResult = await auth.client.from("table_booking_blocks").select("title").or(`table_id.is.null,table_id.eq.${tableId}`).lt("starts_at", endsAt.toISOString()).gt("ends_at", startsAt.toISOString()).limit(1).maybeSingle();
   if (blockResult.error) return NextResponse.json({ error: blockResult.error.message }, { status: 400 });
   if (blockResult.data) return NextResponse.json({ error: `This table is unavailable then: ${blockResult.data.title}.` }, { status: 409 });
-  const bookedConflict = await auth.client.from("table_reservations").select("id", { count: "exact", head: true }).eq("table_id", tableId).eq("status", "booked").lt("starts_at", endsAt.toISOString()).gt("ends_at", startsAt.toISOString());
+  let bookedConflictQuery = auth.client.from("table_reservations").select("id", { count: "exact", head: true }).eq("table_id", tableId).eq("status", "booked").lt("starts_at", endsAt.toISOString()).gt("ends_at", startsAt.toISOString());
+  if (editingReservationId) bookedConflictQuery = bookedConflictQuery.neq("id", editingReservationId);
+  const bookedConflict = await bookedConflictQuery;
   if (bookedConflict.error) return NextResponse.json({ error: bookedConflict.error.message }, { status: 400 });
   if ((bookedConflict.count ?? 0) > 0) return NextResponse.json({ error: "That table is already booked during this time." }, { status: 409 });
   const status = auth.isSuper ? "booked" : "pending";
+  if (editingReservationId) {
+    const updateResult = await auth.client.from("table_reservations").update({ table_id: tableId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, status, rejection_reason: null, reviewed_at: auth.isSuper ? new Date().toISOString() : null, reviewed_by_user_id: auth.isSuper ? auth.user.id : null, cancelled_at: null, cancelled_by_user_id: null }).eq("id", editingReservationId);
+    if (updateResult.error) {
+      if (updateResult.error.code === "23P01") return NextResponse.json({ error: "That table is already reserved during this time." }, { status: 409 });
+      return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
+    }
+    await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: auth.isSuper ? "table_reservation_edited" : "table_booking_edit_requested", entity_type: "table_reservation", entity_id: editingReservationId, summary: `${auth.isSuper ? "Cue table reservation edited" : "Cue table booking edit submitted for approval"}: ${startsAt.toISOString()} to ${endsAt.toISOString()}.`, meta: { table_id: tableId, player_id: auth.playerId, purpose } });
+    return NextResponse.json({ ok: true, id: editingReservationId, status });
+  }
   const insertResult = await auth.client.from("table_reservations").insert({ table_id: tableId, booked_by_user_id: auth.user.id, booked_for_player_id: auth.playerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, requester_email: auth.user.email ?? null, status, reviewed_at: auth.isSuper ? new Date().toISOString() : null, reviewed_by_user_id: auth.isSuper ? auth.user.id : null }).select("id").single();
   if (insertResult.error) {
     if (insertResult.error.code === "23P01") return NextResponse.json({ error: "That table is already reserved during this time." }, { status: 409 });
