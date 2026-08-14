@@ -33,7 +33,7 @@ function periodsForDate(date: string, table: GridTable, reservations: GridReserv
   return periods.sort((left, right) => left.start - right.start);
 }
 
-function freeSlots(opens: number, closes: number, periods: Period[], slotMinutes: number) {
+function freeSlots(opens: number, closes: number, periods: Period[]) {
   const busy = periods.map((period) => ({ start: Math.max(opens, period.start), end: Math.min(closes, period.end) })).filter((period) => period.end > period.start).sort((left, right) => left.start - right.start);
   const merged: Array<{ start: number; end: number }> = [];
   for (const period of busy) {
@@ -41,15 +41,10 @@ function freeSlots(opens: number, closes: number, periods: Period[], slotMinutes
     if (last && period.start <= last.end) last.end = Math.max(last.end, period.end);
     else merged.push({ ...period });
   }
-  const freePeriods: Array<{ start: number; end: number }> = [];
+  const slots: Array<{ start: number; end: number }> = [];
   let cursor = opens;
-  for (const period of merged) { if (period.start > cursor) freePeriods.push({ start: cursor, end: period.start }); cursor = Math.max(cursor, period.end); }
-  if (closes > cursor) freePeriods.push({ start: cursor, end: closes });
-  const slots = freePeriods.flatMap((period) => {
-    const periods: Array<{ start: number; end: number }> = [];
-    for (let start = period.start; start + slotMinutes <= period.end; start += slotMinutes) periods.push({ start, end: start + slotMinutes });
-    return periods;
-  });
+  for (const period of merged) { if (period.start - cursor >= 30) slots.push({ start: cursor, end: period.start }); cursor = Math.max(cursor, period.end); }
+  if (closes - cursor >= 30) slots.push({ start: cursor, end: closes });
   return slots;
 }
 
@@ -69,11 +64,10 @@ export default function CueTableWeekGrid({ table, weekStart, reservations, block
       const opens = rule ? timeMinutes(rule.opens_at) : 0;
       const closes = rule ? timeMinutes(rule.closes_at) : 0;
       const periods = periodsForDate(date, table, reservations, blocks);
-      const slotMinutes = table.sport_type === "snooker" ? 60 : 30;
-      const slots = rule ? freeSlots(opens, closes, periods, slotMinutes) : [];
+      const slots = rule ? freeSlots(opens, closes, periods) : [];
       return <div key={date} className={`grid grid-cols-[120px_1fr] border-b last:border-b-0 ${tv ? "border-white/15" : "border-slate-200"}`}><div className={`flex flex-col justify-center p-3 ${tv ? "bg-black/30 text-white" : "bg-slate-50 text-slate-950"}`}><span className={tv ? "text-lg font-black" : "text-sm font-black"}>{dayTitle(date)}</span><span className={`mt-1 text-[10px] font-bold uppercase ${slots.length ? (tv ? "text-emerald-300" : "text-emerald-700") : (tv ? "text-white/50" : "text-slate-500")}`}>{!rule ? "Closed" : slots.length ? `${slots.length} free period${slots.length === 1 ? "" : "s"}` : "Unavailable"}</span></div><div className={`relative ${tv ? "h-24 bg-slate-800" : "h-20 bg-slate-200"}`}>
         {hours.map((hour) => <div key={hour} className={`pointer-events-none absolute inset-y-0 border-l ${tv ? "border-white/10" : "border-slate-300"}`} style={{ left: left(hour * 60) }} />)}
-        {slots.map((slot) => <button key={`free-${slot.start}-${slot.end}`} type="button" disabled={!canBook || !onChooseSlot} onClick={() => onChooseSlot?.(`${date}T${time(slot.start)}`, slot.end - slot.start)} className="absolute inset-y-2 overflow-hidden rounded-lg border border-emerald-400 bg-emerald-700/90 px-2 text-left text-[10px] font-bold text-white disabled:cursor-default" style={{ left: left(slot.start), width: width(slot.start, slot.end) }}><span className="block truncate">Available</span><span className="block truncate opacity-90">{time(slot.start)}–{time(slot.end)}</span></button>)}
+        {slots.map((slot) => <button key={`free-${slot.start}-${slot.end}`} type="button" disabled={!canBook || !onChooseSlot} onClick={() => onChooseSlot?.(`${date}T${time(slot.start)}`, Math.min(table.sport_type === "pool" ? 30 : 60, slot.end - slot.start))} className="absolute inset-y-2 overflow-hidden rounded-lg border border-emerald-400 bg-emerald-700/90 px-2 text-left text-[10px] font-bold text-white disabled:cursor-default" style={{ left: left(slot.start), width: width(slot.start, slot.end) }}><span className="block truncate">Available</span><span className="block truncate opacity-90">{time(slot.start)}–{time(slot.end)}</span></button>)}
         {periods.map((period) => <div key={`${period.kind}-${period.id}`} className={`absolute inset-y-2 z-10 overflow-hidden rounded-lg border px-2 py-1 text-[10px] shadow-sm ${period.kind === "closure" ? "border-amber-500 bg-amber-300 text-amber-950" : "border-sky-600 bg-sky-600 text-white"}`} style={{ left: left(period.start), width: width(period.start, period.end) }} title={`${time(period.start)}–${time(period.end)} ${period.title}${period.detail ? ` · ${period.detail}` : ""}`}><span className="block truncate font-black">{period.title}</span><span className="block truncate">{time(period.start)}–{time(period.end)}</span><span className="block truncate opacity-75">{period.detail}</span></div>)}
       </div></div>;
     })}
