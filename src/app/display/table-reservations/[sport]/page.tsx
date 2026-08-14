@@ -37,7 +37,6 @@ export default function TableReservationsSportDisplayPage() {
   const sport = params.sport === "snooker" ? "snooker" : "pool";
   const [data, setData] = useState<DisplayData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -53,12 +52,9 @@ export default function TableReservationsSportDisplayPage() {
     };
     void refresh();
     const timer = window.setInterval(() => void refresh(), 30000);
-    const onFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
-    document.addEventListener("fullscreenchange", onFullscreen);
     return () => {
       active = false;
       window.clearInterval(timer);
-      document.removeEventListener("fullscreenchange", onFullscreen);
     };
   }, [sport]);
 
@@ -70,12 +66,11 @@ export default function TableReservationsSportDisplayPage() {
 
   return <main className={`min-h-screen bg-gradient-to-br p-5 text-white ${sport === "snooker" ? "from-slate-950 via-red-950 to-black" : "from-slate-950 via-emerald-950 to-black"}`}>
     <div className="mx-auto max-w-[1800px] space-y-5">
-      <header className="flex items-start justify-between gap-6 border-b border-white/25 pb-4">
+      <header className="border-b border-white/25 pb-4">
         <div>
           <p className="text-base font-bold uppercase tracking-[0.28em] text-lime-300">Greenhithe Legion Social Club</p>
           <h1 className="mt-1 text-4xl font-black">{table?.name ?? `${sport === "pool" ? "Pool" : "Snooker"} Table`} Diary</h1>
         </div>
-        <button type="button" onClick={async () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()} className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold">{isFullscreen ? "Exit full screen" : "Full screen"}</button>
       </header>
 
       {error ? <div className="rounded-2xl bg-red-900 p-4 text-xl">{error}</div> : null}
