@@ -31,6 +31,7 @@ type Competition = {
   max_entries?: number | null;
   league_meetings?: number | null;
   league_start_date?: string | null;
+  league_break_weeks?: string[] | null;
   league_schedule_mode?: "weekly" | "one_day";
   league_finals_size?: number | null;
   league_semi_final_best_of?: number | null;
@@ -377,6 +378,23 @@ function formatLeagueFixtureDeadline(scheduledFor: string | null | undefined, sc
   });
 }
 
+function mondayOfWeek(dateValue: string) {
+  const date = new Date(`${dateValue}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  const day = date.getDay();
+  date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+  return date.toISOString().slice(0, 10);
+}
+
+function formatBreakWeek(dateValue: string) {
+  return new Date(`${dateValue}T12:00:00`).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function CompetitionPage() {
   const params = useParams();
   const id = String(params.id ?? "");
@@ -396,6 +414,8 @@ export default function CompetitionPage() {
   const [signupMaxEntriesInput, setSignupMaxEntriesInput] = useState("");
   const [leagueMeetingsInput, setLeagueMeetingsInput] = useState("2");
   const [leagueStartDateInput, setLeagueStartDateInput] = useState("");
+  const [leagueBreakWeekInput, setLeagueBreakWeekInput] = useState("");
+  const [leagueBreakWeeksInput, setLeagueBreakWeeksInput] = useState<string[]>([]);
   const [leagueSemiBestOfInput, setLeagueSemiBestOfInput] = useState("3");
   const [leagueFinalBestOfInput, setLeagueFinalBestOfInput] = useState("5");
   const [view, setView] = useState<View>("fixtures");
@@ -438,6 +458,16 @@ export default function CompetitionPage() {
     if (!contact.fixtureAccessToken) return;
     await navigator.clipboard.writeText(`${window.location.origin}/entrant/${contact.fixtureAccessToken}`);
     setMessage(`${contact.name}'s private fixture link was copied. Send it only to that entrant.`);
+  };
+
+  const addLeagueBreakWeek = () => {
+    const monday = mondayOfWeek(leagueBreakWeekInput);
+    if (!monday) {
+      setMessage("Choose a valid break-week date.");
+      return;
+    }
+    setLeagueBreakWeeksInput((current) => [...new Set([...current, monday])].sort());
+    setLeagueBreakWeekInput("");
   };
 
   const openBracketDisplay = () => {
@@ -588,7 +618,7 @@ export default function CompetitionPage() {
       const [cRes, mRes, pRes, fRes, appUserLinkRes] = await Promise.all([
         client
           .from("competitions")
-          .select("id,name,venue,location_id,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,entry_fee_pence,league_meetings,league_start_date,league_schedule_mode,league_finals_size,league_semi_final_best_of,league_final_best_of,handicap_enabled")
+          .select("id,name,venue,location_id,sport_type,competition_format,match_mode,app_assign_opening_break,best_of,knockout_round_best_of,signup_open,signup_deadline,max_entries,entry_fee_pence,league_meetings,league_start_date,league_break_weeks,league_schedule_mode,league_finals_size,league_semi_final_best_of,league_final_best_of,handicap_enabled")
           .eq("id", id)
           .single(),
         client
@@ -685,6 +715,7 @@ export default function CompetitionPage() {
       setSignupMaxEntriesInput(comp.max_entries ? String(comp.max_entries) : "");
       setLeagueMeetingsInput(String(comp.league_meetings ?? 2));
       setLeagueStartDateInput(comp.league_start_date ? String(comp.league_start_date) : "");
+      setLeagueBreakWeeksInput((comp.league_break_weeks ?? []).map(String).sort());
       setLeagueSemiBestOfInput(String(comp.league_semi_final_best_of ?? 3));
       setLeagueFinalBestOfInput(String(comp.league_final_best_of ?? 5));
     };
@@ -830,12 +861,23 @@ export default function CompetitionPage() {
       return;
     }
 
+    const breakWeekSet = new Set(leagueBreakWeeksInput.map((dateValue) => mondayOfWeek(dateValue)).filter(Boolean) as string[]);
+    const scheduledDatesByRound: string[] = [];
+    const scheduleCursor = new Date(start);
+    for (let roundIndex = 0; roundIndex < rounds.length; roundIndex += 1) {
+      if (roundIndex > 0 && !isOneDay) scheduleCursor.setDate(scheduleCursor.getDate() + 7);
+      if (!isOneDay) {
+        while (breakWeekSet.has(mondayOfWeek(scheduleCursor.toISOString().slice(0, 10)) ?? "")) {
+          scheduleCursor.setDate(scheduleCursor.getDate() + 7);
+        }
+      }
+      scheduledDatesByRound.push(scheduleCursor.toISOString().slice(0, 10));
+    }
+
     const openingBreakBaseByPair = new Map<string, string>();
     const playerHandicapById = new Map(players.map((player) => [player.id, player.snooker_handicap ?? 0]));
     const fixtureRows = rounds.flatMap((round, roundIndex) =>
       round.map((pairing, matchIndex) => {
-        const scheduled = new Date(start);
-        if (!isOneDay) scheduled.setDate(start.getDate() + (roundIndex * 7));
         let openingBreaker: string | null = null;
         if (!pairing.isBye && pairing.player2 && pairing.pairKey) {
           let baseBreaker = openingBreakBaseByPair.get(pairing.pairKey) ?? null;
@@ -861,7 +903,7 @@ export default function CompetitionPage() {
           player2_id: pairing.player2 ?? pairing.player1,
           winner_player_id: pairing.isBye ? pairing.player1 : null,
           opening_break_player_id: openingBreaker,
-          scheduled_for: scheduled.toISOString().slice(0, 10),
+          scheduled_for: scheduledDatesByRound[roundIndex],
           team1_handicap_start: handicapStarts.team1,
           team2_handicap_start: handicapStarts.team2,
         };
@@ -874,6 +916,7 @@ export default function CompetitionPage() {
       .update({
         league_meetings: meetings,
         league_start_date: leagueStartDateInput,
+        league_break_weeks: isOneDay ? [] : [...breakWeekSet].sort(),
       })
       .eq("id", competition.id);
     if (updateRes.error) {
@@ -891,9 +934,9 @@ export default function CompetitionPage() {
     setMessage(
       isOneDay
         ? `One-day round-robin fixtures generated across ${rounds.length} round${rounds.length === 1 ? "" : "s"}.`
-        : `League fixtures generated for ${rounds.length} week${rounds.length === 1 ? "" : "s"}.`
+        : `League fixtures generated for ${rounds.length} playing week${rounds.length === 1 ? "" : "s"}${breakWeekSet.size ? `, skipping ${breakWeekSet.size} break week${breakWeekSet.size === 1 ? "" : "s"}` : ""}.`
     );
-    setCompetition({ ...competition, league_meetings: meetings, league_start_date: leagueStartDateInput });
+    setCompetition({ ...competition, league_meetings: meetings, league_start_date: leagueStartDateInput, league_break_weeks: isOneDay ? [] : [...breakWeekSet].sort() });
     const reload = await client
       .from("matches")
       .select("id,round_no,match_no,best_of,status,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
@@ -1537,6 +1580,11 @@ export default function CompetitionPage() {
                       {competition.league_meetings ? `Each opponent: ${competition.league_meetings} time${competition.league_meetings === 1 ? "" : "s"}` : "Fixtures not generated yet."}
                       {competition.league_start_date ? ` · Start date: ${competition.league_start_date}` : ""}
                     </p>
+                    {competition.league_break_weeks?.length ? (
+                      <p className="mt-1 text-sm text-amber-700">
+                        Break week{competition.league_break_weeks.length === 1 ? "" : "s"}: {competition.league_break_weeks.map(formatBreakWeek).join(", ")}
+                      </p>
+                    ) : null}
                     {competition.app_assign_opening_break ? (
                       <p className="mt-1 text-sm text-slate-600">
                         Opening break alternates across each opponent series. First meeting is assigned at fixture generation, then alternates on repeat meetings.
@@ -1853,6 +1901,7 @@ export default function CompetitionPage() {
                     </details>
                   ) : null}
                   {admin.isAdmin ? (
+                    <>
                     <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]">
                       <label className="flex flex-col gap-1 text-sm text-slate-700">
                         Meet each opponent
@@ -1888,6 +1937,47 @@ export default function CompetitionPage() {
                         </button>
                       </div>
                     </div>
+                    {!isOneDayLeague && matches.length === 0 ? (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-sm font-semibold text-amber-950">Fixture break weeks</p>
+                        <p className="mt-1 text-xs text-amber-800">Optional: choose any date in a week to pause fixtures. The app records the Monday of that week and moves every later round back by seven days.</p>
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                          <input
+                            type="date"
+                            value={leagueBreakWeekInput}
+                            onChange={(event) => setLeagueBreakWeekInput(event.target.value)}
+                            className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm"
+                            aria-label="Choose a fixture break week"
+                          />
+                          <button
+                            type="button"
+                            onClick={addLeagueBreakWeek}
+                            disabled={!leagueBreakWeekInput}
+                            className="rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-medium text-amber-950 disabled:opacity-50"
+                          >
+                            Add break week
+                          </button>
+                        </div>
+                        {leagueBreakWeeksInput.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {leagueBreakWeeksInput.map((dateValue) => (
+                              <span key={dateValue} className="inline-flex items-center gap-2 rounded-full bg-amber-200 px-3 py-1 text-xs font-medium text-amber-950">
+                                Week beginning {formatBreakWeek(dateValue)}
+                                <button
+                                  type="button"
+                                  onClick={() => setLeagueBreakWeeksInput((current) => current.filter((item) => item !== dateValue))}
+                                  className="rounded-full px-1 hover:bg-amber-300"
+                                  aria-label={`Remove break week beginning ${formatBreakWeek(dateValue)}`}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : <p className="mt-2 text-xs text-amber-800">No break weeks selected.</p>}
+                      </div>
+                    ) : null}
+                    </>
                   ) : null}
                   {admin.isAdmin && isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? (
                     <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3">
@@ -2248,7 +2338,7 @@ export default function CompetitionPage() {
           title="Generate weekly league fixtures?"
           description={
             projectedLeagueFixtureCount > 0
-              ? `This will generate ${projectedLeagueFixtureCount} fixture${projectedLeagueFixtureCount === 1 ? "" : "s"} over ${projectedLeagueRounds.length} ${isOneDayLeague ? "round" : "week"}${projectedLeagueRounds.length === 1 ? "" : "s"} for the approved league field${isOneDayLeague ? " on one day" : ""}.`
+              ? `This will generate ${projectedLeagueFixtureCount} fixture${projectedLeagueFixtureCount === 1 ? "" : "s"} over ${projectedLeagueRounds.length} ${isOneDayLeague ? "round" : "playing week"}${projectedLeagueRounds.length === 1 ? "" : "s"} for the approved league field${isOneDayLeague ? " on one day" : ""}.${!isOneDayLeague && leagueBreakWeeksInput.length ? ` ${leagueBreakWeeksInput.length} selected break week${leagueBreakWeeksInput.length === 1 ? "" : "s"} will be skipped where they fall within the schedule.` : ""}`
               : `This will generate ${isOneDayLeague ? "one-day" : "weekly"} fixtures for the approved league field.`
           }
           confirmLabel="Generate Fixtures"
