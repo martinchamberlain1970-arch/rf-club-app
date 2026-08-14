@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
   const entriesResult = await auth.client
     .from("competition_entries")
-    .select("id,player_id,public_signup_id")
+    .select("id,player_id,public_signup_id,fixture_access_token")
     .eq("competition_id", competitionId)
     .eq("status", "approved");
   if (entriesResult.error) return NextResponse.json({ error: entriesResult.error.message }, { status: 400 });
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   const [playersResult, usersResult, signupsResult, savedResult] = await Promise.all([
     auth.client.from("players").select("id,display_name,full_name").in("id", playerIds),
     auth.client.from("app_users").select("linked_player_id,email").in("linked_player_id", playerIds),
-    signupIds.length ? auth.client.from("public_competition_signups").select("id,email,phone,fixture_access_token").in("id", signupIds) : Promise.resolve({ data: [], error: null }),
+    signupIds.length ? auth.client.from("public_competition_signups").select("id,email,phone").in("id", signupIds) : Promise.resolve({ data: [], error: null }),
     auth.client.from("competition_entry_contacts").select("competition_entry_id,email,phone").in("competition_entry_id", entries.map((entry) => entry.id)),
   ]);
   const error = playersResult.error || usersResult.error || signupsResult.error || savedResult.error;
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
       name: player?.full_name?.trim() || player?.display_name || "Unknown player",
       email: override?.email || signup?.email || userEmails.get(entry.player_id) || null,
       phone: override?.phone || signup?.phone || null,
-      fixtureAccessToken: signup?.fixture_access_token || null,
+      fixtureAccessToken: entry.fixture_access_token || null,
     };
   }) });
 }

@@ -11,7 +11,8 @@ import MessageModal from "@/components/MessageModal";
 type Submission = {
   id: string;
   match_id: string;
-  submitted_by_user_id: string;
+  submitted_by_user_id: string | null;
+  competition_entry_id: string | null;
   submitted_at: string;
   team1_score: number;
   team2_score: number;
@@ -43,6 +44,7 @@ type CompetitionRow = {
 };
 
 type Player = { id: string; display_name: string; full_name?: string | null };
+type EntryLink = { id: string; player_id: string };
 
 function getRoleSummary(isSuper: boolean, isAdmin: boolean) {
   if (isSuper) {
@@ -96,6 +98,7 @@ export default function ResultsQueuePage() {
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [competitions, setCompetitions] = useState<CompetitionRow[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [entryLinks, setEntryLinks] = useState<EntryLink[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(0);
 
@@ -119,7 +122,7 @@ export default function ResultsQueuePage() {
 
     const submissionsQuery = client
       .from("result_submissions")
-      .select("id,match_id,submitted_by_user_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status")
+      .select("id,match_id,submitted_by_user_id,competition_entry_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status")
       .order("submitted_at", { ascending: false });
     if (!admin.isAdmin && admin.userId) {
       submissionsQuery.eq("submitted_by_user_id", admin.userId);
@@ -135,6 +138,7 @@ export default function ResultsQueuePage() {
       setMatches([]);
       setCompetitions([]);
       setPlayers([]);
+      setEntryLinks([]);
       return;
     }
 
@@ -196,6 +200,15 @@ export default function ResultsQueuePage() {
       return;
     }
     setPlayers(("data" in pRes ? pRes.data : []) as Player[]);
+    const competitionEntryIds = [...new Set(submissionRows.map((submission) => submission.competition_entry_id).filter(Boolean) as string[])];
+    const entryResult = competitionEntryIds.length
+      ? await client.from("competition_entries").select("id,player_id").in("id", competitionEntryIds)
+      : { data: [] as EntryLink[] };
+    if ("error" in entryResult && entryResult.error) {
+      setMessage(entryResult.error.message || "Failed to identify result submitters.");
+      return;
+    }
+    setEntryLinks(("data" in entryResult ? entryResult.data : []) as EntryLink[]);
   };
 
   useEffect(() => {
@@ -215,11 +228,20 @@ export default function ResultsQueuePage() {
   const nameMap = useMemo(() => new Map(players.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name])), [players]);
   const compMap = useMemo(() => new Map(competitions.map((c) => [c.id, c.name])), [competitions]);
   const matchMap = useMemo(() => new Map(matches.map((m) => [m.id, m])), [matches]);
+  const entryPlayerMap = useMemo(() => new Map(entryLinks.map((entry) => [entry.id, entry.player_id])), [entryLinks]);
 
   const isEscalated = (submittedAt: string) => nowMs - Date.parse(submittedAt) > 72 * 60 * 60 * 1000;
   const pending = submissions.filter((s) => s.status === "pending");
-  const actionablePending = admin.isSuper ? pending : pending.filter((s) => !isEscalated(s.submitted_at));
-  const escalatedPending = pending.filter((s) => isEscalated(s.submitted_at));
+  const pendingByMatch = new Map<string, Submission[]>();
+  pending.forEach((submission) => pendingByMatch.set(submission.match_id, [...(pendingByMatch.get(submission.match_id) ?? []), submission]));
+  const disputedMatchIds = new Set([...pendingByMatch.entries()].filter(([, rows]) => {
+    const entrantIds = new Set(rows.map((row) => row.competition_entry_id).filter(Boolean));
+    const scores = new Set(rows.map((row) => `${row.team1_score}-${row.team2_score}`));
+    return entrantIds.size >= 2 && scores.size >= 2;
+  }).map(([matchId]) => matchId));
+  const normalPending = pending.filter((submission) => !disputedMatchIds.has(submission.match_id));
+  const actionablePending = admin.isSuper ? normalPending : normalPending.filter((s) => !isEscalated(s.submitted_at));
+  const escalatedPending = normalPending.filter((s) => isEscalated(s.submitted_at));
   const reviewed = submissions.filter((s) => s.status !== "pending");
   const roleSummary = getRoleSummary(admin.isSuper, admin.isAdmin);
   const cardClass = "rounded-3xl border border-slate-200 bg-white p-5 shadow-sm";
@@ -238,7 +260,7 @@ export default function ResultsQueuePage() {
                 </span>
                 <p className="max-w-2xl text-sm text-slate-700">{roleSummary.description}</p>
               </div>
-              <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
+              <div className={`grid min-w-[220px] flex-1 gap-3 ${admin.isAdmin ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                     {!admin.loading && !admin.isAdmin ? "Submitted" : "Awaiting review"}
@@ -247,6 +269,12 @@ export default function ResultsQueuePage() {
                     {!admin.loading && !admin.isAdmin ? submissions.length : actionablePending.length}
                   </p>
                 </div>
+                {admin.isAdmin ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-700">Disputes</p>
+                    <p className="mt-1 text-2xl font-semibold text-red-900">{disputedMatchIds.size}</p>
+                  </div>
+                ) : null}
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                     {!admin.loading && !admin.isAdmin ? "Pending" : "Escalated"}
@@ -310,6 +338,34 @@ export default function ResultsQueuePage() {
           ) : (
             <>
               <MessageModal message={message} onClose={() => setMessage(null)} />
+              {disputedMatchIds.size ? (
+                <section className="rounded-3xl border-2 border-red-300 bg-red-50 p-5 shadow-sm">
+                  <h2 className="text-xl font-semibold text-red-950">Disputes ({disputedMatchIds.size})</h2>
+                  <p className="mt-1 text-sm text-red-800">Both players submitted different scores. Review the evidence and approve the correct submission; the other will be rejected automatically.</p>
+                  <div className="mt-4 space-y-3">
+                    {[...disputedMatchIds].map((matchId) => {
+                      const match = matchMap.get(matchId);
+                      const title = match ? compMap.get(match.competition_id) ?? "Competition" : "Competition";
+                      const p1 = nameMap.get(match?.player1_id ?? "") ?? "TBC";
+                      const p2 = nameMap.get(match?.player2_id ?? "") ?? "TBC";
+                      return (
+                        <div key={matchId} className="rounded-2xl border border-red-200 bg-white p-4">
+                          <p className="text-sm text-slate-600">{title}</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-950">{p1} vs {p2}</p>
+                          <div className="mt-3 space-y-2">
+                            {(pendingByMatch.get(matchId) ?? []).map((submission) => (
+                              <p key={submission.id} className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-900">
+                                <strong>{nameMap.get(entryPlayerMap.get(submission.competition_entry_id ?? "") ?? "") ?? "Player"}</strong> submitted {p1} {submission.team1_score}–{submission.team2_score} {p2}
+                              </p>
+                            ))}
+                          </div>
+                          <Link href={`/matches/${matchId}`} className="mt-3 inline-flex rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white">Review dispute</Link>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
               <section className={cardClass}>
                 <h2 className="text-xl font-semibold text-slate-900">Awaiting review ({actionablePending.length})</h2>
                 {admin.isAdmin && !admin.isSuper && escalatedPending.length > 0 ? (

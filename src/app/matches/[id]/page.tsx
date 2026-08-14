@@ -75,6 +75,13 @@ type FixtureContact = {
   phone: string | null;
 };
 
+const whatsappContactHref = (phone: string, message: string) => {
+  let digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("0")) digits = `44${digits.slice(1)}`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+};
+
 type FrameRow = {
   frame_number: number;
   winner_player_id: string | null;
@@ -103,7 +110,8 @@ type FrameInput = {
 type ResultSubmission = {
   id: string;
   match_id: string;
-  submitted_by_user_id: string;
+  submitted_by_user_id: string | null;
+  competition_entry_id: string | null;
   submitted_at: string;
   team1_score: number;
   team2_score: number;
@@ -442,7 +450,7 @@ export default function MatchPage() {
           .order("frame_number", { ascending: true }),
         client
           .from("result_submissions")
-          .select("id,match_id,submitted_by_user_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status,reviewed_by_user_id,reviewed_at,note")
+          .select("id,match_id,submitted_by_user_id,competition_entry_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status,reviewed_by_user_id,reviewed_at,note")
           .eq("match_id", matchId)
           .order("submitted_at", { ascending: false }),
       ]);
@@ -508,7 +516,7 @@ export default function MatchPage() {
             .order("frame_number", { ascending: true }),
           client
             .from("result_submissions")
-            .select("id,match_id,submitted_by_user_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status,reviewed_by_user_id,reviewed_at,note")
+            .select("id,match_id,submitted_by_user_id,competition_entry_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status,reviewed_by_user_id,reviewed_at,note")
             .eq("match_id", matchId)
             .order("submitted_at", { ascending: false }),
         ]);
@@ -1930,7 +1938,18 @@ export default function MatchPage() {
       showReviewModal(existingFrameRows.error.message || "Unable to read submitted frame detail.");
       return;
     }
-    const existingFrames = (existingFrameRows.data ?? []).filter((r) => !r.is_walkover_award);
+    let existingFrames = (existingFrameRows.data ?? []).filter((r) => !r.is_walkover_award);
+    // A fixed-rack league submission is a complete score claim. Rebuild its rack
+    // rows from the submission being approved so an earlier conflicting claim
+    // cannot determine the league points.
+    if (isFixedRackLeague && existingFrames.length) {
+      const clearFrames = await client.from("frames").delete().eq("match_id", match.id);
+      if (clearFrames.error) {
+        showReviewModal(clearFrames.error.message || "Unable to replace the disputed rack score.");
+        return;
+      }
+      existingFrames = [];
+    }
     let rows: Array<{
       match_id: string;
       frame_number: number;
@@ -2050,6 +2069,22 @@ export default function MatchPage() {
       showReviewModal("Submission approval could not be verified. Please refresh and try again.");
       return;
     }
+    const reviewedAt = new Date().toISOString();
+    const superseded = await client
+      .from("result_submissions")
+      .update({
+        status: "rejected",
+        reviewed_by_user_id: admin.userId,
+        reviewed_at: reviewedAt,
+        note: "Superseded by the organiser-approved submission.",
+      })
+      .eq("match_id", match.id)
+      .eq("status", "pending")
+      .neq("id", submission.id);
+    if (superseded.error) {
+      showReviewModal(superseded.error.message || "The result was approved, but the conflicting submission could not be closed.");
+      return;
+    }
     await applyRatingsIfNeeded(winnerSide);
     if (winnerId) await advanceKnockoutWinner(winnerId);
     await refreshCompetitionCompletion();
@@ -2068,7 +2103,13 @@ export default function MatchPage() {
       );
     }
     setMatch((prev) => (prev ? { ...prev, status: "complete", winner_player_id: winnerId } : prev));
-    setSubmissions((prev) => prev.map((s) => (s.id === submission.id ? { ...s, status: "approved" } : s)));
+    setSubmissions((prev) => prev.map((s) => (
+      s.id === submission.id
+        ? { ...s, status: "approved" }
+        : s.match_id === match.id && s.status === "pending"
+          ? { ...s, status: "rejected", note: "Superseded by the organiser-approved submission." }
+          : s
+    )));
     await logAudit("result_approved", {
       entityType: "result_submission",
       entityId: submission.id,
@@ -2277,11 +2318,12 @@ export default function MatchPage() {
                       <span className="text-xs text-sky-800">Visible only to fixture players and competition managers</span>
                     </div>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {fixtureContacts.map((contact) => (
+                      {fixtureContacts.filter((contact) => admin.isAdmin || contact.playerId !== viewerLinkedPlayerId).map((contact) => (
                         <div key={contact.playerId} className="rounded-lg border border-sky-200 bg-white p-3">
                           <p className="font-semibold text-slate-950">{contact.name}</p>
                           <div className="mt-2 flex flex-wrap gap-2 text-sm">
                             {contact.phone ? <a href={`tel:${contact.phone}`} className="rounded-full bg-emerald-700 px-3 py-1.5 font-medium text-white">Call {contact.phone}</a> : null}
+                            {contact.phone ? <a href={whatsappContactHref(contact.phone, `Hi ${contact.name}, it’s about our ${competition.name} fixture.`)} target="_blank" rel="noreferrer" className="rounded-full bg-green-600 px-3 py-1.5 font-medium text-white">WhatsApp</a> : null}
                             {contact.email ? <a href={`mailto:${contact.email}`} className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 font-medium text-sky-900">Email</a> : null}
                             {!contact.phone && !contact.email ? <span className="text-slate-500">No contact details provided yet.</span> : null}
                           </div>

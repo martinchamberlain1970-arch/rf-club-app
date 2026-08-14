@@ -462,6 +462,13 @@ export default function CompetitionPage() {
     setMessage(`${contact.name}'s private fixture link was copied. Send it only to that entrant.`);
   };
 
+  const copyPublicLeagueLink = async (section: "fixtures" | "table") => {
+    if (!competition) return;
+    const url = `${window.location.origin}/league/${competition.id}#${section}`;
+    await navigator.clipboard.writeText(url);
+    setMessage(`Public league ${section === "fixtures" ? "fixture" : "table"} link copied. You can paste it into WhatsApp.`);
+  };
+
   const addLeagueBreakWeek = () => {
     const monday = mondayOfWeek(leagueBreakWeekInput);
     if (!monday) {
@@ -1886,12 +1893,21 @@ export default function CompetitionPage() {
                       ? "All round-robin fixtures are played on the competition date. Play every rack: each rack won scores one league point."
                       : "Fixtures run from Monday 13:00 to Sunday 21:00. Play every rack: each rack won scores one league point. A genuine no-show or late-arrival forfeit may be awarded 5-0; if neither player made sufficient effort, void the fixture for no points."}
                   </p>
+                  <div className="mt-3 flex flex-wrap gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <div className="w-full text-sm text-emerald-950">
+                      <p className="font-semibold">Public WhatsApp links</p>
+                      <p className="text-xs text-emerald-800">Read-only and open without an app account. Contact details are never included.</p>
+                    </div>
+                    <button type="button" onClick={() => void copyPublicLeagueLink("fixtures")} className="rounded-lg bg-emerald-800 px-3 py-2 text-sm font-medium text-white">Copy fixtures link</button>
+                    <button type="button" onClick={() => void copyPublicLeagueLink("table")} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900">Copy league table link</button>
+                    <Link href={`/league/${competition.id}`} target="_blank" className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900">Preview public page</Link>
+                  </div>
                   {admin.isAdmin && competitionContacts.length ? (
                     <details className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3" open>
                       <summary className="cursor-pointer font-semibold text-sky-950">
                         Fixture contact readiness · {competitionContacts.filter((contact) => contact.email && contact.phone).length}/{competitionContacts.length} have phone and email
                       </summary>
-                      <p className="mt-1 text-xs text-sky-800">These private details are shown only to that player&apos;s fixture opponents and competition managers.</p>
+                      <p className="mt-1 text-xs text-sky-800">These private details are shown only to that player&apos;s fixture opponents and competition managers. Every entrant can use their private link, including players who also use the app.</p>
                       <div className="mt-3 space-y-2">
                         {competitionContacts.map((contact) => (
                           <div key={contact.entryId} className={`grid gap-2 rounded-lg border bg-white p-3 sm:grid-cols-[1fr_1fr_1fr_auto] ${contact.email && contact.phone ? "border-sky-200" : "border-amber-300"}`}>

@@ -13,6 +13,8 @@ type Fixture = {
   opponent: { name: string; email: string | null; phone: string | null };
   outcome: "won" | "lost" | "void" | null;
   submission: { status: "pending" | "approved" | "rejected"; submittedAt: string; entrantScore: number; opponentScore: number } | null;
+  comparison: "waiting" | "agreed" | "disputed" | null;
+  opponentSubmission: { entrantScore: number; opponentScore: number } | null;
 };
 
 type PortalData = {
@@ -23,12 +25,19 @@ type PortalData = {
 
 const londonDate = (value: string) => new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/London" });
 const phoneHref = (value: string) => `tel:${value.replace(/[^\d+]/g, "")}`;
+const whatsappHref = (value: string, message: string) => {
+  let digits = value.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("0")) digits = `44${digits.slice(1)}`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+};
 
 export default function EntrantFixturesPage() {
   const token = String(useParams().token ?? "");
   const [data, setData] = useState<PortalData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scores, setScores] = useState<Record<string, number>>({});
+  const [opponentScores, setOpponentScores] = useState<Record<string, number>>({});
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -43,17 +52,24 @@ export default function EntrantFixturesPage() {
     setError(null);
   }, [token]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   const orderedFixtures = useMemo(() => data?.fixtures ?? [], [data]);
 
   const submitResult = async (fixture: Fixture) => {
     const entrantScore = scores[fixture.id];
-    if (!Number.isInteger(entrantScore)) {
-      setNotice("Choose how many racks you won first.");
+    const opponentScore = opponentScores[fixture.id];
+    if (!Number.isInteger(entrantScore) || !Number.isInteger(opponentScore)) {
+      setNotice("Enter the rack total for both players.");
       return;
     }
-    const opponentScore = fixture.bestOf - entrantScore;
+    if (entrantScore + opponentScore !== fixture.bestOf) {
+      setNotice(`The two scores must total ${fixture.bestOf} racks.`);
+      return;
+    }
     if (entrantScore === opponentScore) {
       setNotice("The result cannot be a draw.");
       return;
@@ -94,7 +110,7 @@ export default function EntrantFixturesPage() {
         {orderedFixtures.length === 0 ? <div className="rounded-2xl bg-white p-5 shadow-sm">Your fixtures have not been published yet. Keep this link and check again after the draw.</div> : null}
         {orderedFixtures.map((fixture) => {
           const chosen = scores[fixture.id];
-          const opponentScore = Number.isInteger(chosen) ? fixture.bestOf - chosen : null;
+          const chosenOpponentScore = opponentScores[fixture.id];
           const canSubmit = ["pending", "in_progress"].includes(fixture.status) && fixture.submission?.status !== "pending";
           return (
             <section key={fixture.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -107,6 +123,7 @@ export default function EntrantFixturesPage() {
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-sm">
                 {fixture.opponent.phone ? <a href={phoneHref(fixture.opponent.phone)} className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-800">Call {fixture.opponent.phone}</a> : null}
+                {fixture.opponent.phone ? <a href={whatsappHref(fixture.opponent.phone, `Hi ${fixture.opponent.name}, it’s ${data.entrant.name} about our ${data.competition.name} fixture.`)} target="_blank" rel="noreferrer" className="rounded-lg bg-emerald-700 px-3 py-2 font-medium text-white">WhatsApp</a> : null}
                 {fixture.opponent.email ? <a href={`mailto:${fixture.opponent.email}`} className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-800">Email opponent</a> : null}
                 {!fixture.opponent.phone && !fixture.opponent.email ? <span className="text-amber-700">Ask the organiser for contact details.</span> : null}
               </div>
@@ -117,17 +134,22 @@ export default function EntrantFixturesPage() {
                   {fixture.submission.status === "rejected" ? " — enter the corrected result below." : ""}
                 </p>
               ) : null}
+              {fixture.comparison === "waiting" ? <p className="mt-3 rounded-lg bg-sky-50 p-3 text-sm font-medium text-sky-900">Waiting for {fixture.opponent.name} to submit their score.</p> : null}
+              {fixture.comparison === "agreed" ? <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">Scores agree. The result is ready for organiser approval.</p> : null}
+              {fixture.comparison === "disputed" ? (
+                <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
+                  Score discrepancy: you submitted {fixture.submission?.entrantScore}–{fixture.submission?.opponentScore}; your opponent submitted {fixture.opponentSubmission?.entrantScore}–{fixture.opponentSubmission?.opponentScore}. The organiser will review this dispute.
+                </p>
+              ) : null}
               {canSubmit ? (
                 <div className="mt-4 rounded-xl border border-lime-200 bg-lime-50 p-4">
-                  <label className="text-sm font-semibold text-slate-900">
-                    How many racks did you win?
-                    <select value={chosen ?? ""} onChange={(event) => setScores((current) => ({ ...current, [fixture.id]: Number(event.target.value) }))} className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base">
-                      <option value="" disabled>Choose your racks</option>
-                      {Array.from({ length: fixture.bestOf + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}
-                    </select>
-                  </label>
-                  {opponentScore !== null ? <p className="mt-2 text-sm text-slate-700">Result: <strong>{data.entrant.name} {chosen}–{opponentScore} {fixture.opponent.name}</strong></p> : null}
-                  <button type="button" onClick={() => void submitResult(fixture)} disabled={submittingId === fixture.id || !Number.isInteger(chosen)} className="mt-3 w-full rounded-lg bg-emerald-800 px-4 py-3 font-semibold text-white disabled:opacity-50">
+                  <p className="text-sm font-semibold text-slate-900">Enter both rack totals</p>
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <label className="text-sm text-slate-700">{data.entrant.name}<select value={chosen ?? ""} onChange={(event) => setScores((current) => ({ ...current, [fixture.id]: Number(event.target.value) }))} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base"><option value="" disabled>Racks</option>{Array.from({ length: fixture.bestOf + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}</select></label>
+                    <label className="text-sm text-slate-700">{fixture.opponent.name}<select value={chosenOpponentScore ?? ""} onChange={(event) => setOpponentScores((current) => ({ ...current, [fixture.id]: Number(event.target.value) }))} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base"><option value="" disabled>Racks</option>{Array.from({ length: fixture.bestOf + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}</select></label>
+                  </div>
+                  {Number.isInteger(chosen) && Number.isInteger(chosenOpponentScore) ? <p className="mt-2 text-sm text-slate-700">Result: <strong>{data.entrant.name} {chosen}–{chosenOpponentScore} {fixture.opponent.name}</strong></p> : null}
+                  <button type="button" onClick={() => void submitResult(fixture)} disabled={submittingId === fixture.id || !Number.isInteger(chosen) || !Number.isInteger(chosenOpponentScore)} className="mt-3 w-full rounded-lg bg-emerald-800 px-4 py-3 font-semibold text-white disabled:opacity-50">
                     {submittingId === fixture.id ? "Submitting…" : "Submit result for approval"}
                   </button>
                 </div>
