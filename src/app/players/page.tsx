@@ -144,6 +144,7 @@ export default function PlayersPage() {
   const [newLocationId, setNewLocationId] = useState("");
   const [assignUserId, setAssignUserId] = useState("");
   const [assignPlayerId, setAssignPlayerId] = useState("");
+  const [passwordResetUserId, setPasswordResetUserId] = useState("");
   const [newFirstName, setNewFirstName] = useState("");
   const [newSecondName, setNewSecondName] = useState("");
   const [infoModal, setInfoModal] = useState<{ title: string; body: string } | null>(null);
@@ -249,6 +250,18 @@ export default function PlayersPage() {
       return haystack.includes(q);
     });
   }, [appUsers, roleSearch, roleFilter, premiumFilter, superAdminEmail, players]);
+  const passwordResetUsers = useMemo(
+    () =>
+      appUsers
+        .filter((user) => Boolean(user.email) && user.email?.toLowerCase() !== superAdminEmail)
+        .map((user) => {
+          const linked = players.find((player) => player.id === user.linked_player_id);
+          const playerName = linked?.full_name?.trim() || linked?.display_name?.trim();
+          return { ...user, label: playerName ? `${playerName} — ${user.email}` : String(user.email) };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [appUsers, players, superAdminEmail]
+  );
   const duplicateProfileRows = useMemo(() => {
     return appUsers
       .map((u) => {
@@ -1476,6 +1489,43 @@ export default function PlayersPage() {
                 <Link href="/locations" className={pillInactiveClass}>
                   Manage locations
                 </Link>
+              </div>
+              <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">Send a password reset</p>
+                <p className="mt-1 text-sm text-slate-600">Choose a registered app user and send them a secure reset email through Resend.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <select
+                    value={passwordResetUserId}
+                    onChange={(event) => setPasswordResetUserId(event.target.value)}
+                    className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="">Select a registered user</option>
+                    {passwordResetUsers.map((user) => (
+                      <option key={user.id} value={user.id}>{user.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!passwordResetUserId}
+                    onClick={() => {
+                      const target = passwordResetUsers.find((user) => user.id === passwordResetUserId);
+                      if (!target) return;
+                      setConfirmModal({
+                        title: "Send password reset",
+                        body: `Send a secure password reset link to ${target.label}? The link will be delivered through Resend.`,
+                        confirmLabel: "Send reset link",
+                        tone: "default",
+                        onConfirm: async () => {
+                          setConfirmModal(null);
+                          await onSendPasswordReset(target.id);
+                        },
+                      });
+                    }}
+                    className={`${buttonPrimaryClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    Send reset link
+                  </button>
+                </div>
               </div>
             </section>
           ) : null}
