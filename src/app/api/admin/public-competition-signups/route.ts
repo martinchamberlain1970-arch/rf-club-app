@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
         meta: {
           recipient: signup.email,
           subject: "Complete your Rack & Frame registration",
-          provider: process.env.RESEND_API_KEY ? "Resend" : "Zoho SMTP",
+          provider: emailResult.provider,
           sender: process.env.EMAIL_FROM_ADDRESS ?? null,
           competition: competitionName,
           signup_id: signup.id,
@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
         meta: {
           recipient: signup.email,
           subject: "Complete your Rack & Frame registration",
-          provider: process.env.RESEND_API_KEY ? "Resend" : "Zoho SMTP",
+          provider: "Resend",
           sender: process.env.EMAIL_FROM_ADDRESS ?? null,
           competition: competitionName,
           signup_id: signup.id,

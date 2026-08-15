@@ -35,15 +35,17 @@ export async function POST(request: NextRequest) {
   const linkResult = await adminClient.auth.admin.generateLink({ type: "recovery", email: targetEmail, options: { redirectTo: `${siteUrl}/auth/reset-password` } });
   if (linkResult.error || !linkResult.data.properties?.action_link) return NextResponse.json({ error: linkResult.error?.message || "Supabase could not create the reset link." }, { status: 400 });
   const resetLink = linkResult.data.properties.action_link;
+  const subject = "Reset your Rack & Frame password";
+  const fromAddress = process.env.PASSWORD_RESET_FROM_ADDRESS?.trim() || "no-reply@mail.rackandframe.app";
 
   try {
     const safeResetLink = escapeHtml(resetLink);
-    await sendEmail({
+    const emailResult = await sendEmail({
       to: targetEmail,
       fromName: "Rack & Frame",
-      fromAddress: process.env.PASSWORD_RESET_FROM_ADDRESS?.trim() || "no-reply@mail.rackandframe.app",
+      fromAddress,
       replyTo: null,
-      subject: "Reset your Rack & Frame password",
+      subject,
       text: `Rack & Frame Club\n\nRESET YOUR PASSWORD\n\nA Rack & Frame administrator has sent you this secure link to help you regain access to your account.\n\nTo choose a new password, open the link below:\n${resetLink}\n\nFor your security:\n- Use this link as soon as possible. If it has expired, request a new one from the sign-in screen or contact the club administrator.\n- The link can only be used to reset the account registered to this email address.\n- Rack & Frame will never ask you to send your password by email or message.\n\nIf you were not expecting this email, you can safely ignore it. Your existing password will remain unchanged.\n\nRack & Frame Club\nCompetition, fixture and table-booking management`,
       html: `<!doctype html>
 <html lang="en">
@@ -112,10 +114,29 @@ export async function POST(request: NextRequest) {
   </body>
 </html>`,
     });
-    const provider = process.env.RESEND_API_KEY ? "Resend" : "Zoho SMTP";
-    await adminClient.from("audit_logs").insert({ actor_user_id: actor.id, actor_email: actorEmail || null, actor_role: actorRole || "owner", action: "password_reset_link_sent", entity_type: "app_user", entity_id: userId, summary: `Password reset link sent to ${targetEmail}.`, meta: { provider } });
-    return NextResponse.json({ ok: true, provider });
+    await adminClient.from("audit_logs").insert({
+      actor_user_id: actor.id,
+      actor_email: actorEmail || null,
+      actor_role: actorRole || "owner",
+      action: "password_reset_link_sent",
+      entity_type: "app_user",
+      entity_id: userId,
+      summary: `Password reset link sent to ${targetEmail}.`,
+      meta: { recipient: targetEmail, subject, provider: emailResult.provider, sender: fromAddress, message_id: emailResult.messageId },
+    });
+    return NextResponse.json({ ok: true, provider: emailResult.provider });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The reset email could not be sent." }, { status: 502 });
+    const errorMessage = error instanceof Error ? error.message : "The reset email could not be sent.";
+    await adminClient.from("audit_logs").insert({
+      actor_user_id: actor.id,
+      actor_email: actorEmail || null,
+      actor_role: actorRole || "owner",
+      action: "password_reset_link_failed",
+      entity_type: "app_user",
+      entity_id: userId,
+      summary: `Password reset link to ${targetEmail} failed.`,
+      meta: { recipient: targetEmail, subject, provider: "Resend", sender: fromAddress, error: errorMessage },
+    });
+    return NextResponse.json({ error: errorMessage }, { status: 502 });
   }
 }

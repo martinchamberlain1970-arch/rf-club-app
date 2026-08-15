@@ -85,20 +85,23 @@ const bookingTitle = (reservation: { purpose: string; participant_one?: string |
 const londonBookingTime = (startsAt: string, endsAt: string) => `${new Date(startsAt).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}–${new Date(endsAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}`;
 
 async function sendDecisionEmail(reservation: { requester_email?: string | null; starts_at: string; ends_at: string; purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null; notes?: string | null }, tableName: string, decision: "accepted" | "rejected" | "deleted", reason?: string | null) {
-  if (!reservation.requester_email || !hasMailerConfig()) return { emailSent: false, emailError: reservation.requester_email ? "Resend is not configured." : "No requester email address is available." };
   const title = bookingTitle(reservation);
   const when = londonBookingTime(reservation.starts_at, reservation.ends_at);
   const decisionText = decision === "accepted" ? "has been accepted" : decision === "rejected" ? "has been rejected" : "has been removed";
+  const subject = `Table booking ${decision}`;
+  const sender = process.env.EMAIL_FROM_ADDRESS ?? null;
+  const baseResult = { recipient: reservation.requester_email ?? null, subject, provider: "Resend", sender };
+  if (!reservation.requester_email || !hasMailerConfig()) return { ...baseResult, emailSent: false, emailError: reservation.requester_email ? "Resend is not configured." : "No requester email address is available.", messageId: null };
   try {
-    await sendEmail({
+    const emailResult = await sendEmail({
       to: reservation.requester_email,
-      subject: `Table booking ${decision}`,
+      subject,
       text: `Your ${tableName} booking for ${title} on ${when} ${decisionText}.${reason ? `\n\nReason: ${reason}` : ""}`,
       html: `<p>Your <strong>${escapeHtml(tableName)}</strong> booking for <strong>${escapeHtml(title)}</strong> on ${escapeHtml(when)} ${decisionText}.</p>${reason ? `<p><strong>Reason:</strong> ${escapeHtml(reason)}</p>` : ""}`,
     });
-    return { emailSent: true, emailError: null };
+    return { ...baseResult, emailSent: true, emailError: null, messageId: emailResult.messageId };
   } catch (error) {
-    return { emailSent: false, emailError: error instanceof Error ? error.message : "The email could not be sent." };
+    return { ...baseResult, emailSent: false, emailError: error instanceof Error ? error.message : "The email could not be sent.", messageId: null };
   }
 }
 
@@ -291,7 +294,25 @@ export async function POST(request: NextRequest) {
     const tableRelation = reservation.cue_tables as unknown as { name?: string } | null;
     const decision = action === "approve" ? "accepted" : action === "reject" ? "rejected" : "deleted";
     const email = await sendDecisionEmail(reservation, tableRelation?.name || "cue table", decision, reason);
-    await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: `table_booking_${decision}`, entity_type: "table_reservation", entity_id: reservationId, summary: `Table booking ${decision}: ${bookingTitle(reservation)}.`, meta: { email_sent: email.emailSent, email_error: email.emailError } });
+    await auth.client.from("audit_logs").insert({
+      actor_user_id: auth.user.id,
+      actor_email: auth.user.email ?? null,
+      actor_role: auth.role,
+      action: `table_booking_${decision}`,
+      entity_type: "table_reservation",
+      entity_id: reservationId,
+      summary: `Table booking ${decision}: ${bookingTitle(reservation)}.`,
+      meta: {
+        email_sent: email.emailSent,
+        email_error: email.emailError,
+        recipient: email.recipient,
+        subject: email.subject,
+        provider: email.provider,
+        sender: email.sender,
+        message_id: email.messageId,
+        email_type: "Table booking",
+      },
+    });
     return NextResponse.json({ ok: true, ...email });
   }
 

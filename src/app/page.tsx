@@ -46,7 +46,7 @@ const systemToolLinks = [
   { href: "/reschedules", title: "Reschedules", desc: "Review one-week league reschedule requests." },
   { href: "/backup", title: "Data Management", desc: "Run maintenance and data cleanup tools." },
   { href: "/audit", title: "Audit Log", desc: "Check important account and system actions." },
-  { href: "/emails", title: "Email History", desc: "See registration invitations sent by the app." },
+  { href: "/emails", title: "System Email Activity", desc: "Track registration, password-reset and table-booking emails." },
   { href: "/usage", title: "Accounts & Activity", desc: "See registrations, login activity, and what each person uses." },
 ] as const;
 
