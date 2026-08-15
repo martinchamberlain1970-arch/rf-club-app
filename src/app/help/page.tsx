@@ -18,7 +18,7 @@ const faqs: { question: string; answer: string }[] = [
   {
     question: "Where do I find my weekly league fixtures?",
     answer:
-      "Use the My Fixtures tile on the dashboard. It groups your scheduled matches into Last Week, This Week, and Next Week so you can quickly open the right fixture.",
+      "Use the My Fixtures tile on the dashboard. The weekly view keeps Last Week, This Week, and Next Week, while the other tabs show your full fixture list, completed results and league tables.",
   },
   {
     question: "Can I submit results for someone else's fixture?",
@@ -71,7 +71,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       title: "Quick Match & Submission (Player)",
       bullets: [
         "Create Quick Match in snooker, 8-ball pool, or 9-ball pool and ensure you are one of the selected players.",
-        "Use My Fixtures to open your league or competition match for Last Week, This Week, or Next Week.",
+        "Use My Fixtures for the weekly view, your complete schedule, completed results and current league tables.",
         "For league fixtures, only your own live weekly fixture is editable. Other fixtures stay view-only.",
         "If a snooker competition is handicapped, enter the final adjusted frame score including the handicap start.",
         "Break & Run and Run Out submission is available; totals are validated against match length.",
@@ -201,7 +201,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
 const roleSummary: Record<GuideRole, string[]> = {
   player: [
     "Can create and submit Quick Match results (must be a selected player).",
-    "Cannot create competitions, but can use Competition Sign-ups, view events, check results, open My Fixtures, and open their ranking card.",
+    "Cannot create competitions, but can use Competition Sign-ups, view events, open My Fixtures with their schedule, results and tables, and open their ranking card.",
     "Can play snooker, 8-ball pool, and 9-ball pool through Quick Match.",
   ],
   admin: [

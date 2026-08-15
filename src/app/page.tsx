@@ -62,7 +62,7 @@ type DashboardLink = { href: string; title: string; desc: string };
 type ExperienceMode = "player" | "manage";
 
 const playerExperienceLinks = [
-  { href: "/my-fixtures", title: "My Fixtures", desc: "See what you are playing next.", symbol: "NEXT" },
+  { href: "/my-fixtures", title: "My Fixtures", desc: "Weekly view, all fixtures, results and tables.", symbol: "PLAY" },
   { href: "/table-bookings", title: "Book a Table", desc: "Reserve an authorised pool or snooker table.", symbol: "BOOK" },
   { href: "/events", title: "Competitions", desc: "Open events, draws and tables.", symbol: "PLAY" },
   { href: "/rankings", title: "Rankings", desc: "See where you stand.", symbol: "RANK" },
@@ -133,7 +133,7 @@ export default function HomePage() {
   const visibleSystemTools = admin.isSuper ? systemToolLinks : [];
   const allDashboardLinks: DashboardLink[] = [
     ...(userPlayerId
-      ? [{ href: "/my-fixtures", title: "My Fixtures", desc: "Open your last, current, and next fixture list." }]
+      ? [{ href: "/my-fixtures", title: "My Fixtures", desc: "Open weekly fixtures, your full schedule, results and league tables." }]
       : []),
     ...visibleCoreLinks,
     ...visibleAdminTools,

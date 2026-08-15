@@ -7,6 +7,7 @@ import PageNav from "@/components/PageNav";
 import { supabase } from "@/lib/supabase";
 
 type WeekFilter = "last" | "this" | "next";
+type FixtureView = "weekly" | "all" | "results" | "tables";
 
 type MatchRow = {
   id: string;
@@ -22,6 +23,8 @@ type MatchRow = {
   round_no: number | null;
   match_no: number | null;
   opening_break_player_id: string | null;
+  winner_player_id: string | null;
+  best_of: number;
 };
 
 type CompetitionRow = {
@@ -36,6 +39,10 @@ type PlayerRow = {
   display_name: string;
   full_name: string | null;
 };
+
+type FrameRow = { match_id: string; winner_player_id: string | null };
+type LeagueTableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number };
+type LeagueData = { competition: CompetitionRow; table: LeagueTableRow[]; updatedAt: string };
 
 function startOfWeek(date: Date) {
   const d = new Date(date);
@@ -61,7 +68,11 @@ export default function MyFixturesPage() {
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [competitions, setCompetitions] = useState<CompetitionRow[]>([]);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
+  const [frames, setFrames] = useState<FrameRow[]>([]);
+  const [leagueData, setLeagueData] = useState<Record<string, LeagueData>>({});
   const [filter, setFilter] = useState<WeekFilter>("this");
+  const [view, setView] = useState<FixtureView>("weekly");
+  const [selectedLeagueId, setSelectedLeagueId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const cardClass = "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm";
 
@@ -79,7 +90,7 @@ export default function MyFixturesPage() {
 
       const matchesRes = await client
         .from("matches")
-        .select("id,competition_id,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,status,scheduled_for,round_no,match_no,opening_break_player_id")
+        .select("id,competition_id,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,status,scheduled_for,round_no,match_no,opening_break_player_id,winner_player_id,best_of")
         .eq("is_archived", false)
         .or(
           `player1_id.eq.${playerId},player2_id.eq.${playerId},team1_player1_id.eq.${playerId},team1_player2_id.eq.${playerId},team2_player1_id.eq.${playerId},team2_player2_id.eq.${playerId}`
@@ -109,20 +120,31 @@ export default function MyFixturesPage() {
         )
       )];
 
-      const [competitionRes, playerRes] = await Promise.all([
+      const [competitionRes, playerRes, framesRes] = await Promise.all([
         competitionIds.length
           ? client.from("competitions").select("id,name,sport_type,competition_format").in("id", competitionIds)
           : Promise.resolve({ data: [], error: null }),
         playerIds.length
           ? client.from("players").select("id,display_name,full_name").in("id", playerIds)
           : Promise.resolve({ data: [], error: null }),
+        loadedMatches.length
+          ? client.from("frames").select("match_id,winner_player_id").in("match_id", loadedMatches.map((match) => match.id))
+          : Promise.resolve({ data: [], error: null }),
       ]);
-      if (competitionRes.error || playerRes.error) {
-        setMessage(competitionRes.error?.message || playerRes.error?.message || "Failed to load fixtures.");
+      if (competitionRes.error || playerRes.error || framesRes.error) {
+        setMessage(competitionRes.error?.message || playerRes.error?.message || framesRes.error?.message || "Failed to load fixtures.");
         return;
       }
-      setCompetitions(((competitionRes.data ?? []) as unknown) as CompetitionRow[]);
+      const loadedCompetitions = ((competitionRes.data ?? []) as unknown) as CompetitionRow[];
+      setCompetitions(loadedCompetitions);
       setPlayers(((playerRes.data ?? []) as unknown) as PlayerRow[]);
+      setFrames(((framesRes.data ?? []) as unknown) as FrameRow[]);
+      const leagueResponses = await Promise.all(loadedCompetitions.filter((competition) => competition.competition_format === "league").map(async (competition) => {
+        const response = await fetch(`/api/public/leagues/${encodeURIComponent(competition.id)}`, { cache: "no-store" });
+        if (!response.ok) return null;
+        return [competition.id, await response.json() as LeagueData] as const;
+      }));
+      setLeagueData(Object.fromEntries(leagueResponses.filter((entry): entry is readonly [string, LeagueData] => Boolean(entry))));
     };
     void run();
   }, []);
@@ -145,10 +167,10 @@ export default function MyFixturesPage() {
     };
   }, [filter]);
 
-  const fixtureRows = useMemo(() => {
-    return matches
-      .filter((match) => match.scheduled_for && match.scheduled_for >= range.from && match.scheduled_for <= range.to)
-      .map((match) => {
+  const allFixtureRows = useMemo(() => {
+    const framesByMatch = new Map<string, FrameRow[]>();
+    for (const frame of frames) framesByMatch.set(frame.match_id, [...(framesByMatch.get(frame.match_id) ?? []), frame]);
+    return matches.map((match) => {
         const isDoubles = Boolean(match.team1_player1_id || match.team2_player1_id);
         const onTeamOne = isDoubles
           ? [match.team1_player1_id, match.team1_player2_id].includes(linkedPlayerId)
@@ -159,14 +181,52 @@ export default function MyFixturesPage() {
         const opponentIds = isDoubles
           ? onTeamOne ? [match.team2_player1_id, match.team2_player2_id] : [match.team1_player1_id, match.team1_player2_id]
           : onTeamOne ? [match.player2_id] : [match.player1_id];
+        const teamOneIds = (isDoubles ? [match.team1_player1_id, match.team1_player2_id] : [match.player1_id]).filter(Boolean);
+        const teamTwoIds = (isDoubles ? [match.team2_player1_id, match.team2_player2_id] : [match.player2_id]).filter(Boolean);
+        const matchFrames = framesByMatch.get(match.id) ?? [];
+        let teamOneScore = matchFrames.filter((frame) => frame.winner_player_id && teamOneIds.includes(frame.winner_player_id)).length;
+        let teamTwoScore = matchFrames.filter((frame) => frame.winner_player_id && teamTwoIds.includes(frame.winner_player_id)).length;
+        if (!matchFrames.length && match.winner_player_id) {
+          teamOneScore = teamOneIds.includes(match.winner_player_id) ? 1 : 0;
+          teamTwoScore = teamTwoIds.includes(match.winner_player_id) ? 1 : 0;
+        }
         return {
           match,
           competition: competitionById.get(match.competition_id),
           myLabel: myIds.filter(Boolean).map((id) => playerNameById.get(id as string) ?? "TBC").join(" & "),
           opponentLabel: opponentIds.filter(Boolean).map((id) => playerNameById.get(id as string) ?? "TBC").join(" & ") || "BYE",
+          scoreLabel: match.status === "complete" ? (!match.winner_player_id ? "VOID" : onTeamOne ? `${teamOneScore} – ${teamTwoScore}` : `${teamTwoScore} – ${teamOneScore}`) : null,
         };
       });
-  }, [matches, range, linkedPlayerId, competitionById, playerNameById]);
+  }, [competitionById, frames, linkedPlayerId, matches, playerNameById]);
+
+  const fixtureRows = useMemo(() => allFixtureRows.filter(({ match }) => match.scheduled_for && match.scheduled_for >= range.from && match.scheduled_for <= range.to), [allFixtureRows, range]);
+  const resultRows = useMemo(() => allFixtureRows.filter(({ match }) => match.status === "complete"), [allFixtureRows]);
+  const leagueCompetitions = useMemo(() => competitions.filter((competition) => competition.competition_format === "league" && leagueData[competition.id]), [competitions, leagueData]);
+  const activeLeagueId = selectedLeagueId || leagueCompetitions[0]?.id || "";
+  const activeLeague = activeLeagueId ? leagueData[activeLeagueId] : null;
+
+  const renderFixtureCards = (rows: typeof allFixtureRows, emptyMessage: string) => rows.length ? (
+    <section className="space-y-3">
+      {rows.map(({ match, competition, myLabel, opponentLabel, scoreLabel }) => (
+        <Link key={match.id} href={`/matches/${match.id}`} className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-semibold text-slate-900">{competition?.name ?? "Competition fixture"}</p>
+            <span className={`rounded-full border px-2 py-0.5 text-xs ${match.status === "complete" ? "border-blue-200 bg-blue-50 text-blue-800" : match.status === "in_progress" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-slate-50 text-slate-700"}`}>
+              {match.status === "complete" ? "Result" : match.status === "in_progress" ? "Live" : match.status === "bye" ? "BYE" : "Scheduled"}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span>{myLabel}</span><strong className="min-w-14 rounded-lg bg-slate-900 px-2 py-1.5 text-white">{scoreLabel ?? "v"}</strong><span>{opponentLabel}</span></div>
+          <p className="mt-2 text-xs text-slate-500">
+            {competition?.competition_format === "league" ? `Week ${match.round_no ?? 1}` : `Round ${match.round_no ?? 1} · Match ${match.match_no ?? 1}`}
+            {match.scheduled_for ? ` · ${match.status === "complete" ? "Played" : "Plays by"} ${new Date(`${match.scheduled_for}T21:00:00`).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}` : ""}
+          </p>
+          {match.opening_break_player_id ? <p className="mt-2 text-xs font-semibold text-emerald-700">Opening break: {playerNameById.get(match.opening_break_player_id) ?? "Assigned player"}</p> : null}
+          <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open fixture</p>
+        </Link>
+      ))}
+    </section>
+  ) : <section className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-600 shadow-sm">{emptyMessage}</section>;
 
   return (
     <main className="min-h-screen bg-slate-100 p-6">
@@ -184,6 +244,18 @@ export default function MyFixturesPage() {
           </section>
 
           <section className={cardClass}>
+            <div><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">My competition centre</p><h2 className="mt-1 text-xl font-bold text-slate-950">Fixtures, results and tables</h2></div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {([
+                ["weekly", "Weekly view", "Last, this and next week"],
+                ["all", "All fixtures", `${allFixtureRows.length} total`],
+                ["results", "My results", `${resultRows.length} completed`],
+                ["tables", "League tables", `${leagueCompetitions.length} league${leagueCompetitions.length === 1 ? "" : "s"}`],
+              ] as Array<[FixtureView, string, string]>).map(([value, label, detail]) => <button key={value} type="button" onClick={() => setView(value)} className={`rounded-xl border p-3 text-left transition ${view === value ? "border-teal-700 bg-teal-700 text-white shadow-sm" : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-white"}`}><span className="block text-sm font-bold">{label}</span><span className={`mt-1 block text-xs ${view === value ? "text-teal-50" : "text-slate-500"}`}>{detail}</span></button>)}
+            </div>
+          </section>
+
+          {view === "weekly" ? <section className={cardClass}>
             <p className="text-sm font-semibold text-slate-900">Fixture Window</p>
             <p className="mt-1 text-sm text-slate-600">Switch between last week, this week, and next week to focus on the current playing window.</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -212,7 +284,7 @@ export default function MyFixturesPage() {
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
               Showing fixtures for <span className="font-semibold text-slate-900">{range.label}</span>
             </div>
-          </section>
+          </section> : null}
 
           {message ? <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm">{message}</section> : null}
 
@@ -220,41 +292,13 @@ export default function MyFixturesPage() {
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
               No linked player profile found for this account yet.
             </section>
-          ) : fixtureRows.length ? (
-            <section className="space-y-3">
-              {fixtureRows.map(({ match, competition, myLabel, opponentLabel }) => (
-                <Link
-                  key={match.id}
-                  href={`/matches/${match.id}`}
-                  className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-semibold text-slate-900">{competition?.name ?? "Competition fixture"}</p>
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-xs ${
-                        match.status === "in_progress"
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-slate-300 bg-slate-50 text-slate-700"
-                      }`}
-                    >
-                      {match.status === "in_progress" ? "Live" : match.status === "bye" ? "BYE" : "Scheduled"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-700">{myLabel} vs {opponentLabel}</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {competition?.competition_format === "league" ? `Week ${match.round_no ?? 1}` : `Round ${match.round_no ?? 1} · Match ${match.match_no ?? 1}`}
-                    {match.scheduled_for ? ` · Plays by ${new Date(`${match.scheduled_for}T21:00:00`).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}` : ""}
-                  </p>
-                  {match.opening_break_player_id ? <p className="mt-2 text-xs font-semibold text-emerald-700">Opening break: {playerNameById.get(match.opening_break_player_id) ?? "Assigned player"}</p> : null}
-                  <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open fixture</p>
-                </Link>
-              ))}
-            </section>
-          ) : (
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-600 shadow-sm">
-              No fixtures found for this week selection.
-            </section>
-          )}
+          ) : view === "weekly" ? renderFixtureCards(fixtureRows, "No fixtures found for this week selection.")
+            : view === "all" ? renderFixtureCards(allFixtureRows, "No fixtures have been published for you yet.")
+              : view === "results" ? renderFixtureCards(resultRows, "You do not have any completed results yet.")
+                : <section className={cardClass}>
+                  <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Live standings</p><h2 className="mt-1 text-xl font-bold text-slate-950">League table</h2></div>{leagueCompetitions.length > 1 ? <label className="text-sm font-medium text-slate-700">Competition<select value={activeLeagueId} onChange={(event) => setSelectedLeagueId(event.target.value)} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2">{leagueCompetitions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name}</option>)}</select></label> : null}</div>
+                  {activeLeague ? <><p className="mt-2 font-semibold text-slate-800">{activeLeague.competition.name}</p><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[520px] text-sm"><thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Void</th><th className="p-2 text-center">Pts</th></tr></thead><tbody>{activeLeague.table.map((row, index) => <tr key={row.playerId} className={`border-b border-slate-200 ${row.playerId === linkedPlayerId ? "bg-lime-100" : ""}`}><td className="p-2 font-black">{index + 1}</td><td className="p-2 font-semibold">{row.playerName}{row.playerId === linkedPlayerId ? <span className="ml-2 text-xs font-bold text-emerald-800">YOU</span> : null}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center text-lg font-black">{row.points}</td></tr>)}</tbody></table></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">Updated {new Date(activeLeague.updatedAt).toLocaleString("en-GB")}</p><Link href={`/league/${activeLeagueId}`} className="rounded-lg border border-teal-300 px-3 py-2 text-sm font-bold text-teal-800">Open full league centre</Link></div></> : <p className="mt-4 text-sm text-slate-600">You are not currently listed in a league competition with a published table.</p>}
+                </section>}
         </RequireAuth>
       </div>
     </main>

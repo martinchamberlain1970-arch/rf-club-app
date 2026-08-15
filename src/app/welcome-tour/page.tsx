@@ -24,7 +24,7 @@ const stepsByRole: Record<TourRole, { title: string; detail: string; href: strin
     },
     {
       title: "3) Use My Fixtures for weekly matches",
-      detail: "If you are in a competition or league, open My Fixtures to see Last Week, This Week, and Next Week and submit your own fixture when it is live.",
+      detail: "If you are in a competition or league, open My Fixtures for the weekly view, your full schedule, completed results and league tables.",
       href: "/my-fixtures",
       cta: "Open My Fixtures",
     },
@@ -96,7 +96,7 @@ const stepsByRole: Record<TourRole, { title: string; detail: string; href: strin
 const roleSummary: Record<TourRole, string[]> = {
   player: [
     "You can create Quick Match entries and follow club activity once your player profile is linked.",
-    "Use My Fixtures to open your own scheduled league or competition matches by week.",
+    "Use My Fixtures to open weekly matches, your full schedule, completed results and league tables.",
     "Club Admin accounts create competitions and run day-to-day club operations.",
     "Premium adds advanced extras like doubles, stats, live overview access where relevant, and enhanced match tools.",
   ],
