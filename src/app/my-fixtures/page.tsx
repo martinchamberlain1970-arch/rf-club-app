@@ -73,6 +73,8 @@ export default function MyFixturesPage() {
   const [filter, setFilter] = useState<WeekFilter>("this");
   const [view, setView] = useState<FixtureView>("weekly");
   const [selectedLeagueId, setSelectedLeagueId] = useState("");
+  const [fixtureCompetitionFilter, setFixtureCompetitionFilter] = useState("all");
+  const [opponentFilter, setOpponentFilter] = useState("all");
   const [message, setMessage] = useState<string | null>(null);
   const cardClass = "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm";
 
@@ -195,6 +197,7 @@ export default function MyFixturesPage() {
           competition: competitionById.get(match.competition_id),
           myLabel: myIds.filter(Boolean).map((id) => playerNameById.get(id as string) ?? "TBC").join(" & "),
           opponentLabel: opponentIds.filter(Boolean).map((id) => playerNameById.get(id as string) ?? "TBC").join(" & ") || "BYE",
+          opponentIds: opponentIds.filter(Boolean) as string[],
           scoreLabel: match.status === "complete" ? (!match.winner_player_id ? "VOID" : onTeamOne ? `${teamOneScore} – ${teamTwoScore}` : `${teamTwoScore} – ${teamOneScore}`) : null,
         };
       });
@@ -202,6 +205,13 @@ export default function MyFixturesPage() {
 
   const fixtureRows = useMemo(() => allFixtureRows.filter(({ match }) => match.scheduled_for && match.scheduled_for >= range.from && match.scheduled_for <= range.to), [allFixtureRows, range]);
   const resultRows = useMemo(() => allFixtureRows.filter(({ match }) => match.status === "complete"), [allFixtureRows]);
+  const filterSourceRows = view === "results" ? resultRows : allFixtureRows;
+  const fixtureCompetitionOptions = useMemo(() => [...new Set(filterSourceRows.map(({ match }) => match.competition_id))].map((id) => competitionById.get(id)).filter((competition): competition is CompetitionRow => Boolean(competition)).sort((a, b) => a.name.localeCompare(b.name)), [competitionById, filterSourceRows]);
+  const opponentOptions = useMemo(() => {
+    const rows = fixtureCompetitionFilter === "all" ? filterSourceRows : filterSourceRows.filter(({ match }) => match.competition_id === fixtureCompetitionFilter);
+    return [...new Set(rows.flatMap((row) => row.opponentIds))].map((id) => ({ id, name: playerNameById.get(id) ?? "Player" })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [filterSourceRows, fixtureCompetitionFilter, playerNameById]);
+  const filteredFixtureRows = useMemo(() => filterSourceRows.filter(({ match, opponentIds }) => (fixtureCompetitionFilter === "all" || match.competition_id === fixtureCompetitionFilter) && (opponentFilter === "all" || opponentIds.includes(opponentFilter))), [filterSourceRows, fixtureCompetitionFilter, opponentFilter]);
   const leagueCompetitions = useMemo(() => competitions.filter((competition) => competition.competition_format === "league" && leagueData[competition.id]), [competitions, leagueData]);
   const activeLeagueId = selectedLeagueId || leagueCompetitions[0]?.id || "";
   const activeLeague = activeLeagueId ? leagueData[activeLeagueId] : null;
@@ -251,7 +261,7 @@ export default function MyFixturesPage() {
                 ["all", "All fixtures", `${allFixtureRows.length} total`],
                 ["results", "My results", `${resultRows.length} completed`],
                 ["tables", "League tables", `${leagueCompetitions.length} league${leagueCompetitions.length === 1 ? "" : "s"}`],
-              ] as Array<[FixtureView, string, string]>).map(([value, label, detail]) => <button key={value} type="button" onClick={() => setView(value)} className={`rounded-xl border p-3 text-left transition ${view === value ? "border-teal-700 bg-teal-700 text-white shadow-sm" : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-white"}`}><span className="block text-sm font-bold">{label}</span><span className={`mt-1 block text-xs ${view === value ? "text-teal-50" : "text-slate-500"}`}>{detail}</span></button>)}
+              ] as Array<[FixtureView, string, string]>).map(([value, label, detail]) => <button key={value} type="button" onClick={() => { setView(value); if (value === "all" || value === "results") { setFixtureCompetitionFilter("all"); setOpponentFilter("all"); } }} className={`rounded-xl border p-3 text-left transition ${view === value ? "border-teal-700 bg-teal-700 text-white shadow-sm" : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-white"}`}><span className="block text-sm font-bold">{label}</span><span className={`mt-1 block text-xs ${view === value ? "text-teal-50" : "text-slate-500"}`}>{detail}</span></button>)}
             </div>
           </section>
 
@@ -288,13 +298,15 @@ export default function MyFixturesPage() {
 
           {message ? <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm">{message}</section> : null}
 
+          {linkedPlayerId && (view === "all" || view === "results") ? <section className={cardClass}><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">Filter {view === "results" ? "results" : "fixtures"}</p><p className="mt-1 text-xs text-slate-500">Narrow the list by competition, opponent, or both.</p></div><span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-bold text-teal-800">{filteredFixtureRows.length} shown</span></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Competition<select value={fixtureCompetitionFilter} onChange={(event) => { setFixtureCompetitionFilter(event.target.value); setOpponentFilter("all"); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="all">All competitions</option>{fixtureCompetitionOptions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name}</option>)}</select></label><label className="text-sm font-medium text-slate-700">Opponent<select value={opponentFilter} onChange={(event) => setOpponentFilter(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="all">All opponents</option>{opponentOptions.map((opponent) => <option key={opponent.id} value={opponent.id}>{opponent.name}</option>)}</select></label></div></section> : null}
+
           {!linkedPlayerId ? (
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
               No linked player profile found for this account yet.
             </section>
           ) : view === "weekly" ? renderFixtureCards(fixtureRows, "No fixtures found for this week selection.")
-            : view === "all" ? renderFixtureCards(allFixtureRows, "No fixtures have been published for you yet.")
-              : view === "results" ? renderFixtureCards(resultRows, "You do not have any completed results yet.")
+            : view === "all" ? renderFixtureCards(filteredFixtureRows, fixtureCompetitionFilter !== "all" || opponentFilter !== "all" ? "No fixtures match those filters." : "No fixtures have been published for you yet.")
+              : view === "results" ? renderFixtureCards(filteredFixtureRows, fixtureCompetitionFilter !== "all" || opponentFilter !== "all" ? "No results match those filters." : "You do not have any completed results yet.")
                 : <section className={cardClass}>
                   <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Live standings</p><h2 className="mt-1 text-xl font-bold text-slate-950">League table</h2></div>{leagueCompetitions.length > 1 ? <label className="text-sm font-medium text-slate-700">Competition<select value={activeLeagueId} onChange={(event) => setSelectedLeagueId(event.target.value)} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2">{leagueCompetitions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name}</option>)}</select></label> : null}</div>
                   {activeLeague ? <><p className="mt-2 font-semibold text-slate-800">{activeLeague.competition.name}</p><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[520px] text-sm"><thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Void</th><th className="p-2 text-center">Pts</th></tr></thead><tbody>{activeLeague.table.map((row, index) => <tr key={row.playerId} className={`border-b border-slate-200 ${row.playerId === linkedPlayerId ? "bg-lime-100" : ""}`}><td className="p-2 font-black">{index + 1}</td><td className="p-2 font-semibold">{row.playerName}{row.playerId === linkedPlayerId ? <span className="ml-2 text-xs font-bold text-emerald-800">YOU</span> : null}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center text-lg font-black">{row.points}</td></tr>)}</tbody></table></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">Updated {new Date(activeLeague.updatedAt).toLocaleString("en-GB")}</p><Link href={`/league/${activeLeagueId}`} className="rounded-lg border border-teal-300 px-3 py-2 text-sm font-bold text-teal-800">Open full league centre</Link></div></> : <p className="mt-4 text-sm text-slate-600">You are not currently listed in a league competition with a published table.</p>}
