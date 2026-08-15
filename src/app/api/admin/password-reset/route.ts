@@ -40,6 +40,9 @@ export async function POST(request: NextRequest) {
     const safeResetLink = escapeHtml(resetLink);
     await sendEmail({
       to: targetEmail,
+      fromName: "Rack & Frame",
+      fromAddress: process.env.PASSWORD_RESET_FROM_ADDRESS?.trim() || "no-reply@mail.rackandframe.app",
+      replyTo: null,
       subject: "Reset your Rack & Frame password",
       text: `Rack & Frame Club\n\nRESET YOUR PASSWORD\n\nA Rack & Frame administrator has sent you this secure link to help you regain access to your account.\n\nTo choose a new password, open the link below:\n${resetLink}\n\nFor your security:\n- Use this link as soon as possible. If it has expired, request a new one from the sign-in screen or contact the club administrator.\n- The link can only be used to reset the account registered to this email address.\n- Rack & Frame will never ask you to send your password by email or message.\n\nIf you were not expecting this email, you can safely ignore it. Your existing password will remain unchanged.\n\nRack & Frame Club\nCompetition, fixture and table-booking management`,
       html: `<!doctype html>

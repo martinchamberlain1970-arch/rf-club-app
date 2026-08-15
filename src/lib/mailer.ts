@@ -18,11 +18,25 @@ export function hasMailerConfig() {
   );
 }
 
-export async function sendEmail(input: { to: string; bcc?: string; subject: string; text: string; html: string }) {
+type SendEmailInput = {
+  to: string;
+  bcc?: string;
+  subject: string;
+  text: string;
+  html: string;
+  fromAddress?: string;
+  fromName?: string;
+  replyTo?: string | null;
+};
+
+export async function sendEmail(input: SendEmailInput) {
   if (!hasMailerConfig()) throw new Error("Email configuration is missing.");
-  const address = requiredEnv("EMAIL_FROM_ADDRESS");
-  const name = process.env.EMAIL_FROM_NAME?.trim() || "Rack & Frame Club";
+  const address = input.fromAddress?.trim() || requiredEnv("EMAIL_FROM_ADDRESS");
+  const name = input.fromName?.trim() || process.env.EMAIL_FROM_NAME?.trim() || "Rack & Frame Club";
   const from = `"${name.replaceAll('"', "")}" <${address}>`;
+  const replyTo = input.replyTo === null
+    ? undefined
+    : input.replyTo?.trim() || process.env.EMAIL_REPLY_TO?.trim() || undefined;
   if (process.env.RESEND_API_KEY) {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -35,7 +49,7 @@ export async function sendEmail(input: { to: string; bcc?: string; subject: stri
         from,
         to: [input.to],
         ...(input.bcc ? { bcc: [input.bcc] } : {}),
-        ...(process.env.EMAIL_REPLY_TO?.trim() ? { reply_to: process.env.EMAIL_REPLY_TO.trim() } : {}),
+        ...(replyTo ? { reply_to: replyTo } : {}),
         subject: input.subject,
         text: input.text,
         html: input.html,
@@ -55,7 +69,7 @@ export async function sendEmail(input: { to: string; bcc?: string; subject: stri
     from,
     to: input.to,
     bcc: input.bcc,
-    replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
+    replyTo,
     subject: input.subject,
     text: input.text,
     html: input.html,
