@@ -63,6 +63,8 @@ function isoDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+const competitionFilterKey = (name: string | undefined) => (name ?? "Competition").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
+
 export default function MyFixturesPage() {
   const [linkedPlayerId, setLinkedPlayerId] = useState<string | null>(null);
   const [matches, setMatches] = useState<MatchRow[]>([]);
@@ -206,12 +208,18 @@ export default function MyFixturesPage() {
   const fixtureRows = useMemo(() => allFixtureRows.filter(({ match }) => match.scheduled_for && match.scheduled_for >= range.from && match.scheduled_for <= range.to), [allFixtureRows, range]);
   const resultRows = useMemo(() => allFixtureRows.filter(({ match }) => match.status === "complete"), [allFixtureRows]);
   const filterSourceRows = view === "results" ? resultRows : allFixtureRows;
-  const fixtureCompetitionOptions = useMemo(() => [...new Set(filterSourceRows.map(({ match }) => match.competition_id))].map((id) => competitionById.get(id)).filter((competition): competition is CompetitionRow => Boolean(competition)).sort((a, b) => a.name.localeCompare(b.name)), [competitionById, filterSourceRows]);
+  const fixtureCompetitionOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const { competition } of filterSourceRows) {
+      if (competition) options.set(competitionFilterKey(competition.name), competition.name.trim().replace(/\s+/g, " "));
+    }
+    return [...options].map(([key, name]) => ({ key, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [filterSourceRows]);
   const opponentOptions = useMemo(() => {
-    const rows = fixtureCompetitionFilter === "all" ? filterSourceRows : filterSourceRows.filter(({ match }) => match.competition_id === fixtureCompetitionFilter);
+    const rows = fixtureCompetitionFilter === "all" ? filterSourceRows : filterSourceRows.filter(({ competition }) => competitionFilterKey(competition?.name) === fixtureCompetitionFilter);
     return [...new Set(rows.flatMap((row) => row.opponentIds))].map((id) => ({ id, name: playerNameById.get(id) ?? "Player" })).sort((a, b) => a.name.localeCompare(b.name));
   }, [filterSourceRows, fixtureCompetitionFilter, playerNameById]);
-  const filteredFixtureRows = useMemo(() => filterSourceRows.filter(({ match, opponentIds }) => (fixtureCompetitionFilter === "all" || match.competition_id === fixtureCompetitionFilter) && (opponentFilter === "all" || opponentIds.includes(opponentFilter))), [filterSourceRows, fixtureCompetitionFilter, opponentFilter]);
+  const filteredFixtureRows = useMemo(() => filterSourceRows.filter(({ competition, opponentIds }) => (fixtureCompetitionFilter === "all" || competitionFilterKey(competition?.name) === fixtureCompetitionFilter) && (opponentFilter === "all" || opponentIds.includes(opponentFilter))), [filterSourceRows, fixtureCompetitionFilter, opponentFilter]);
   const leagueCompetitions = useMemo(() => competitions.filter((competition) => competition.competition_format === "league" && leagueData[competition.id]), [competitions, leagueData]);
   const activeLeagueId = selectedLeagueId || leagueCompetitions[0]?.id || "";
   const activeLeague = activeLeagueId ? leagueData[activeLeagueId] : null;
@@ -298,7 +306,7 @@ export default function MyFixturesPage() {
 
           {message ? <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm">{message}</section> : null}
 
-          {linkedPlayerId && (view === "all" || view === "results") ? <section className={cardClass}><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">Filter {view === "results" ? "results" : "fixtures"}</p><p className="mt-1 text-xs text-slate-500">Narrow the list by competition, opponent, or both.</p></div><span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-bold text-teal-800">{filteredFixtureRows.length} shown</span></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Competition<select value={fixtureCompetitionFilter} onChange={(event) => { setFixtureCompetitionFilter(event.target.value); setOpponentFilter("all"); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="all">All competitions</option>{fixtureCompetitionOptions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name}</option>)}</select></label><label className="text-sm font-medium text-slate-700">Opponent<select value={opponentFilter} onChange={(event) => setOpponentFilter(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="all">All opponents</option>{opponentOptions.map((opponent) => <option key={opponent.id} value={opponent.id}>{opponent.name}</option>)}</select></label></div></section> : null}
+          {linkedPlayerId && (view === "all" || view === "results") ? <section className={cardClass}><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">Filter {view === "results" ? "results" : "fixtures"}</p><p className="mt-1 text-xs text-slate-500">Narrow the list by competition, opponent, or both.</p></div><span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-bold text-teal-800">{filteredFixtureRows.length} shown</span></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Competition<select value={fixtureCompetitionFilter} onChange={(event) => { setFixtureCompetitionFilter(event.target.value); setOpponentFilter("all"); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="all">All competitions</option>{fixtureCompetitionOptions.map((competition) => <option key={competition.key} value={competition.key}>{competition.name}</option>)}</select></label><label className="text-sm font-medium text-slate-700">Opponent<select value={opponentFilter} onChange={(event) => setOpponentFilter(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="all">All opponents</option>{opponentOptions.map((opponent) => <option key={opponent.id} value={opponent.id}>{opponent.name}</option>)}</select></label></div></section> : null}
 
           {!linkedPlayerId ? (
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">

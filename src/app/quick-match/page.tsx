@@ -17,6 +17,7 @@ type Location = { id: string; name: string };
 type Sport = "snooker" | "pool_8_ball" | "pool_9_ball";
 type Mode = "singles" | "doubles";
 const BEST_OF_OPTIONS = [1, 3, 5, 7, 9, 11, 13, 15];
+const QUICK_MATCH_TITLE_OPTIONS = ["Practice match", "Friendly match", "Challenge match", "Team practice", "Club warm-up"];
 
 export default function QuickMatchPage() {
   const router = useRouter();
@@ -137,6 +138,10 @@ export default function QuickMatchPage() {
       setMessage("Select a location before creating a quick match.");
       return;
     }
+    if (!name.trim()) {
+      setMessage("Enter a title for the match.");
+      return;
+    }
     if (!premium.loading && !premium.unlocked && mode === "doubles") {
       setMessage("Doubles is a Premium feature.");
       return;
@@ -169,7 +174,7 @@ export default function QuickMatchPage() {
     const compRes = await client
       .from("competitions")
       .insert({
-        name: name.trim() || "Practice match",
+        name: name.trim(),
         venue: selectedLocation?.name ?? null,
         location_id: locationId,
         sport_type: sport,
@@ -307,9 +312,10 @@ export default function QuickMatchPage() {
               ) : null}
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Match title</label>
-              <input className={fieldClass} value={name} onChange={(e) => setName(e.target.value)} />
-              <p className="mt-1 text-xs text-slate-500">Use a short label such as Table 1 Practice, Friday Race, or Club Warm-up.</p>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Match type</label>
+              <select className={fieldClass} value={QUICK_MATCH_TITLE_OPTIONS.includes(name) ? name : "Other"} onChange={(event) => setName(event.target.value === "Other" ? "" : event.target.value)}>{QUICK_MATCH_TITLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}<option value="Other">Other</option></select>
+              {!QUICK_MATCH_TITLE_OPTIONS.includes(name) ? <div className="mt-3"><label className="mb-1 block text-sm font-medium text-slate-700">Custom match title</label><input className={fieldClass} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Friday race" /></div> : null}
+              <p className="mt-1 text-xs text-slate-500">Using consistent match types keeps fixture and result filters tidy.</p>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Location</label>
