@@ -1201,6 +1201,27 @@ export default function PlayersPage() {
     await loadUsers();
   };
 
+  const onSendPasswordReset = async (targetUserId: string) => {
+    const client = supabase;
+    if (!client || !isSuperAdmin) {
+      setMessage("Only the Super User can send password reset links.");
+      return;
+    }
+    const { data: sessionRes } = await client.auth.getSession();
+    const token = sessionRes.session?.access_token;
+    if (!token) {
+      setMessage("Sign in again before sending a password reset link.");
+      return;
+    }
+    const response = await fetch("/api/admin/password-reset", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ userId: targetUserId }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(result.error || "The password reset email could not be sent.");
+      return;
+    }
+    setMessage(`Password reset link sent through ${result.provider || "Resend"}.`);
+  };
+
   const onSetPremium = async (targetUserId: string, enabled: boolean) => {
     const client = supabase;
     if (!client) return;
@@ -1726,6 +1747,24 @@ export default function PlayersPage() {
                           </span>
                         ) : (
                           <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setConfirmModal({
+                                  title: "Send password reset",
+                                  body: `Send a secure password reset link to ${displayLabel}? The link will be delivered through Resend.`,
+                                  confirmLabel: "Send reset link",
+                                  tone: "default",
+                                  onConfirm: async () => {
+                                    setConfirmModal(null);
+                                    await onSendPasswordReset(u.id);
+                                  },
+                                })
+                              }
+                              className="rounded-xl border border-teal-300 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800"
+                            >
+                              Send password reset
+                            </button>
                             <button
                               type="button"
                               onClick={() => onSetRole(u.id, "admin")}

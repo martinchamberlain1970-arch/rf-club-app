@@ -15,6 +15,11 @@ function readRecoveryParams() {
   return { accessToken, refreshToken };
 }
 
+function readRecoveryCode() {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("code");
+}
+
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -52,6 +57,18 @@ export default function ResetPasswordPage() {
         }
         if (typeof window !== "undefined") {
           window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } else {
+        const recoveryCode = readRecoveryCode();
+        if (recoveryCode) {
+          const { error: exchangeError } = await client.auth.exchangeCodeForSession(recoveryCode);
+          if (exchangeError) {
+            if (!mounted) return;
+            setError(`Reset link could not be validated: ${exchangeError.message}`);
+            setBusy(false);
+            return;
+          }
+          if (typeof window !== "undefined") window.history.replaceState({}, document.title, window.location.pathname);
         }
       }
 
