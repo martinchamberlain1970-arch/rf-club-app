@@ -1603,7 +1603,7 @@ export default function MatchPage() {
     await logAudit("match_walkover_awarded", {
       entityType: "match",
       entityId: match.id,
-      summary: isFixedRackLeague ? `5-0 forfeit awarded to ${winnerName}.` : `Walkover awarded to ${winnerName}.`,
+      summary: isFixedRackLeague ? `${match.best_of}-0 forfeit awarded to ${winnerName}.` : `Walkover awarded to ${winnerName}.`,
       meta: { competitionId: match.competition_id, awardedScore: isFixedRackLeague ? `${match.best_of}-0` : "walkover" },
     });
     setSaving(false);
@@ -2308,7 +2308,7 @@ export default function MatchPage() {
                 </p>
                 {isFixedRackLeague ? (
                   <p className="mt-2 rounded-lg border border-lime-200 bg-lime-50 px-3 py-2 text-sm text-lime-950">
-                    Fixture window: Monday 1:00pm to Sunday 9:00pm. A genuine no-show or arrival more than 15 minutes late can be awarded 5-0 by the organiser. If neither player made sufficient effort, void the fixture for no points.
+                    Fixture window: Monday 1:00pm to Sunday 9:00pm. A genuine no-show or arrival more than 15 minutes late can be awarded {match.best_of}-0 by the organiser. If neither player made sufficient effort, void the fixture for no points.
                   </p>
                 ) : null}
                 {fixtureContacts.length ? (
@@ -2527,11 +2527,11 @@ export default function MatchPage() {
                           type="button"
                           onClick={() =>
                             setConfirmModal({
-                              title: isFixedRackLeague ? "Award 5-0 Forfeit" : "Award Walkover",
+                              title: isFixedRackLeague ? `Award ${match.best_of}-0 Forfeit` : "Award Walkover",
                               description: isFixedRackLeague
                                 ? `Award all ${match.best_of} racks to ${teams.team1Label} for a no-show or late-arrival forfeit?`
                                 : `Award walkover to ${teams.team1Label}?`,
-                              confirmLabel: isFixedRackLeague ? "Award 5-0" : "Award",
+                              confirmLabel: isFixedRackLeague ? `Award ${match.best_of}-0` : "Award",
                               onConfirm: async () => {
                                 await awardWalkover(1);
                                 setConfirmModal(null);
@@ -2541,17 +2541,17 @@ export default function MatchPage() {
                           disabled={saving}
                           className={buttonSecondaryClass}
                         >
-                          {isFixedRackLeague ? "Award 5-0 forfeit" : "Award walkover"} ({teams.team1Label})
+                          {isFixedRackLeague ? `Award ${match.best_of}-0 forfeit` : "Award walkover"} ({teams.team1Label})
                         </button>
                         <button
                           type="button"
                           onClick={() =>
                             setConfirmModal({
-                              title: isFixedRackLeague ? "Award 5-0 Forfeit" : "Award Walkover",
+                              title: isFixedRackLeague ? `Award ${match.best_of}-0 Forfeit` : "Award Walkover",
                               description: isFixedRackLeague
                                 ? `Award all ${match.best_of} racks to ${teams.team2Label} for a no-show or late-arrival forfeit?`
                                 : `Award walkover to ${teams.team2Label}?`,
-                              confirmLabel: isFixedRackLeague ? "Award 5-0" : "Award",
+                              confirmLabel: isFixedRackLeague ? `Award ${match.best_of}-0` : "Award",
                               onConfirm: async () => {
                                 await awardWalkover(2);
                                 setConfirmModal(null);
@@ -2561,7 +2561,7 @@ export default function MatchPage() {
                           disabled={saving}
                           className={buttonSecondaryClass}
                         >
-                          {isFixedRackLeague ? "Award 5-0 forfeit" : "Award walkover"} ({teams.team2Label})
+                          {isFixedRackLeague ? `Award ${match.best_of}-0 forfeit` : "Award walkover"} ({teams.team2Label})
                         </button>
                       </>
                     ) : (

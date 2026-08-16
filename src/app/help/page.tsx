@@ -28,7 +28,7 @@ const faqs: { question: string; answer: string }[] = [
   {
     question: "What happens if a weekly league fixture is not played?",
     answer:
-      "After the Sunday deadline, the Super User reviews unresolved fixtures. One submitted result can be accepted without chasing the opponent; with no submission, the Super User can award a genuine no-show 5-0 or void the fixture for no points.",
+      "After the Sunday deadline, the Super User reviews unresolved fixtures. One submitted result can be accepted without chasing the opponent; with no submission, the Super User can award a genuine no-show result or walkover using that competition's format, or void the fixture for no points.",
   },
   {
     question: "Can a fixture be rescheduled?",

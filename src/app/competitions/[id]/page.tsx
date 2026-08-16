@@ -869,6 +869,16 @@ export default function CompetitionPage() {
     [projectedLeagueRounds]
   );
   const isOneDayLeague = competition?.competition_format === "league" && competition.league_schedule_mode === "one_day";
+  const sportLabel = competition?.sport_type === "snooker" ? "Snooker" : competition?.sport_type === "pool_9_ball" ? "9-ball pool" : "8-ball pool";
+  const scoringUnit = competition?.sport_type === "snooker" ? "frame" : "rack";
+  const selectedLeagueMeetings = competition?.league_meetings ?? Number.parseInt(leagueMeetingsInput, 10);
+  const leagueScheduleLabel = isOneDayLeague ? "One-day round robin" : "Weekly league";
+  const leagueMatchLength = competition?.competition_format === "league" && competition.sport_type !== "snooker"
+    ? `All ${competition.best_of} racks played`
+    : `Best of ${competition?.best_of ?? 1} ${scoringUnit}${(competition?.best_of ?? 1) === 1 ? "" : "s"}`;
+  const leagueForfeitText = competition?.sport_type === "snooker"
+    ? "A genuine no-show may be awarded as a walkover; the organiser can void an unplayed fixture when no result should stand."
+    : `A genuine no-show may be awarded ${competition?.best_of ?? 1}–0; the organiser can void an unplayed fixture when no result should stand.`;
   const roundRobinRoundCount = projectedLeagueRounds.length;
   const leagueSemiFinalRound = roundRobinRoundCount + 1;
   const leagueFinalRound = roundRobinRoundCount + 2;
@@ -1615,13 +1625,12 @@ export default function CompetitionPage() {
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="text-3xl font-semibold text-slate-900">{competition.name}</h2>
                 <p className="mt-1 text-slate-700">Venue: {competition.venue || "-"}</p>
-                <p className="mt-1 text-slate-700">Format: {competition.competition_format}</p>
-                <p className="mt-1 text-slate-700">Scoring: {competition.handicap_enabled ? "Handicapped" : "Scratch"}</p>
+                <p className="mt-1 text-slate-700">Sport: {sportLabel}</p>
+                <p className="mt-1 text-slate-700">Format: {competition.competition_format === "league" ? `${leagueScheduleLabel} · singles` : `${competition.match_mode ?? "singles"} knockout`}</p>
                 <p className="mt-1 text-slate-700">
-                  {competition.competition_format === "league" && competition.sport_type !== "snooker"
-                    ? `All ${competition.best_of} racks played · one league point per rack won`
-                    : `Best of ${competition.best_of}`}
+                  Match length: {competition.competition_format === "league" ? leagueMatchLength : `Best of ${competition.best_of} ${scoringUnit}${competition.best_of === 1 ? "" : "s"}`}
                 </p>
+                <p className="mt-1 text-slate-700">Scoring: {competition.handicap_enabled ? "Handicapped" : "Scratch"}{competition.competition_format === "league" ? ` · one league point per ${scoringUnit} won` : ""}</p>
                 {competition.competition_format === "league" ? (
                   <>
                     <p className="mt-2 text-sm text-slate-600">
@@ -1891,14 +1900,14 @@ export default function CompetitionPage() {
               </section>
               {competition.competition_format === "league" ? (
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-lg font-semibold text-slate-900">League field</p>
+                  <p className="text-lg font-semibold text-slate-900">{sportLabel} league format</p>
                   <p className="mt-1 text-sm text-slate-600">
-                    Approved and pending player entries are shown above. Knockout-only bracket and fixture views are not used for league competitions.
+                    {leagueScheduleLabel} · {leagueMatchLength} · {competition.handicap_enabled ? "Handicapped" : "Scratch"} scoring · meet each opponent {selectedLeagueMeetings} time{selectedLeagueMeetings === 1 ? "" : "s"}.
                   </p>
                   <p className="mt-1 text-sm text-slate-600">
                     {isOneDayLeague
-                      ? "All round-robin fixtures are played on the competition date. Play every rack: each rack won scores one league point."
-                      : "Fixtures run from Monday 13:00 to Sunday 21:00. Play every rack: each rack won scores one league point. A genuine no-show or late-arrival forfeit may be awarded 5-0; if neither player made sufficient effort, void the fixture for no points."}
+                      ? `All round-robin fixtures are played on the competition date. Each ${scoringUnit} won adds one league point.${Number(competition.league_finals_size ?? 0) === 4 ? ` The top four advance to best-of-${competition.league_semi_final_best_of ?? 3} semi-finals and a best-of-${competition.league_final_best_of ?? 5} final.` : ""}`
+                      : `Each fixture week runs from Monday 13:00 to Sunday 21:00. Each ${scoringUnit} won adds one league point. ${leagueForfeitText}`}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                     <div className="w-full text-sm text-emerald-950">
@@ -2236,7 +2245,7 @@ export default function CompetitionPage() {
                             </p>
                             {week.matches.some((match) => Boolean(match.deadlineLabel)) ? (
                               <p className="mt-1 text-xs text-slate-500">
-                                Play by {week.matches.find((match) => match.deadlineLabel)?.deadlineLabel}. Unresolved fixtures then go to the Super User for a Monday decision. A 5–0 award is only for a genuine no-show; otherwise the fixture may be voided.
+                                Play by {week.matches.find((match) => match.deadlineLabel)?.deadlineLabel}. Unresolved fixtures then go to the Super User for a Monday decision. {competition.sport_type === "snooker" ? "A walkover is only for a genuine no-show" : `A ${competition.best_of}–0 award is only for a genuine no-show`}; otherwise the fixture may be voided.
                               </p>
                             ) : null}
                             <div className="mt-2 space-y-2">

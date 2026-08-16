@@ -378,7 +378,7 @@ export default function ResultsQueuePage() {
               {admin.isSuper && deadlineFixtures.length ? (
                 <section className="rounded-3xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">
                   <h2 className="text-xl font-semibold text-amber-950">Monday deadline decisions ({deadlineFixtures.length})</h2>
-                  <p className="mt-1 text-sm text-amber-900">These fixtures passed Sunday at 9pm without an approved result. You can accept a sole submission without chasing the opponent, enter the result yourself, award a genuine no-show 5–0, or void the fixture.</p>
+                  <p className="mt-1 text-sm text-amber-900">These fixtures passed Sunday at 9pm without an approved result. You can accept a sole submission without chasing the opponent, enter the result yourself, award a genuine no-show result or walkover using that competition&apos;s format, or void the fixture.</p>
                   <div className="mt-4 space-y-3">
                     {deadlineFixtures.map((fixture) => {
                       const label = fixture.decision === "single_submission"
