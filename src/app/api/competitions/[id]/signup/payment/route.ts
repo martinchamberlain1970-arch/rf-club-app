@@ -60,7 +60,12 @@ export async function POST(req: NextRequest, context: RouteContext) {
   }
 
   if (amount <= 0) return NextResponse.json({ ok: true });
-  const autoApprove = appUser.role === "owner";
+  const superAdminEmail = (process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL ?? process.env.NEXT_PUBLIC_OWNER_EMAIL ?? "")
+    .trim()
+    .toLowerCase();
+  const role = String(appUser.role ?? "").toLowerCase();
+  const autoApprove = ["owner", "super"].includes(role)
+    || Boolean(superAdminEmail && user.email?.toLowerCase() === superAdminEmail);
   const stripe = getStripe();
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
