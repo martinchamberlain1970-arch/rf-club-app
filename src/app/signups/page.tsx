@@ -78,6 +78,8 @@ export default function CompetitionSignupPage() {
   const [expandedCompetitionIds, setExpandedCompetitionIds] = useState<string[]>([]);
   const [guestEntries, setGuestEntries] = useState<GuestEntry[]>([]);
   const [guestActionId, setGuestActionId] = useState<string | null>(null);
+  const [selectedCompetitionId, setSelectedCompetitionId] = useState<string>("");
+  const [showProcessedGuestEntries, setShowProcessedGuestEntries] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   const playerNameById = useMemo(
@@ -103,6 +105,39 @@ export default function CompetitionSignupPage() {
     }
     return map;
   }, [entries]);
+
+  const activeCompetitionId = useMemo(() => {
+    if (selectedCompetitionId && competitions.some((competition) => competition.id === selectedCompetitionId)) {
+      return selectedCompetitionId;
+    }
+    const competitionWithPendingGuest = competitions.find((competition) =>
+      guestEntries.some((entry) => entry.competition_id === competition.id && entry.status === "pending")
+    );
+    if (competitionWithPendingGuest) return competitionWithPendingGuest.id;
+    const competitionWithMyEntry = competitions.find((competition) => myEntriesByCompetitionId.has(competition.id));
+    return competitionWithMyEntry?.id ?? competitions[0]?.id ?? "";
+  }, [competitions, guestEntries, myEntriesByCompetitionId, selectedCompetitionId]);
+
+  const selectedCompetition = useMemo(
+    () => competitions.find((competition) => competition.id === activeCompetitionId) ?? null,
+    [activeCompetitionId, competitions]
+  );
+
+  const selectedGuestEntries = useMemo(
+    () => guestEntries.filter((entry) => entry.competition_id === activeCompetitionId),
+    [activeCompetitionId, guestEntries]
+  );
+  const pendingGuestEntries = useMemo(
+    () => selectedGuestEntries.filter((entry) => entry.status === "pending"),
+    [selectedGuestEntries]
+  );
+  const processedGuestEntries = useMemo(
+    () => selectedGuestEntries.filter((entry) => entry.status !== "pending"),
+    [selectedGuestEntries]
+  );
+  const visibleGuestEntries = showProcessedGuestEntries
+    ? [...pendingGuestEntries, ...processedGuestEntries]
+    : pendingGuestEntries;
 
   const load = async () => {
     const client = supabase;
@@ -171,8 +206,11 @@ export default function CompetitionSignupPage() {
 
   useEffect(() => {
     const payment = new URLSearchParams(window.location.search).get("payment");
-    if (payment === "success") setMessage("Payment received. Stripe is confirming your competition entry.");
-    if (payment === "cancelled") setMessage("Payment was cancelled. Your entry is saved and you can try again.");
+    const timer = window.setTimeout(() => {
+      if (payment === "success") setMessage("Payment received. Stripe is confirming your competition entry.");
+      if (payment === "cancelled") setMessage("Payment was cancelled. Your entry is saved and you can try again.");
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const enter = async (competition: Competition) => {
@@ -335,24 +373,70 @@ export default function CompetitionSignupPage() {
             </p>
           </section>
 
-          {admin.isAdmin && guestEntries.length > 0 ? (
+          {competitions.length > 0 ? (
+            <section className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="min-w-0 flex-1 text-sm font-semibold text-indigo-950">
+                  Choose competition
+                  <select
+                    value={activeCompetitionId}
+                    onChange={(event) => {
+                      setSelectedCompetitionId(event.target.value);
+                      setShowProcessedGuestEntries(false);
+                    }}
+                    className="mt-2 block w-full rounded-xl border border-indigo-300 bg-white px-3 py-3 text-base font-semibold text-slate-950"
+                  >
+                    {competitions.map((competition) => {
+                      const reviewCount = guestEntries.filter(
+                        (entry) => entry.competition_id === competition.id && entry.status === "pending"
+                      ).length;
+                      return (
+                        <option key={competition.id} value={competition.id}>
+                          {competition.name}{reviewCount ? ` — ${reviewCount} to review` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+                {selectedCompetition ? (
+                  <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                    <span className="rounded-full bg-indigo-900 px-3 py-1 text-white">
+                      {sportLabel[selectedCompetition.sport_type]}
+                    </span>
+                    <span className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-indigo-900">
+                      {activeEntryCountByCompetitionId.get(selectedCompetition.id) ?? 0} registered
+                    </span>
+                    {admin.isAdmin ? (
+                      <span className={`rounded-full px-3 py-1 ${pendingGuestEntries.length ? "bg-amber-200 text-amber-950" : "bg-emerald-100 text-emerald-900"}`}>
+                        {pendingGuestEntries.length} public to review
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              <p className="mt-2 text-xs text-indigo-800">Only the selected competition is shown below.</p>
+            </section>
+          ) : null}
+
+          {admin.isAdmin && selectedCompetition ? (
             <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h2 className="text-lg font-semibold text-emerald-950">Public signup review</h2>
-                  <p className="text-sm text-emerald-800">Entries received through public registration links.</p>
+                  <p className="text-sm font-medium text-emerald-900">{selectedCompetition.name}</p>
+                  <p className="text-sm text-emerald-800">Pending public entries are shown first. Processed entries stay available as history.</p>
                 </div>
                 <span className="rounded-full bg-emerald-700 px-3 py-1 text-sm font-semibold text-white">
-                  {guestEntries.filter((entry) => entry.status === "pending").length} pending
+                  {pendingGuestEntries.length} pending
                 </span>
               </div>
-              <div className="mt-3 space-y-2">
-                {guestEntries.map((entry) => (
+              {visibleGuestEntries.length ? (
+                <div className="mt-3 space-y-2">
+                {visibleGuestEntries.map((entry) => (
                   <div key={entry.id} className="rounded-xl border border-emerald-200 bg-white p-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-slate-950">{entry.full_name}</p>
-                        <p className="text-sm text-slate-600">{entry.competitions?.name ?? "Competition"}</p>
                         <p className={`mt-1 text-sm font-medium ${entry.payment_status === "paid" ? "text-emerald-700" : "text-amber-700"}`}>
                           {entry.payment_status === "paid"
                             ? `Paid${entry.payment_method === "cash" ? " cash" : entry.payment_method === "stripe" ? " by Stripe" : ""}${entry.payment_amount_pence ? ` £${(entry.payment_amount_pence / 100).toFixed(2)}` : ""}${entry.paid_at ? ` · ${paidDateTime(entry.paid_at)}` : ""}`
@@ -405,12 +489,28 @@ export default function CompetitionSignupPage() {
                     </div>
                   </div>
                 ))}
-              </div>
+                </div>
+              ) : (
+                <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-4 text-sm text-emerald-900">
+                  {processedGuestEntries.length
+                    ? "No public entries are waiting for review."
+                    : "No entries have been received through this competition's public link yet."}
+                </div>
+              )}
+              {processedGuestEntries.length ? (
+                <button
+                  type="button"
+                  onClick={() => setShowProcessedGuestEntries((current) => !current)}
+                  className="mt-3 rounded-lg border border-emerald-700 bg-white px-3 py-2 text-sm font-semibold text-emerald-800"
+                >
+                  {showProcessedGuestEntries ? "Hide processed entries" : `Show processed entries (${processedGuestEntries.length})`}
+                </button>
+              ) : null}
             </section>
           ) : null}
 
           <section className="space-y-3">
-            {competitions.map((competition) => {
+            {competitions.filter((competition) => competition.id === activeCompetitionId).map((competition) => {
               const myEntry = myEntriesByCompetitionId.get(competition.id) ?? null;
               const currentEntries = activeEntryCountByCompetitionId.get(competition.id) ?? 0;
               const visibleEntries = entries.filter(
