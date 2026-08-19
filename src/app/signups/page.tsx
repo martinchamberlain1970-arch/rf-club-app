@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
 import MessageModal from "@/components/MessageModal";
+import ConfirmModal from "@/components/ConfirmModal";
 import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
 
@@ -32,6 +33,7 @@ type Entry = {
   payment_method: "stripe" | "cash" | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
+  public_signup_id: string | null;
   created_at: string;
 };
 
@@ -52,6 +54,16 @@ type GuestEntry = {
   created_at: string;
   competitions: { name: string } | null;
   suggestions: Array<{ id: string; display_name: string; full_name: string | null; claimed_by: string | null; score: number }>;
+};
+type FinanceRow = {
+  key: string;
+  name: string;
+  source: "entry" | "guest";
+  recordId: string;
+  payment_status: Entry["payment_status"];
+  payment_method: Entry["payment_method"];
+  payment_amount_pence: number | null;
+  paid_at: string | null;
 };
 
 const sportLabel: Record<Competition["sport_type"], string> = {
@@ -80,6 +92,8 @@ export default function CompetitionSignupPage() {
   const [guestActionId, setGuestActionId] = useState<string | null>(null);
   const [selectedCompetitionId, setSelectedCompetitionId] = useState<string>("");
   const [showProcessedGuestEntries, setShowProcessedGuestEntries] = useState(false);
+  const [cashPaymentTarget, setCashPaymentTarget] = useState<{ row: FinanceRow; reset: boolean } | null>(null);
+  const [cashPaymentBusyId, setCashPaymentBusyId] = useState<string | null>(null);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   const playerNameById = useMemo(
@@ -139,6 +153,55 @@ export default function CompetitionSignupPage() {
     ? [...pendingGuestEntries, ...processedGuestEntries]
     : pendingGuestEntries;
 
+  const financeRows = useMemo<FinanceRow[]>(() => {
+    if (!activeCompetitionId) return [];
+    const activeEntries = entries.filter(
+      (entry) => entry.competition_id === activeCompetitionId && (entry.status === "pending" || entry.status === "approved")
+    );
+    const linkedSignupIds = new Set(activeEntries.map((entry) => entry.public_signup_id).filter(Boolean));
+    const registeredRows = activeEntries.map((entry) => ({
+      key: `entry:${entry.id}`,
+      name: playerNameById.get(entry.player_id) ?? "Unknown player",
+      source: "entry" as const,
+      recordId: entry.id,
+      payment_status: entry.payment_status,
+      payment_method: entry.payment_method,
+      payment_amount_pence: entry.payment_amount_pence,
+      paid_at: entry.paid_at,
+    }));
+    const unlinkedGuestRows = guestEntries
+      .filter((entry) => entry.competition_id === activeCompetitionId && entry.status !== "rejected" && !linkedSignupIds.has(entry.id))
+      .map((entry) => ({
+        key: `guest:${entry.id}`,
+        name: entry.full_name,
+        source: "guest" as const,
+        recordId: entry.id,
+        payment_status: entry.payment_status,
+        payment_method: entry.payment_method,
+        payment_amount_pence: entry.payment_amount_pence,
+        paid_at: entry.paid_at,
+      }));
+    return [...registeredRows, ...unlinkedGuestRows].sort((a, b) => a.name.localeCompare(b.name));
+  }, [activeCompetitionId, entries, guestEntries, playerNameById]);
+
+  const paidFinanceRows = financeRows.filter((row) => row.payment_status === "paid");
+  const outstandingFinanceRows = financeRows.filter((row) => row.payment_status !== "paid" && row.payment_status !== "not_required");
+  const entryFeePence = Number(selectedCompetition?.entry_fee_pence ?? 0);
+  const expectedFinancePence = financeRows.reduce(
+    (sum, row) => sum + (row.payment_status === "not_required" ? 0 : Number(row.payment_amount_pence ?? entryFeePence)),
+    0
+  );
+  const receivedFinancePence = paidFinanceRows.reduce(
+    (sum, row) => sum + Number(row.payment_amount_pence ?? entryFeePence),
+    0
+  );
+  const stripeFinancePence = paidFinanceRows
+    .filter((row) => row.payment_method === "stripe")
+    .reduce((sum, row) => sum + Number(row.payment_amount_pence ?? entryFeePence), 0);
+  const cashFinancePence = paidFinanceRows
+    .filter((row) => row.payment_method === "cash")
+    .reduce((sum, row) => sum + Number(row.payment_amount_pence ?? entryFeePence), 0);
+
   const load = async () => {
     const client = supabase;
     if (!client) {
@@ -161,7 +224,7 @@ export default function CompetitionSignupPage() {
         .order("created_at", { ascending: false }),
       client
         .from("competition_entries")
-        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,created_at")
+        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,public_signup_id,created_at")
         .order("created_at", { ascending: false }),
       client.from("app_users").select("id,linked_player_id").eq("id", uid).maybeSingle(),
       client.from("players").select("id,display_name,full_name").eq("is_archived", false),
@@ -349,6 +412,34 @@ export default function CompetitionSignupPage() {
     await load();
   };
 
+  const updateCashPayment = async (row: FinanceRow, reset: boolean) => {
+    const client = supabase;
+    if (!client || !admin.isAdmin) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setMessage("Please sign in again.");
+      return;
+    }
+    setCashPaymentBusyId(row.key);
+    const response = await fetch("/api/admin/competition-entry-payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({
+        ...(row.source === "entry" ? { entryId: row.recordId } : { signupId: row.recordId }),
+        action: reset ? "reset_cash_payment" : "mark_cash_paid",
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setCashPaymentBusyId(null);
+    if (!response.ok) {
+      setMessage(data.error ?? "The payment could not be updated.");
+      return;
+    }
+    setMessage(reset ? `${row.name}'s cash payment was returned to outstanding.` : `${row.name} is now recorded as paid by cash.`);
+    await load();
+  };
+
   const toggleCompetitionField = (competitionId: string) => {
     setExpandedCompetitionIds((prev) =>
       prev.includes(competitionId) ? prev.filter((id) => id !== competitionId) : [...prev, competitionId]
@@ -415,6 +506,95 @@ export default function CompetitionSignupPage() {
                 ) : null}
               </div>
               <p className="mt-2 text-xs text-indigo-800">Only the selected competition is shown below.</p>
+            </section>
+          ) : null}
+
+          {admin.isAdmin && selectedCompetition && entryFeePence > 0 ? (
+            <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-amber-950">Competition finances</h2>
+                  <p className="text-sm font-medium text-amber-900">{selectedCompetition.name}</p>
+                  <p className="mt-1 text-sm text-amber-800">Entry fee £{(entryFeePence / 100).toFixed(2)} per player.</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${outstandingFinanceRows.length ? "bg-red-100 text-red-800" : "bg-emerald-700 text-white"}`}>
+                  {outstandingFinanceRows.length ? `${outstandingFinanceRows.length} outstanding` : "All paid"}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-amber-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Expected</p>
+                  <p className="mt-1 text-xl font-bold text-slate-950">£{(expectedFinancePence / 100).toFixed(2)}</p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Received</p>
+                  <p className="mt-1 text-xl font-bold text-emerald-800">£{(receivedFinancePence / 100).toFixed(2)}</p>
+                  <p className="text-xs text-slate-500">{paidFinanceRows.length} player{paidFinanceRows.length === 1 ? "" : "s"}</p>
+                </div>
+                <div className="rounded-xl border border-violet-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Stripe / cash</p>
+                  <p className="mt-1 font-bold text-slate-950">£{(stripeFinancePence / 100).toFixed(2)} / £{(cashFinancePence / 100).toFixed(2)}</p>
+                </div>
+                <div className="rounded-xl border border-red-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Outstanding</p>
+                  <p className="mt-1 text-xl font-bold text-red-800">£{((expectedFinancePence - receivedFinancePence) / 100).toFixed(2)}</p>
+                  <p className="text-xs text-slate-500">{outstandingFinanceRows.length} player{outstandingFinanceRows.length === 1 ? "" : "s"}</p>
+                </div>
+              </div>
+
+              {outstandingFinanceRows.length ? (
+                <div className="mt-4 rounded-xl border border-red-200 bg-white p-3">
+                  <p className="font-semibold text-red-900">Payment outstanding</p>
+                  <div className="mt-2 space-y-2">
+                    {outstandingFinanceRows.map((row) => (
+                      <div key={row.key} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-red-50 px-3 py-2">
+                        <div>
+                          <p className="font-semibold text-slate-950">{row.name}</p>
+                          <p className="text-xs text-red-700">£{((row.payment_amount_pence ?? entryFeePence) / 100).toFixed(2)} · {row.payment_status === "failed" ? "Payment failed" : "Payment pending"}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={cashPaymentBusyId === row.key}
+                          onClick={() => setCashPaymentTarget({ row, reset: false })}
+                          className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          {cashPaymentBusyId === row.key ? "Saving…" : "Mark paid by cash"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {paidFinanceRows.length ? (
+                <details className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
+                  <summary className="cursor-pointer font-semibold text-emerald-900">View paid entrants ({paidFinanceRows.length})</summary>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {paidFinanceRows.map((row) => (
+                      <div key={row.key} className="flex items-start justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+                        <div>
+                          <p className="font-semibold text-slate-950">{row.name}</p>
+                          <p className="text-xs text-emerald-800">
+                            £{((row.payment_amount_pence ?? entryFeePence) / 100).toFixed(2)} · {row.payment_method === "cash" ? "Cash" : row.payment_method === "stripe" ? "Stripe" : "Paid"}
+                            {row.paid_at ? ` · ${paidDateTime(row.paid_at)}` : ""}
+                          </p>
+                        </div>
+                        {row.payment_method === "cash" ? (
+                          <button
+                            type="button"
+                            disabled={cashPaymentBusyId === row.key}
+                            onClick={() => setCashPaymentTarget({ row, reset: true })}
+                            className="text-xs font-semibold text-red-700 underline disabled:opacity-50"
+                          >
+                            Undo
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </section>
           ) : null}
 
@@ -672,6 +852,21 @@ export default function CompetitionSignupPage() {
           </section>
         </RequireAuth>
       </div>
+      <ConfirmModal
+        open={cashPaymentTarget !== null}
+        title={cashPaymentTarget?.reset ? "Undo cash payment?" : "Confirm cash received"}
+        description={cashPaymentTarget?.reset
+          ? `This will return ${cashPaymentTarget.row.name}'s payment to outstanding.`
+          : `Only confirm after you have received £${(((cashPaymentTarget?.row.payment_amount_pence ?? entryFeePence) || 0) / 100).toFixed(2)} cash from ${cashPaymentTarget?.row.name ?? "this entrant"}.`}
+        confirmLabel={cashPaymentTarget?.reset ? "Undo payment" : "Mark paid by cash"}
+        cancelLabel="Cancel"
+        onCancel={() => setCashPaymentTarget(null)}
+        onConfirm={async () => {
+          const target = cashPaymentTarget;
+          setCashPaymentTarget(null);
+          if (target) await updateCashPayment(target.row, target.reset);
+        }}
+      />
     </main>
   );
 }
