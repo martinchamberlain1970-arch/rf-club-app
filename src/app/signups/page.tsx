@@ -201,6 +201,9 @@ export default function CompetitionSignupPage() {
   const cashFinancePence = paidFinanceRows
     .filter((row) => row.payment_method === "cash")
     .reduce((sum, row) => sum + Number(row.payment_amount_pence ?? entryFeePence), 0);
+  const unspecifiedFinancePence = paidFinanceRows
+    .filter((row) => row.payment_method !== "stripe" && row.payment_method !== "cash")
+    .reduce((sum, row) => sum + Number(row.payment_amount_pence ?? entryFeePence), 0);
 
   const load = async () => {
     const client = supabase;
@@ -533,8 +536,9 @@ export default function CompetitionSignupPage() {
                   <p className="text-xs text-slate-500">{paidFinanceRows.length} player{paidFinanceRows.length === 1 ? "" : "s"}</p>
                 </div>
                 <div className="rounded-xl border border-violet-200 bg-white p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Stripe / cash</p>
-                  <p className="mt-1 font-bold text-slate-950">£{(stripeFinancePence / 100).toFixed(2)} / £{(cashFinancePence / 100).toFixed(2)}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Payment methods</p>
+                  <p className="mt-1 text-sm font-bold text-slate-950">Stripe £{(stripeFinancePence / 100).toFixed(2)} · Cash £{(cashFinancePence / 100).toFixed(2)}</p>
+                  {unspecifiedFinancePence ? <p className="text-xs text-slate-500">Unspecified £{(unspecifiedFinancePence / 100).toFixed(2)}</p> : null}
                 </div>
                 <div className="rounded-xl border border-red-200 bg-white p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Outstanding</p>
