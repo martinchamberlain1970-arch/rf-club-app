@@ -110,15 +110,15 @@ export async function GET(request: NextRequest) {
   if (!auth) return NextResponse.json({ error: "Sign in to view table bookings." }, { status: 401 });
   const { eligibleSports, canBookOther } = await eligibility(auth);
   const now = new Date();
-  const from = new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString();
+  const from = now.toISOString();
   const to = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString();
-  let reservationsQuery = auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,booked_for_player_id,starts_at,ends_at,purpose,notes,status,created_at,participant_one,participant_two,team_name,requester_email,rejection_reason,reviewed_at").gte("ends_at", from).lte("starts_at", to).order("starts_at");
+  let reservationsQuery = auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,booked_for_player_id,starts_at,ends_at,purpose,notes,status,created_at,participant_one,participant_two,team_name,requester_email,rejection_reason,reviewed_at").gt("ends_at", from).lte("starts_at", to).order("starts_at");
   if (!auth.isSuper) reservationsQuery = reservationsQuery.or(`status.eq.booked,booked_by_user_id.eq.${auth.user.id}`);
   const [tablesResult, reservationsResult, hoursResult, blocksResult] = await Promise.all([
     auth.client.from("cue_tables").select("id,name,sport_type,location_id,display_order").eq("is_active", true).order("display_order"),
     reservationsQuery,
     auth.client.from("table_booking_hours").select("id,table_id,weekday,opens_at,closes_at").order("weekday"),
-    auth.client.from("table_booking_blocks").select("id,table_id,starts_at,ends_at,category,title,notes,created_at").gte("ends_at", from).lte("starts_at", to).order("starts_at"),
+    auth.client.from("table_booking_blocks").select("id,table_id,starts_at,ends_at,category,title,notes,created_at").gt("ends_at", from).lte("starts_at", to).order("starts_at"),
   ]);
   const error = tablesResult.error || reservationsResult.error || hoursResult.error || blocksResult.error;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });

@@ -58,6 +58,7 @@ export default function TableBookingsPage() {
   const [blockCategory, setBlockCategory] = useState("entertainment");
   const [blockTitle, setBlockTitle] = useState("");
   const [blockNotes, setBlockNotes] = useState("");
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   const request = useCallback(async (body?: Record<string, unknown>) => {
     const client = supabase;
@@ -77,6 +78,10 @@ export default function TableBookingsPage() {
   }, [request]);
 
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTimeMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     if (!data) return;
     if (!tableId) {
@@ -100,12 +105,12 @@ export default function TableBookingsPage() {
   const selectedTable = eligibleTables.find((table) => table.id === tableId);
   const durationOptions = isManageView ? [30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360] : selectedTable?.sport_type === "snooker" ? [30, 60] : [30];
   const tableNames = useMemo(() => new Map((data?.tables ?? []).map((table) => [table.id, table.name])), [data]);
-  const upcoming = useMemo(() => (data?.reservations ?? []).filter((reservation) => new Date(reservation.ends_at).getTime() >= Date.now()), [data]);
+  const upcoming = useMemo(() => (data?.reservations ?? []).filter((reservation) => new Date(reservation.ends_at).getTime() > currentTimeMs), [currentTimeMs, data]);
   const visibleRequests = useMemo(() => isManageView ? upcoming : upcoming.filter((reservation) => reservation.booked_by_user_id === data?.userId), [data?.userId, isManageView, upcoming]);
   const pending = useMemo(() => visibleRequests.filter((reservation) => reservation.status === "pending"), [visibleRequests]);
   const declined = useMemo(() => visibleRequests.filter((reservation) => reservation.status === "rejected"), [visibleRequests]);
   const confirmed = useMemo(() => upcoming.filter((reservation) => reservation.status === "booked"), [upcoming]);
-  const upcomingBlocks = useMemo(() => (data?.blocks ?? []).filter((block) => new Date(block.ends_at).getTime() >= Date.now()), [data]);
+  const upcomingBlocks = useMemo(() => (data?.blocks ?? []).filter((block) => new Date(block.ends_at).getTime() > currentTimeMs), [currentTimeMs, data]);
 
   const book = async () => {
     const start = new Date(startsAt);
@@ -199,7 +204,7 @@ export default function TableBookingsPage() {
     <MessageModal message={message} onClose={() => setMessage(null)} />
     {loading ? <section className="rounded-2xl bg-white p-5 shadow">Loading reservations…</section> : null}
     {data ? <>
-      {isPlayerView && eligibleTables.length ? <TableBookingCalendar tables={eligibleTables} reservations={data.reservations} availability={data.availability} blocks={data.blocks} onChooseSlot={(chosenTableId, chosenStartsAt, chosenDuration) => { setTableId(chosenTableId); setStartsAt(localInputValue(new Date(chosenStartsAt))); setDuration(String(chosenDuration)); }} /> : null}
+      {isPlayerView && eligibleTables.length ? <TableBookingCalendar tables={eligibleTables} reservations={upcoming} availability={data.availability} blocks={upcomingBlocks} onChooseSlot={(chosenTableId, chosenStartsAt, chosenDuration) => { setTableId(chosenTableId); setStartsAt(localInputValue(new Date(chosenStartsAt))); setDuration(String(chosenDuration)); }} /> : null}
       <section ref={bookingFormRef} className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-black text-slate-950">{editingReservationId ? "Edit booking" : "Request a table"}</h2><p className="mt-1 text-sm text-slate-600">Choose a competition fixture, home league match or—where authorised—another reason. Player requests are sent to the Super User for approval; Super User bookings are confirmed immediately.</p></div>{editingReservationId ? <button type="button" onClick={() => setEditingReservationId(null)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700">Cancel editing</button> : null}</div>
         {!data.playerId ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-amber-900">Link your app account to a player profile before booking.</p> : null}
         {data.playerId && !eligibleTables.length ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-amber-900">Your account does not currently have table-booking access. Ask the Super User if you are a captain or vice-captain.</p> : null}

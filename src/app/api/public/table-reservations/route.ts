@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
   const weekStart = isoDate(monday);
   const nextWeekStart = isoDate(nextMonday);
   const rangeEnd = isoDate(afterNextSunday);
-  const approximateFrom = new Date(monday.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const now = new Date();
+  const approximateFrom = now.toISOString();
   const approximateTo = new Date(afterNextSunday.getTime() + 24 * 60 * 60 * 1000).toISOString();
 
   let tablesQuery = client.from("cue_tables").select("id,name,sport_type,display_order").eq("is_active", true).order("display_order");
@@ -29,17 +30,17 @@ export async function GET(request: NextRequest) {
   const tableIds = (tablesResult.data ?? []).map((table) => table.id);
   const [reservationsResult, blocksResult, hoursResult] = await Promise.all([
     tableIds.length
-      ? client.from("table_reservations").select("id,table_id,booked_for_player_id,starts_at,ends_at,purpose,notes,participant_one,participant_two,team_name").in("table_id", tableIds).eq("status", "booked").gte("ends_at", approximateFrom).lte("starts_at", approximateTo).order("starts_at")
+      ? client.from("table_reservations").select("id,table_id,booked_for_player_id,starts_at,ends_at,purpose,notes,participant_one,participant_two,team_name").in("table_id", tableIds).eq("status", "booked").gt("ends_at", approximateFrom).lte("starts_at", approximateTo).order("starts_at")
       : Promise.resolve({ data: [], error: null }),
-    client.from("table_booking_blocks").select("id,table_id,starts_at,ends_at,category,title,notes").gte("ends_at", approximateFrom).lte("starts_at", approximateTo).order("starts_at"),
+    client.from("table_booking_blocks").select("id,table_id,starts_at,ends_at,category,title,notes").gt("ends_at", approximateFrom).lte("starts_at", approximateTo).order("starts_at"),
     tableIds.length
       ? client.from("table_booking_hours").select("id,table_id,weekday,opens_at,closes_at").in("table_id", tableIds).order("weekday")
       : Promise.resolve({ data: [], error: null }),
   ]);
   const error = reservationsResult.error || blocksResult.error || hoursResult.error;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  const reservations = (reservationsResult.data ?? []).filter((entry) => londonDateKey(entry.starts_at) < rangeEnd && londonDateKey(entry.ends_at) >= weekStart);
-  const blocks = (blocksResult.data ?? []).filter((entry) => (!entry.table_id || tableIds.includes(entry.table_id)) && londonDateKey(entry.starts_at) < rangeEnd && londonDateKey(entry.ends_at) >= weekStart);
+  const reservations = (reservationsResult.data ?? []).filter((entry) => new Date(entry.ends_at).getTime() > now.getTime() && londonDateKey(entry.starts_at) < rangeEnd && londonDateKey(entry.ends_at) >= weekStart);
+  const blocks = (blocksResult.data ?? []).filter((entry) => new Date(entry.ends_at).getTime() > now.getTime() && (!entry.table_id || tableIds.includes(entry.table_id)) && londonDateKey(entry.starts_at) < rangeEnd && londonDateKey(entry.ends_at) >= weekStart);
   const playerIds = [...new Set(reservations.map((reservation) => reservation.booked_for_player_id))];
   const playersResult = playerIds.length ? await client.from("players").select("id,display_name,full_name").in("id", playerIds) : { data: [], error: null };
   if (playersResult.error) return NextResponse.json({ error: playersResult.error.message }, { status: 400 });
