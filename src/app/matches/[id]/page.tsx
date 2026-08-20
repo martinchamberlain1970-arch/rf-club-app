@@ -374,6 +374,7 @@ export default function MatchPage() {
   const [requestingReschedule, setRequestingReschedule] = useState(false);
   const livePoolSaveTimerRef = useRef<number | null>(null);
   const latestLivePoolFramesRef = useRef<FrameInput[]>([]);
+  const frameSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [rejectModal, setRejectModal] = useState<{
     submission: ResultSubmission;
     reason: string;
@@ -1052,11 +1053,24 @@ export default function MatchPage() {
   ) => {
     const client = supabase;
     if (!client || !match) return { ok: false as const, error: "Not ready." };
-    const wipe = await client.from("frames").delete().eq("match_id", match.id);
-    if (wipe.error) return { ok: false as const, error: wipe.error.message };
-    const write = await client.from("frames").insert(rows);
-    if (write.error) return { ok: false as const, error: write.error.message };
-    return { ok: true as const };
+    const matchIdToSave = match.id;
+    const operation = frameSaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const wipe = await client.from("frames").delete().eq("match_id", matchIdToSave);
+        if (wipe.error) return { ok: false as const, error: wipe.error.message };
+        if (!rows.length) return { ok: true as const };
+
+        // Upsert makes the write safe if another browser or a delayed live-score
+        // save recreates a rack after the delete but before this write completes.
+        const write = await client
+          .from("frames")
+          .upsert(rows, { onConflict: "match_id,frame_number" });
+        if (write.error) return { ok: false as const, error: write.error.message };
+        return { ok: true as const };
+      });
+    frameSaveQueueRef.current = operation.then(() => undefined, () => undefined);
+    return operation;
   };
 
   const scheduleLivePoolSave = (nextFrames: FrameInput[]) => {
