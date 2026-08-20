@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -75,13 +75,13 @@ export default function QuickDisplayPage() {
   const [tvMode, setTvMode] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const refresh = async () => {
+  const refresh = useCallback(async (showLoading = true) => {
     const client = supabase;
     if (!client) {
-      setLoading(false);
+      if (showLoading) setLoading(false);
       return;
     }
-    setLoading(true);
+    if (showLoading) setLoading(true);
     const mRes = await client
       .from("matches")
       .select("id,competition_id,round_no,match_no,best_of,status,match_mode,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,team1_handicap_start,team2_handicap_start")
@@ -89,7 +89,7 @@ export default function QuickDisplayPage() {
       .single();
     if (mRes.error || !mRes.data) {
       setMessage(mRes.error?.message ?? "Failed to load match.");
-      setLoading(false);
+      if (showLoading) setLoading(false);
       return;
     }
     const loadedMatch = mRes.data as Match;
@@ -107,16 +107,16 @@ export default function QuickDisplayPage() {
     if (pRes.data) setPlayers(pRes.data as Player[]);
     if (cRes.data) setCompetition(cRes.data as Competition);
     if (fRes.data) setFrames(fRes.data as FrameRow[]);
-    setLoading(false);
-  };
+    if (showLoading) setLoading(false);
+  }, [matchId]);
 
   useEffect(() => {
     let active = true;
-    const run = async () => {
+    const run = async (showLoading = false) => {
       if (!active) return;
-      await refresh();
+      await refresh(showLoading);
     };
-    run();
+    void run(true);
 
     const client = supabase;
     if (!client) return () => {
@@ -141,11 +141,19 @@ export default function QuickDisplayPage() {
       )
       .subscribe();
 
+    // Realtime may be unavailable on unattended TV browsers or when the
+    // frames table is not included in the publication. Poll as a reliable
+    // fallback so the score never depends on the socket connection alone.
+    const pollTimer = window.setInterval(() => {
+      void run();
+    }, 3_000);
+
     return () => {
       active = false;
+      window.clearInterval(pollTimer);
       client.removeChannel(channel);
     };
-  }, [matchId]);
+  }, [matchId, refresh]);
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -216,7 +224,7 @@ export default function QuickDisplayPage() {
               <button type="button" onClick={toggleFullscreen} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200">
                 {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
               </button>
-              <button type="button" onClick={refresh} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200">
+              <button type="button" onClick={() => void refresh(true)} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200">
                 Refresh
               </button>
               <button type="button" onClick={() => window.close()} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200">

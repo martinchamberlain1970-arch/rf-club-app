@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
@@ -372,6 +372,8 @@ export default function MatchPage() {
   const [redirectAfterInfo, setRedirectAfterInfo] = useState(false);
   const [reviewNowMs] = useState(() => Date.now());
   const [requestingReschedule, setRequestingReschedule] = useState(false);
+  const livePoolSaveTimerRef = useRef<number | null>(null);
+  const latestLivePoolFramesRef = useRef<FrameInput[]>([]);
   const [rejectModal, setRejectModal] = useState<{
     submission: ResultSubmission;
     reason: string;
@@ -601,6 +603,10 @@ export default function MatchPage() {
       active = false;
     };
   }, [matchId, admin.loading, admin.isSuper]);
+
+  useEffect(() => () => {
+    if (livePoolSaveTimerRef.current) window.clearTimeout(livePoolSaveTimerRef.current);
+  }, []);
 
   const nameMap = useMemo(() => new Map(players.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name])), [players]);
   const avatarMap = useMemo(() => new Map(players.map((p) => [p.id, normalizeAvatarUrl(p.avatar_url)])), [players]);
@@ -835,22 +841,20 @@ export default function MatchPage() {
   };
 
   const setWinner = (idx: number, side: 0 | 1 | 2) => {
-    setFrames((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], winner_side: side };
-      if (!match) return next;
-      if (side !== 0 && idx === next.length - 1) {
-        const t1 = next.filter((f) => f.winner_side === 1).length;
-        const t2 = next.filter((f) => f.winner_side === 2).length;
-        const target = firstToWin(match.best_of);
-        const hasWinner = t1 >= target || t2 >= target;
-        const hasUnfilled = next.some((f) => f.winner_side === 0);
-        if (!hasWinner && !hasUnfilled) {
-          next.push(createEmptyFrame(next.length + 1));
-        }
+    const next = [...frames];
+    next[idx] = { ...next[idx], winner_side: side };
+    if (match && side !== 0 && idx === next.length - 1) {
+      const t1 = next.filter((f) => f.winner_side === 1).length;
+      const t2 = next.filter((f) => f.winner_side === 2).length;
+      const target = firstToWin(match.best_of);
+      const hasWinner = t1 >= target || t2 >= target;
+      const hasUnfilled = next.some((f) => f.winner_side === 0);
+      if (!hasWinner && !hasUnfilled) {
+        next.push(createEmptyFrame(next.length + 1));
       }
-      return next;
-    });
+    }
+    setFrames(next);
+    scheduleLivePoolSave(next);
   };
 
   const setFlag = (idx: number, field: "break_and_run" | "run_out_against_break", value: boolean) => {
@@ -859,16 +863,15 @@ export default function MatchPage() {
       setMessage("Break & Run and Run Out are Premium features.");
       return;
     }
-    setFrames((prev) => {
-      const next = [...prev];
-      const other = field === "break_and_run" ? "run_out_against_break" : "break_and_run";
-      next[idx] = {
-        ...next[idx],
-        [field]: value,
-        [other]: value ? false : next[idx][other],
-      };
-      return next;
-    });
+    const next = [...frames];
+    const other = field === "break_and_run" ? "run_out_against_break" : "break_and_run";
+    next[idx] = {
+      ...next[idx],
+      [field]: value,
+      [other]: value ? false : next[idx][other],
+    };
+    setFrames(next);
+    scheduleLivePoolSave(next);
   };
 
   const setSnookerNumberField = (
@@ -956,7 +959,7 @@ export default function MatchPage() {
     );
   };
 
-  const buildFullResultRows = () => {
+  const buildFullResultRows = (sourceFrames: FrameInput[] = frames) => {
     if (!match || !teams) return { ok: false as const, error: "Match is not ready." };
     const rows: Array<{
       match_id: string;
@@ -979,7 +982,7 @@ export default function MatchPage() {
     let runOutTeam1 = 0;
     let runOutTeam2 = 0;
 
-    for (const f of frames) {
+    for (const f of sourceFrames) {
       if (f.winner_side === 0) continue;
       const parsed1 = parseBreakValues(f.breaks_over_30_team1_values_text);
       if (!parsed1.ok) return { ok: false as const, error: parsed1.error };
@@ -1054,6 +1057,30 @@ export default function MatchPage() {
     const write = await client.from("frames").insert(rows);
     if (write.error) return { ok: false as const, error: write.error.message };
     return { ok: true as const };
+  };
+
+  const scheduleLivePoolSave = (nextFrames: FrameInput[]) => {
+    if (isSnooker || !admin.isAdmin || !match || !teams || isArchived || isByeMatch) return;
+    latestLivePoolFramesRef.current = nextFrames;
+    if (livePoolSaveTimerRef.current) window.clearTimeout(livePoolSaveTimerRef.current);
+    livePoolSaveTimerRef.current = window.setTimeout(async () => {
+      livePoolSaveTimerRef.current = null;
+      const client = supabase;
+      if (!client || !match) return;
+      const built = buildFullResultRows(latestLivePoolFramesRef.current);
+      if (!built.ok) return;
+      const saved = await persistFrames(built.rows);
+      if (!saved.ok) {
+        setMessage(`Live score could not be updated: ${saved.error}`);
+        return;
+      }
+      const updated = await client.from("matches").update({ status: "in_progress", winner_player_id: null }).eq("id", match.id);
+      if (updated.error) {
+        setMessage(`Live score could not be updated: ${updated.error.message}`);
+        return;
+      }
+      setMatch((current) => current ? { ...current, status: "in_progress", winner_player_id: null } : current);
+    }, 250);
   };
 
   const refreshCompetitionCompletion = async () => {
@@ -1344,6 +1371,10 @@ export default function MatchPage() {
 
   const saveProgress = async (goBack: boolean, options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
+    if (livePoolSaveTimerRef.current) {
+      window.clearTimeout(livePoolSaveTimerRef.current);
+      livePoolSaveTimerRef.current = null;
+    }
     if (isArchived) {
       if (!silent) setMessage("This match is archived. Restore it to edit.");
       return;
@@ -1446,6 +1477,10 @@ export default function MatchPage() {
   };
 
   const saveResult = async () => {
+    if (livePoolSaveTimerRef.current) {
+      window.clearTimeout(livePoolSaveTimerRef.current);
+      livePoolSaveTimerRef.current = null;
+    }
     if (isArchived) {
       setMessage("This match is archived. Restore it to edit.");
       return;
