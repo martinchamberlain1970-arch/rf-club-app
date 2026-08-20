@@ -76,38 +76,24 @@ export default function QuickDisplayPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const refresh = useCallback(async (showLoading = true) => {
-    const client = supabase;
-    if (!client) {
-      if (showLoading) setLoading(false);
-      return;
-    }
     if (showLoading) setLoading(true);
-    const mRes = await client
-      .from("matches")
-      .select("id,competition_id,round_no,match_no,best_of,status,match_mode,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,team1_handicap_start,team2_handicap_start")
-      .eq("id", matchId)
-      .single();
-    if (mRes.error || !mRes.data) {
-      setMessage(mRes.error?.message ?? "Failed to load match.");
+    try {
+      const response = await fetch(`/api/public/matches/${encodeURIComponent(matchId)}/display`, { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload.error ?? "Failed to load match.");
+        return;
+      }
+      setMatch(payload.match as Match);
+      setCompetition(payload.competition as Competition);
+      setPlayers((payload.players ?? []) as Player[]);
+      setFrames((payload.frames ?? []) as FrameRow[]);
+      setMessage(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to load match.");
+    } finally {
       if (showLoading) setLoading(false);
-      return;
     }
-    const loadedMatch = mRes.data as Match;
-    setMatch(loadedMatch);
-
-    const [pRes, cRes, fRes] = await Promise.all([
-      client.from("players").select("id,display_name,full_name,avatar_url"),
-      client.from("competitions").select("id,name,sport_type,competition_format,handicap_enabled").eq("id", loadedMatch.competition_id).single(),
-      client
-        .from("frames")
-        .select("frame_number,winner_player_id,is_walkover_award")
-        .eq("match_id", matchId)
-        .order("frame_number", { ascending: true }),
-    ]);
-    if (pRes.data) setPlayers(pRes.data as Player[]);
-    if (cRes.data) setCompetition(cRes.data as Competition);
-    if (fRes.data) setFrames(fRes.data as FrameRow[]);
-    if (showLoading) setLoading(false);
   }, [matchId]);
 
   useEffect(() => {
@@ -118,29 +104,6 @@ export default function QuickDisplayPage() {
     };
     void run(true);
 
-    const client = supabase;
-    if (!client) return () => {
-      active = false;
-    };
-
-    const channel = client
-      .channel(`display-match-${matchId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "frames", filter: `match_id=eq.${matchId}` },
-        () => {
-          run();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "matches", filter: `id=eq.${matchId}` },
-        () => {
-          run();
-        }
-      )
-      .subscribe();
-
     // Realtime may be unavailable on unattended TV browsers or when the
     // frames table is not included in the publication. Poll as a reliable
     // fallback so the score never depends on the socket connection alone.
@@ -148,10 +111,31 @@ export default function QuickDisplayPage() {
       void run();
     }, 3_000);
 
+    const client = supabase;
+    const channel = client
+      ? client
+          .channel(`display-match-${matchId}`)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "frames", filter: `match_id=eq.${matchId}` },
+            () => {
+              run();
+            }
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "matches", filter: `id=eq.${matchId}` },
+            () => {
+              run();
+            }
+          )
+          .subscribe()
+      : null;
+
     return () => {
       active = false;
       window.clearInterval(pollTimer);
-      client.removeChannel(channel);
+      if (client && channel) client.removeChannel(channel);
     };
   }, [matchId, refresh]);
 
