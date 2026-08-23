@@ -61,6 +61,7 @@ type Match = {
 type Player = { id: string; display_name: string; full_name: string | null; snooker_handicap?: number | null };
 type AppUserLink = { id: string; linked_player_id: string | null };
 type CompetitionContact = { entryId: string; playerId: string; name: string; email: string | null; phone: string | null; fixtureAccessToken: string | null };
+type AdminCompetitionTab = "overview" | "entrants" | "fixtures" | "table" | "settings";
 type Entry = {
   id: string;
   competition_id: string;
@@ -431,6 +432,7 @@ export default function CompetitionPage() {
   const [refreshingFutureHandicaps, setRefreshingFutureHandicaps] = useState(false);
   const [confirmLeagueGenerationOpen, setConfirmLeagueGenerationOpen] = useState(false);
   const [entriesExpanded, setEntriesExpanded] = useState(false);
+  const [guestEntriesExpanded, setGuestEntriesExpanded] = useState(false);
   const [superEntryPlayerId, setSuperEntryPlayerId] = useState("");
   const [addingSuperEntry, setAddingSuperEntry] = useState(false);
   const [cashPaymentTarget, setCashPaymentTarget] = useState<{ entry: Entry; reset: boolean } | null>(null);
@@ -438,6 +440,32 @@ export default function CompetitionPage() {
   const [creatingMastersCup, setCreatingMastersCup] = useState(false);
   const [competitionContacts, setCompetitionContacts] = useState<CompetitionContact[]>([]);
   const [savingContactEntryId, setSavingContactEntryId] = useState<string | null>(null);
+  const [contactSearch, setContactSearch] = useState("");
+  const [adminCompetitionTab, setAdminCompetitionTab] = useState<AdminCompetitionTab>(() => {
+    if (typeof window === "undefined") return "overview";
+    const saved = window.localStorage.getItem(`competition-admin-tab:${id}`);
+    return (["overview", "entrants", "fixtures", "table", "settings"] as AdminCompetitionTab[]).includes(saved as AdminCompetitionTab)
+      ? (saved as AdminCompetitionTab)
+      : "overview";
+  });
+
+  const selectAdminCompetitionTab = (tab: AdminCompetitionTab) => {
+    setAdminCompetitionTab(tab);
+    if (typeof window !== "undefined") window.localStorage.setItem(`competition-admin-tab:${id}`, tab);
+  };
+  const showAdminArea = (tab: AdminCompetitionTab) => !admin.isAdmin || competition?.competition_format !== "league" || adminCompetitionTab === tab;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const saved = window.localStorage.getItem(`competition-admin-tab:${id}`);
+      setAdminCompetitionTab(
+        (["overview", "entrants", "fixtures", "table", "settings"] as AdminCompetitionTab[]).includes(saved as AdminCompetitionTab)
+          ? (saved as AdminCompetitionTab)
+          : "overview"
+      );
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [id]);
 
   const shareGuestSignup = async () => {
     if (!competition) return;
@@ -783,6 +811,7 @@ export default function CompetitionPage() {
   const pendingEntries = useMemo(() => entries.filter((e) => e.status === "pending"), [entries]);
   const approvedEntries = useMemo(() => entries.filter((e) => e.status === "approved"), [entries]);
   const pendingGuestEntries = useMemo(() => guestEntries.filter((entry) => entry.status === "pending"), [guestEntries]);
+  const visibleGuestEntries = guestEntriesExpanded ? guestEntries : pendingGuestEntries;
   const approvedLeaguePlayerIds = useMemo(() => approvedEntries.map((entry) => entry.player_id), [approvedEntries]);
   const activeEntryByPlayerId = useMemo(() => {
     const map = new Map<string, Entry>();
@@ -1587,6 +1616,47 @@ export default function CompetitionPage() {
     }
     return out;
   }, [competition, totalBracketRounds, round1MatchCount, matchesByKey, shortMap]);
+  const paymentOutstandingCount = competition?.entry_fee_pence
+    ? entries.filter((entry) => entry.status !== "rejected" && !["paid", "not_required"].includes(entry.payment_status ?? "pending")).length
+    : 0;
+  const linkedGuestEntryIds = new Set(entries.map((entry) => entry.public_signup_id).filter(Boolean));
+  const paymentRows = [
+    ...entries.filter((entry) => entry.status !== "rejected" && entry.status !== "withdrawn"),
+    ...guestEntries.filter((entry) => entry.status !== "rejected" && !linkedGuestEntryIds.has(entry.id)),
+  ];
+  const collectedPence = paymentRows
+    .filter((entry) => entry.payment_status === "paid")
+    .reduce((total, entry) => total + (entry.payment_amount_pence ?? competition?.entry_fee_pence ?? 0), 0);
+  const cashCollectedPence = paymentRows
+    .filter((entry) => entry.payment_status === "paid" && entry.payment_method === "cash")
+    .reduce((total, entry) => total + (entry.payment_amount_pence ?? competition?.entry_fee_pence ?? 0), 0);
+  const stripeCollectedPence = paymentRows
+    .filter((entry) => entry.payment_status === "paid" && entry.payment_method === "stripe")
+    .reduce((total, entry) => total + (entry.payment_amount_pence ?? competition?.entry_fee_pence ?? 0), 0);
+  const filteredCompetitionContacts = competitionContacts.filter((contact) =>
+    !contactSearch.trim() || contact.name.toLowerCase().includes(contactSearch.trim().toLowerCase())
+  );
+  const runningMatchCount = matches.filter((match) => match.status === "in_progress").length;
+  const firstUnfinishedRound = matches
+    .filter((match) => !["complete", "bye"].includes(match.status))
+    .sort((left, right) => (left.round_no ?? 1) - (right.round_no ?? 1))[0]?.round_no ?? null;
+  const activeRoundFixtureCount = firstUnfinishedRound === null
+    ? 0
+    : matches.filter((match) => (match.round_no ?? 1) === firstUnfinishedRound && match.status !== "bye").length;
+  const openActiveFixtures = () => {
+    if (firstUnfinishedRound !== null) {
+      setLeagueFixtureFilterMode("week");
+      setLeagueFixtureFilterWeek(String(firstUnfinishedRound));
+    }
+    selectAdminCompetitionTab("fixtures");
+  };
+  const adminTabs: Array<{ id: AdminCompetitionTab; label: string; badge?: number }> = [
+    { id: "overview", label: "Overview" },
+    { id: "entrants", label: "Entrants & payments", badge: pendingEntries.length + pendingGuestEntries.length + paymentOutstandingCount },
+    { id: "fixtures", label: "Fixtures", badge: runningMatchCount },
+    { id: "table", label: "League table" },
+    { id: "settings", label: "Settings" },
+  ];
 
   return (
     <main className="min-h-screen bg-slate-100 p-6">
@@ -1620,9 +1690,61 @@ export default function CompetitionPage() {
             }
           />
           <MessageModal message={message ?? (!supabase ? "Supabase is not configured." : null)} onClose={() => setMessage(null)} />
+          {competition && admin.isAdmin && competition.competition_format === "league" ? (
+            <nav className="sticky top-2 z-20 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur" aria-label="Competition management sections">
+              <div className="flex min-w-max gap-2">
+                {adminTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        if (tab.id === "fixtures" && firstUnfinishedRound !== null) {
+                          setLeagueFixtureFilterMode("week");
+                          setLeagueFixtureFilterWeek(String(firstUnfinishedRound));
+                        }
+                        selectAdminCompetitionTab(tab.id);
+                      }}
+                      className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${adminCompetitionTab === tab.id ? "bg-slate-950 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}
+                    >
+                      {tab.label}
+                      {tab.badge ? <span className={`rounded-full px-2 py-0.5 text-xs ${adminCompetitionTab === tab.id ? "bg-white text-slate-950" : "bg-amber-100 text-amber-900"}`}>{tab.badge}</span> : null}
+                    </button>
+                  ))}
+              </div>
+            </nav>
+          ) : null}
           {competition ? (
             <>
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              {showAdminArea("overview") ? (
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <button type="button" onClick={() => selectAdminCompetitionTab("entrants")} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-teal-300">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Approved</p>
+                    <p className="mt-1 text-2xl font-black text-slate-950">{approvedEntries.length}</p>
+                    <p className="text-xs text-slate-500">entrants</p>
+                  </button>
+                  <button type="button" onClick={() => selectAdminCompetitionTab("entrants")} className={`rounded-2xl border p-4 text-left shadow-sm transition ${pendingEntries.length + pendingGuestEntries.length ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Pending</p>
+                    <p className="mt-1 text-2xl font-black text-slate-950">{pendingEntries.length + pendingGuestEntries.length}</p>
+                    <p className="text-xs text-slate-500">sign-ups</p>
+                  </button>
+                  <button type="button" onClick={() => selectAdminCompetitionTab("entrants")} className={`rounded-2xl border p-4 text-left shadow-sm transition ${paymentOutstandingCount ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Outstanding</p>
+                    <p className="mt-1 text-2xl font-black text-slate-950">{paymentOutstandingCount}</p>
+                    <p className="text-xs text-slate-500">payments</p>
+                  </button>
+                  <button type="button" onClick={openActiveFixtures} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-teal-300">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{isOneDayLeague ? "Active round" : "Current week"}</p>
+                    <p className="mt-1 text-2xl font-black text-slate-950">{firstUnfinishedRound ?? "—"}</p>
+                    <p className="text-xs text-slate-500">{activeRoundFixtureCount} fixtures</p>
+                  </button>
+                  <button type="button" onClick={openActiveFixtures} className={`rounded-2xl border p-4 text-left shadow-sm transition ${runningMatchCount ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Live</p>
+                    <p className="mt-1 text-2xl font-black text-slate-950">{runningMatchCount}</p>
+                    <p className="text-xs text-slate-500">matches running</p>
+                  </button>
+                </section>
+              ) : null}
+              {showAdminArea("overview") ? <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="text-3xl font-semibold text-slate-900">{competition.name}</h2>
                 <p className="mt-1 text-slate-700">Venue: {competition.venue || "-"}</p>
                 <p className="mt-1 text-slate-700">Sport: {sportLabel}</p>
@@ -1652,8 +1774,16 @@ export default function CompetitionPage() {
                     ) : null}
                   </>
                 ) : null}
-              </section>
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              </section> : null}
+              {showAdminArea("entrants") ? <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                {competition.entry_fee_pence ? (
+                  <div className="mb-4 grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:grid-cols-4">
+                    <div><p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Collected</p><p className="mt-1 text-xl font-black text-emerald-950">£{(collectedPence / 100).toFixed(2)}</p></div>
+                    <div><p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Stripe</p><p className="mt-1 text-xl font-black text-emerald-950">£{(stripeCollectedPence / 100).toFixed(2)}</p></div>
+                    <div><p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Cash</p><p className="mt-1 text-xl font-black text-emerald-950">£{(cashCollectedPence / 100).toFixed(2)}</p></div>
+                    <div className={paymentOutstandingCount ? "text-amber-900" : "text-emerald-950"}><p className="text-xs font-bold uppercase tracking-wide">Outstanding</p><p className="mt-1 text-xl font-black">{paymentOutstandingCount}</p></div>
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-lg font-semibold text-slate-900">Competition Sign-ups</p>
                   <div className="flex flex-wrap gap-2">
@@ -1827,12 +1957,19 @@ export default function CompetitionPage() {
                 )}
                 {admin.isAdmin && guestEntries.length > 0 ? (
                   <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                    <p className="font-semibold text-emerald-950">Public guest entries ({guestEntries.length})</p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold text-emerald-950">Public guest entries · {pendingGuestEntries.length} pending</p>
+                      {guestEntries.length > pendingGuestEntries.length ? (
+                        <button type="button" onClick={() => setGuestEntriesExpanded((current) => !current)} className="rounded-lg border border-emerald-300 bg-white px-3 py-1 text-xs font-semibold text-emerald-900">
+                          {guestEntriesExpanded ? "Hide processed" : `Show processed (${guestEntries.length - pendingGuestEntries.length})`}
+                        </button>
+                      ) : null}
+                    </div>
                     <p className="mt-1 text-sm text-emerald-900">
                       Create or find each player yourself, add them above, then mark the guest entry as added.
                     </p>
                     <div className="mt-3 space-y-2">
-                      {guestEntries.map((entry) => (
+                      {visibleGuestEntries.map((entry) => (
                         <div key={entry.id} className="rounded-lg border border-emerald-200 bg-white px-3 py-3">
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div>
@@ -1897,19 +2034,21 @@ export default function CompetitionPage() {
                     </div>
                   </div>
                 ) : null}
-              </section>
+              </section> : null}
               {competition.competition_format === "league" ? (
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-lg font-semibold text-slate-900">{sportLabel} league format</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    {leagueScheduleLabel} · {leagueMatchLength} · {competition.handicap_enabled ? "Handicapped" : "Scratch"} scoring · meet each opponent {selectedLeagueMeetings} time{selectedLeagueMeetings === 1 ? "" : "s"}.
-                  </p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    {isOneDayLeague
-                      ? `All round-robin fixtures are played on the competition date. Each ${scoringUnit} won adds one league point.${Number(competition.league_finals_size ?? 0) === 4 ? ` The top four advance to best-of-${competition.league_semi_final_best_of ?? 3} semi-finals and a best-of-${competition.league_final_best_of ?? 5} final.` : ""}`
-                      : `Each fixture week runs from Monday 13:00 to Sunday 21:00. Each ${scoringUnit} won adds one league point. ${leagueForfeitText}`}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  {showAdminArea("overview") ? <div>
+                    <p className="text-lg font-semibold text-slate-900">{sportLabel} league format</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {leagueScheduleLabel} · {leagueMatchLength} · {competition.handicap_enabled ? "Handicapped" : "Scratch"} scoring · meet each opponent {selectedLeagueMeetings} time{selectedLeagueMeetings === 1 ? "" : "s"}.
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {isOneDayLeague
+                        ? `All round-robin fixtures are played on the competition date. Each ${scoringUnit} won adds one league point.${Number(competition.league_finals_size ?? 0) === 4 ? ` The top four advance to best-of-${competition.league_semi_final_best_of ?? 3} semi-finals and a best-of-${competition.league_final_best_of ?? 5} final.` : ""}`
+                        : `Each fixture week runs from Monday 13:00 to Sunday 21:00. Each ${scoringUnit} won adds one league point. ${leagueForfeitText}`}
+                    </p>
+                  </div> : null}
+                  {showAdminArea("settings") ? <div className="mt-3 flex flex-wrap gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                     <div className="w-full text-sm text-emerald-950">
                       <p className="font-semibold">Public WhatsApp links</p>
                       <p className="text-xs text-emerald-800">Read-only and open without an app account. Contact details are never included.</p>
@@ -1917,15 +2056,22 @@ export default function CompetitionPage() {
                     <button type="button" onClick={() => void copyPublicLeagueLink("fixtures")} className="rounded-lg bg-emerald-800 px-3 py-2 text-sm font-medium text-white">Copy fixtures link</button>
                     <button type="button" onClick={() => void copyPublicLeagueLink("table")} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900">Copy league table link</button>
                     <Link href={`/league/${competition.id}`} target="_blank" className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900">Preview public page</Link>
-                  </div>
-                  {admin.isAdmin && competitionContacts.length ? (
-                    <details className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3" open>
+                  </div> : null}
+                  {showAdminArea("entrants") && admin.isAdmin && competitionContacts.length ? (
+                    <details className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3">
                       <summary className="cursor-pointer font-semibold text-sky-950">
                         Fixture contact readiness · {competitionContacts.filter((contact) => contact.email && contact.phone).length}/{competitionContacts.length} have phone and email
                       </summary>
                       <p className="mt-1 text-xs text-sky-800">These private details are shown only to that player&apos;s fixture opponents and competition managers. Every entrant can use their private link, including players who also use the app.</p>
+                      <input
+                        type="search"
+                        value={contactSearch}
+                        onChange={(event) => setContactSearch(event.target.value)}
+                        placeholder="Find an entrant"
+                        className="mt-3 w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 sm:max-w-sm"
+                      />
                       <div className="mt-3 space-y-2">
-                        {competitionContacts.map((contact) => (
+                        {filteredCompetitionContacts.map((contact) => (
                           <div key={contact.entryId} className={`grid gap-2 rounded-lg border bg-white p-3 sm:grid-cols-[1fr_1fr_1fr_auto] ${contact.email && contact.phone ? "border-sky-200" : "border-amber-300"}`}>
                             <div>
                               <p className="font-medium text-slate-950">{contact.name}</p>
@@ -1966,12 +2112,13 @@ export default function CompetitionPage() {
                             )}
                           </div>
                         ))}
+                        {!filteredCompetitionContacts.length ? <p className="rounded-lg bg-white p-3 text-sm text-slate-600">No entrants match that search.</p> : null}
                       </div>
                     </details>
                   ) : null}
-                  {admin.isAdmin ? (
+                  {showAdminArea("settings") && admin.isAdmin ? (
                     <>
-                    <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]">
+                    {!matches.length ? <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]">
                       <label className="flex flex-col gap-1 text-sm text-slate-700">
                         Meet each opponent
                         <select
@@ -2005,7 +2152,7 @@ export default function CompetitionPage() {
                           {generatingLeagueFixtures ? "Generating..." : matches.length > 0 ? "Fixtures Generated" : isOneDayLeague ? "Create One-day Fixtures" : "Create Weekly Fixtures"}
                         </button>
                       </div>
-                    </div>
+                    </div> : <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950"><span><strong>Fixtures generated</strong> · {matches.filter((match) => match.status !== "bye").length} matches</span><button type="button" onClick={() => selectAdminCompetitionTab("fixtures")} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 font-semibold">View fixtures</button></div>}
                     {!isOneDayLeague ? (
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
                         <p className="text-sm font-semibold text-amber-950">Fixture break weeks</p>
@@ -2062,7 +2209,7 @@ export default function CompetitionPage() {
                     ) : null}
                     </>
                   ) : null}
-                  {admin.isAdmin && isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? (
+                  {showAdminArea("settings") && admin.isAdmin && isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? (
                     <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3">
                       <p className="text-sm font-semibold text-violet-950">Top-four finals</p>
                       <p className="mt-1 text-xs text-violet-800">Adjust these lengths at any point; pending semi-finals or final will update when saved.</p>
@@ -2073,7 +2220,7 @@ export default function CompetitionPage() {
                       </div>
                     </div>
                   ) : null}
-                  {admin.isAdmin && competition.handicap_enabled && competition.sport_type === "snooker" && (competition.match_mode ?? "singles") !== "doubles" && matches.length > 0 ? (
+                  {showAdminArea("settings") && admin.isAdmin && competition.handicap_enabled && competition.sport_type === "snooker" && (competition.match_mode ?? "singles") !== "doubles" && matches.length > 0 ? (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
                       <p className="text-sm text-amber-900">
                         Handicap starts are stored when fixtures are generated and capped at {MAX_SNOOKER_START}. If player handicaps change later, refresh future pending fixtures here.
@@ -2090,7 +2237,7 @@ export default function CompetitionPage() {
                   ) : null}
                   {matches.length ? (
                     <div className="mt-4 space-y-4">
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      {showAdminArea("table") ? <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p className="text-sm font-semibold text-slate-900">League table</p>
                         <p className="mt-1 text-xs text-slate-500">
                           Every {competition.sport_type === "snooker" ? "frame" : "rack"} won is one point. Completed void fixtures score no points.
@@ -2136,8 +2283,8 @@ export default function CompetitionPage() {
                             </tbody>
                           </table>
                         </div>
-                      </div>
-                      {hasTopEightFinals ? (
+                      </div> : null}
+                      {showAdminArea("table") && hasTopEightFinals ? (
                         <div className="rounded-xl border border-amber-300 bg-gradient-to-r from-amber-50 to-lime-50 p-4">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
@@ -2159,7 +2306,7 @@ export default function CompetitionPage() {
                           </div>
                         </div>
                       ) : null}
-                      {isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? (
+                      {showAdminArea("table") && isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? (
                         <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
                           <p className="text-sm font-semibold text-violet-950">Finals stage</p>
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -2176,7 +2323,7 @@ export default function CompetitionPage() {
                           </div>
                         </div>
                       ) : null}
-                      <div className="space-y-3">
+                      {showAdminArea("fixtures") ? <div className="space-y-3">
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <p className="text-sm font-semibold text-slate-900">Fixture filter</p>
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -2291,10 +2438,10 @@ export default function CompetitionPage() {
                             No fixtures match the current filter.
                           </div>
                         ) : null}
-                      </div>
+                      </div> : null}
                     </div>
                   ) : (
-                    <p className="mt-3 text-sm text-slate-600">No {isOneDayLeague ? "one-day" : "weekly"} fixtures generated yet.</p>
+                    showAdminArea("fixtures") || showAdminArea("settings") ? <p className="mt-3 text-sm text-slate-600">No {isOneDayLeague ? "one-day" : "weekly"} fixtures generated yet.</p> : null
                   )}
                 </section>
               ) : (
