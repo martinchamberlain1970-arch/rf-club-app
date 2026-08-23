@@ -1715,7 +1715,7 @@ export default function CompetitionPage() {
           ) : null}
           {competition ? (
             <>
-              {showAdminArea("overview") ? (
+              {admin.isAdmin && showAdminArea("overview") ? (
                 <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <button type="button" onClick={() => selectAdminCompetitionTab("entrants")} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-teal-300">
                     <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Approved</p>
@@ -1776,7 +1776,7 @@ export default function CompetitionPage() {
                 ) : null}
               </section> : null}
               {showAdminArea("entrants") ? <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                {competition.entry_fee_pence ? (
+                {admin.isAdmin && competition.entry_fee_pence ? (
                   <div className="mb-4 grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:grid-cols-4">
                     <div><p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Collected</p><p className="mt-1 text-xl font-black text-emerald-950">£{(collectedPence / 100).toFixed(2)}</p></div>
                     <div><p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Stripe</p><p className="mt-1 text-xl font-black text-emerald-950">£{(stripeCollectedPence / 100).toFixed(2)}</p></div>
