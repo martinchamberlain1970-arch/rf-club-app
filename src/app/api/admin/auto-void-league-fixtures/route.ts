@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
   if (competitionRes.error || !competitionRes.data) {
     return NextResponse.json({ error: competitionRes.error?.message ?? "Competition not found." }, { status: 404 });
   }
-  if (competitionRes.data.competition_format !== "league" || competitionRes.data.league_schedule_mode === "one_day") {
+  const competition = competitionRes.data;
+  if (competition.competition_format !== "league" || competition.league_schedule_mode === "one_day") {
     return NextResponse.json({ ok: true, voidedMatchIds: [] });
   }
 
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
   const now = new Date();
   const reviewMatchIds = matches
     .filter((match) => {
-      const deadline = getLeagueFixtureDeadline(match.scheduled_for);
+      const deadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
       if (!deadline || now <= deadline) return false;
       const submissions = submissionsByMatch.get(match.id) ?? [];
       return !submissions.some((submission) => submission.status === "approved");

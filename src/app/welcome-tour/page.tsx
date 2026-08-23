@@ -68,7 +68,7 @@ const stepsByRole: Record<TourRole, { title: string; detail: string; href: strin
     },
     {
       title: "4) Run league fixtures and weekly play",
-      detail: "For club leagues, approve the field, generate weekly fixtures, and keep matches moving to the Sunday 21:00 deadline.",
+      detail: "For club leagues, approve the field, generate weekly fixtures, and keep matches moving to the listed Sunday deadline.",
       href: "/events",
       cta: "Open Events",
     },

@@ -7,6 +7,7 @@ import MessageModal from "@/components/MessageModal";
 import ConfirmModal from "@/components/ConfirmModal";
 import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
+import { getLeagueFixtureDeadlineTime } from "@/lib/league-deadline";
 
 type Competition = {
   id: string;
@@ -764,7 +765,7 @@ export default function CompetitionSignupPage() {
                       </p>
                       {competition.competition_format === "league" ? (
                         <p className="mt-1 text-xs text-slate-600">
-                          Weekly fixtures are expected to be completed by 21:00 on Sunday. Unresolved fixtures then go to the Super User, who can accept a sole submission, award a genuine no-show, or void the fixture.
+                          Weekly fixtures are expected to be completed by {getLeagueFixtureDeadlineTime(competition.name)} on Sunday. Unresolved fixtures then go to the Super User, who can accept a sole submission, award a genuine no-show, or void the fixture.
                         </p>
                       ) : null}
                     </div>

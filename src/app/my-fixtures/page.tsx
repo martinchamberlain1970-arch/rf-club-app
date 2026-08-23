@@ -65,11 +65,11 @@ function isoDate(date: Date) {
 }
 
 const competitionFilterKey = (name: string | undefined) => (name ?? "Competition").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
-const fixtureTimingLabel = (scheduledFor: string | null, isLeague: boolean, complete: boolean) => {
+const fixtureTimingLabel = (scheduledFor: string | null, isLeague: boolean, complete: boolean, competitionName?: string) => {
   if (!scheduledFor) return "";
   if (isLeague) {
     const start = new Date(`${scheduledFor.slice(0, 10)}T13:00:00`);
-    const deadline = getLeagueFixtureDeadline(scheduledFor);
+    const deadline = getLeagueFixtureDeadline(scheduledFor, competitionName);
     if (deadline) return ` · Window ${start.toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} – ${deadline.toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}`;
   }
   return ` · ${complete ? "Played" : "Plays by"} ${new Date(`${scheduledFor.slice(0, 10)}T21:00:00`).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}`;
@@ -247,7 +247,7 @@ export default function MyFixturesPage() {
           <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span>{myLabel}</span><strong className="min-w-14 rounded-lg bg-slate-900 px-2 py-1.5 text-white">{scoreLabel ?? "v"}</strong><span>{opponentLabel}</span></div>
           <p className="mt-2 text-xs text-slate-500">
             {competition?.competition_format === "league" ? `Week ${match.round_no ?? 1}` : `Round ${match.round_no ?? 1} · Match ${match.match_no ?? 1}`}
-            {fixtureTimingLabel(match.scheduled_for, competition?.competition_format === "league", match.status === "complete")}
+            {fixtureTimingLabel(match.scheduled_for, competition?.competition_format === "league", match.status === "complete", competition?.name)}
           </p>
           {match.opening_break_player_id ? <p className="mt-2 text-xs font-semibold text-emerald-700">Opening break: {playerNameById.get(match.opening_break_player_id) ?? "Assigned player"}</p> : null}
           <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open fixture</p>

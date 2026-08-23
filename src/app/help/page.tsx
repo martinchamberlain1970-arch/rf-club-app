@@ -84,7 +84,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
         "Competition creation is reserved for Club Admin and Super User accounts.",
         "Competition Sign-ups lets players join open events and track entry status.",
         "Club leagues can be created for snooker or pool, with weekly fixtures generated from the approved field.",
-        "League fixtures are expected to be played by the listed Sunday 21:00 deadline unless a reschedule is approved.",
+        "League fixtures are expected to be played by the listed Sunday deadline unless a reschedule is approved.",
         "You can request a one-week reschedule for your own fixture, but only the Super User can approve it.",
       ],
     },
@@ -142,7 +142,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
       bullets: [
         "Open matches to record rack/frame scoring live.",
         "Complete a match once a player reaches the required racks/frames.",
-        "League fixtures open weekly and are intended to be played by the listed Sunday 21:00 deadline.",
+        "League fixtures open weekly and are intended to be played by the listed Sunday deadline.",
         "Unresolved fixtures remain open for a Monday Super User decision instead of being auto-voided. A genuine no-show can be awarded; otherwise the fixture can be voided for no points.",
         "Walkovers and BYEs do not count toward player stats.",
       ],

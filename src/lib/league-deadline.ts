@@ -1,3 +1,5 @@
+import { isLegionMastersLeague } from "@/lib/legion-masters";
+
 const LONDON_TIME_ZONE = "Europe/London";
 
 function londonOffsetMs(at: Date) {
@@ -15,10 +17,15 @@ function londonOffsetMs(at: Date) {
   return Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"), value("second")) - at.getTime();
 }
 
-export function getLeagueFixtureDeadline(scheduledFor: string | null | undefined) {
+export function getLeagueFixtureDeadlineTime(competitionName: string | null | undefined) {
+  return isLegionMastersLeague(competitionName) ? "22:30" : "21:00";
+}
+
+export function getLeagueFixtureDeadline(scheduledFor: string | null | undefined, competitionName?: string | null) {
   if (!scheduledFor) return null;
   const [year, month, day] = scheduledFor.slice(0, 10).split("-").map(Number);
   if (!year || !month || !day) return null;
-  const wallClockGuess = new Date(Date.UTC(year, month - 1, day + 6, 21, 0, 0));
+  const [hour, minute] = getLeagueFixtureDeadlineTime(competitionName).split(":").map(Number);
+  const wallClockGuess = new Date(Date.UTC(year, month - 1, day + 6, hour, minute, 0));
   return new Date(wallClockGuess.getTime() - londonOffsetMs(wallClockGuess));
 }

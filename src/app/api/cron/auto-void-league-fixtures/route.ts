@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
   const leagueCompetitionRes = await adminClient
     .from("competitions")
-    .select("id")
+    .select("id,name")
     .eq("competition_format", "league")
     .neq("league_schedule_mode", "one_day")
     .eq("is_archived", false)
@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
   }
 
   const competitionIds = (leagueCompetitionRes.data ?? []).map((competition) => competition.id as string);
+  const competitionNames = new Map((leagueCompetitionRes.data ?? []).map((competition) => [competition.id as string, competition.name as string]));
   if (!competitionIds.length) {
     return NextResponse.json({ ok: true, voidedMatchIds: [] });
   }
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
 
   const now = new Date();
   const overdueMatches = matches.filter((match) => {
-    const deadline = getLeagueFixtureDeadline(match.scheduled_for);
+    const deadline = getLeagueFixtureDeadline(match.scheduled_for, competitionNames.get(match.competition_id));
     if (!deadline || now <= deadline) return false;
     const submissions = submissionsByMatch.get(match.id) ?? [];
     return !submissions.some((submission) => submission.status === "approved");

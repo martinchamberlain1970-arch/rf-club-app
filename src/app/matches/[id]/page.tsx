@@ -9,6 +9,7 @@ import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
 import { logAudit } from "@/lib/audit";
 import { calculateSnookerHandicapStarts, MAX_SNOOKER_START } from "@/lib/snooker-handicap";
+import { getLeagueFixtureDeadline, getLeagueFixtureDeadlineTime } from "@/lib/league-deadline";
 import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
@@ -230,14 +231,15 @@ function stableIndexFromSeed(seed: string, size: number): number {
   return hash % size;
 }
 
-function getLeagueFixtureWindow(scheduledFor: string | null | undefined, scheduleMode: "weekly" | "one_day" = "weekly") {
+function getLeagueFixtureWindow(scheduledFor: string | null | undefined, scheduleMode: "weekly" | "one_day" = "weekly", competitionName?: string | null) {
   if (!scheduledFor) return null;
   const [year, month, day] = scheduledFor.split("-").map((value) => Number.parseInt(value, 10));
   if (!year || !month || !day) return null;
   const opensAt = new Date(year, month - 1, day, scheduleMode === "one_day" ? 0 : 13, 0, 0, 0);
   const dueAt = scheduleMode === "one_day"
     ? new Date(year, month - 1, day, 23, 59, 59, 999)
-    : new Date(year, month - 1, day + 6, 21, 0, 0, 0);
+    : getLeagueFixtureDeadline(scheduledFor, competitionName);
+  if (!dueAt) return null;
   return { opensAt, dueAt };
 }
 
@@ -686,7 +688,7 @@ export default function MatchPage() {
   }, [match, viewerLinkedPlayerId]);
   const leagueFixtureWindow = useMemo(() => {
     if (!match || competition?.competition_format !== "league") return null;
-    return getLeagueFixtureWindow(match.scheduled_for, competition.league_schedule_mode ?? "weekly");
+    return getLeagueFixtureWindow(match.scheduled_for, competition.league_schedule_mode ?? "weekly", competition.name);
   }, [competition, match]);
   const playerLeagueWindowOpen = useMemo(() => {
     if (!leagueFixtureWindow) return true;
@@ -2357,7 +2359,7 @@ export default function MatchPage() {
                 </p>
                 {isFixedRackLeague ? (
                   <p className="mt-2 rounded-lg border border-lime-200 bg-lime-50 px-3 py-2 text-sm text-lime-950">
-                    Fixture window: Monday 1:00pm to Sunday 9:00pm. A genuine no-show or arrival more than 15 minutes late can be awarded {match.best_of}-0 by the organiser. If neither player made sufficient effort, void the fixture for no points.
+                    Fixture window: Monday 1:00pm to Sunday {getLeagueFixtureDeadlineTime(competition.name) === "22:30" ? "10:30pm" : "9:00pm"}. A genuine no-show or arrival more than 15 minutes late can be awarded {match.best_of}-0 by the organiser. If neither player made sufficient effort, void the fixture for no points.
                   </p>
                 ) : null}
                 {fixtureContacts.length ? (

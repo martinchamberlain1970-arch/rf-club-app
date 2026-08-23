@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     .eq("is_completed", false);
   if (competitionsResult.error) return NextResponse.json({ error: competitionsResult.error.message }, { status: 400 });
   const competitionIds = (competitionsResult.data ?? []).map((competition) => competition.id);
+  const competitionNames = new Map((competitionsResult.data ?? []).map((competition) => [competition.id, competition.name]));
   if (!competitionIds.length) return NextResponse.json({ fixtures: [] });
 
   const matchesResult = await client
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
   if (matchesResult.error) return NextResponse.json({ error: matchesResult.error.message }, { status: 400 });
   const now = new Date();
   const overdueMatches = (matchesResult.data ?? []).filter((match) => {
-    const deadline = getLeagueFixtureDeadline(match.scheduled_for);
+    const deadline = getLeagueFixtureDeadline(match.scheduled_for, competitionNames.get(match.competition_id));
     return Boolean(deadline && now > deadline);
   });
   if (!overdueMatches.length) return NextResponse.json({ fixtures: [] });
@@ -58,7 +59,6 @@ export async function GET(request: NextRequest) {
   if (submissionsResult.error || playersResult.error) {
     return NextResponse.json({ error: submissionsResult.error?.message || playersResult.error?.message }, { status: 400 });
   }
-  const competitionNames = new Map((competitionsResult.data ?? []).map((competition) => [competition.id, competition.name]));
   const playerNames = new Map((playersResult.data ?? []).map((player) => [player.id, player.full_name?.trim() || player.display_name]));
   const submissionsByMatch = new Map<string, typeof submissionsResult.data>();
   for (const submission of submissionsResult.data ?? []) {
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
       competitionName: competitionNames.get(match.competition_id) || "League",
       week: match.round_no ?? 1,
       scheduledFor: match.scheduled_for,
-      deadline: getLeagueFixtureDeadline(match.scheduled_for)?.toISOString() ?? null,
+      deadline: getLeagueFixtureDeadline(match.scheduled_for, competitionNames.get(match.competition_id))?.toISOString() ?? null,
       player1: playerNames.get(match.player1_id ?? "") || "TBC",
       player2: playerNames.get(match.player2_id ?? "") || "TBC",
       bestOf: match.best_of,

@@ -11,6 +11,7 @@ import MessageModal from "@/components/MessageModal";
 import ConfirmModal from "@/components/ConfirmModal";
 import { calculateSnookerHandicapStarts, MAX_SNOOKER_START } from "@/lib/snooker-handicap";
 import { isLegionMastersLeague } from "@/lib/legion-masters";
+import { getLeagueFixtureDeadline, getLeagueFixtureDeadlineTime } from "@/lib/league-deadline";
 
 type Competition = {
   id: string;
@@ -358,19 +359,20 @@ function generateLeagueRounds(playerIds: string[], meetings: number) {
   return rounds;
 }
 
-function getLeagueFixtureWindow(scheduledFor: string | null | undefined, scheduleMode: "weekly" | "one_day" = "weekly") {
+function getLeagueFixtureWindow(scheduledFor: string | null | undefined, scheduleMode: "weekly" | "one_day" = "weekly", competitionName?: string | null) {
   if (!scheduledFor) return null;
   const [year, month, day] = scheduledFor.split("-").map((value) => Number.parseInt(value, 10));
   if (!year || !month || !day) return null;
   const opensAt = new Date(year, month - 1, day, scheduleMode === "one_day" ? 0 : 13, 0, 0, 0);
   const dueAt = scheduleMode === "one_day"
     ? new Date(year, month - 1, day, 23, 59, 59, 999)
-    : new Date(year, month - 1, day + 6, 21, 0, 0, 0);
+    : getLeagueFixtureDeadline(scheduledFor, competitionName);
+  if (!dueAt) return null;
   return { opensAt, dueAt };
 }
 
-function formatLeagueFixtureDeadline(scheduledFor: string | null | undefined, scheduleMode: "weekly" | "one_day" = "weekly") {
-  const window = getLeagueFixtureWindow(scheduledFor, scheduleMode);
+function formatLeagueFixtureDeadline(scheduledFor: string | null | undefined, scheduleMode: "weekly" | "one_day" = "weekly", competitionName?: string | null) {
+  const window = getLeagueFixtureWindow(scheduledFor, scheduleMode, competitionName);
   if (!window) return null;
   return window.dueAt.toLocaleString("en-GB", {
     weekday: "long",
@@ -1359,7 +1361,7 @@ export default function CompetitionPage() {
             const ownLatestSubmission = currentUserId
               ? resultSubmissions.find((submission) => submission.match_id === match.id && submission.submitted_by_user_id === currentUserId) ?? null
               : null;
-            const window = getLeagueFixtureWindow(match.scheduled_for, isOneDayLeague ? "one_day" : "weekly");
+            const window = getLeagueFixtureWindow(match.scheduled_for, isOneDayLeague ? "one_day" : "weekly", competition.name);
             const now = new Date();
             const isWeekOpenForPlayer = !window ? true : now >= window.opensAt && now <= window.dueAt;
             let chip = {
@@ -1408,7 +1410,7 @@ export default function CompetitionPage() {
               label: getMatchLabel(match, fullMap),
               status: getStatusLabel(match),
               isBye: match.status === "bye",
-              deadlineLabel: formatLeagueFixtureDeadline(match.scheduled_for, isOneDayLeague ? "one_day" : "weekly"),
+              deadlineLabel: formatLeagueFixtureDeadline(match.scheduled_for, isOneDayLeague ? "one_day" : "weekly", competition.name),
               handicapLabel,
               openingBreakerLabel,
               chip,
@@ -2062,7 +2064,7 @@ export default function CompetitionPage() {
                     <p className="mt-1 text-sm text-slate-600">
                       {isOneDayLeague
                         ? `All round-robin fixtures are played on the competition date. Each ${scoringUnit} won adds one league point.${Number(competition.league_finals_size ?? 0) === 4 ? ` The top four advance to best-of-${competition.league_semi_final_best_of ?? 3} semi-finals and a best-of-${competition.league_final_best_of ?? 5} final.` : ""}`
-                        : `Each fixture week runs from Monday 13:00 to Sunday 21:00. Each ${scoringUnit} won adds one league point. ${leagueForfeitText}`}
+                        : `Each fixture week runs from Monday 13:00 to Sunday ${getLeagueFixtureDeadlineTime(competition.name)}. Each ${scoringUnit} won adds one league point. ${leagueForfeitText}`}
                     </p>
                   </div> : null}
                   {showAdminArea("settings") ? <div className="mt-3 flex flex-wrap gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
