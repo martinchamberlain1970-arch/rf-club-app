@@ -808,8 +808,23 @@ export default function CompetitionPage() {
     () => Math.max(1, matches.filter((m) => (m.round_no ?? 1) === 1).reduce((max, m) => Math.max(max, m.match_no ?? 1), 1)),
     [matches]
   );
-  const pendingEntries = useMemo(() => entries.filter((e) => e.status === "pending"), [entries]);
-  const approvedEntries = useMemo(() => entries.filter((e) => e.status === "approved"), [entries]);
+  const approvedEntries = useMemo(() => {
+    const byPlayer = new Map<string, Entry>();
+    for (const entry of entries) {
+      if (entry.status === "approved" && !byPlayer.has(entry.player_id)) byPlayer.set(entry.player_id, entry);
+    }
+    return [...byPlayer.values()];
+  }, [entries]);
+  const pendingEntries = useMemo(() => {
+    const approvedPlayerIds = new Set(approvedEntries.map((entry) => entry.player_id));
+    const byPlayer = new Map<string, Entry>();
+    for (const entry of entries) {
+      if (entry.status === "pending" && !approvedPlayerIds.has(entry.player_id) && !byPlayer.has(entry.player_id)) {
+        byPlayer.set(entry.player_id, entry);
+      }
+    }
+    return [...byPlayer.values()];
+  }, [approvedEntries, entries]);
   const pendingGuestEntries = useMemo(() => guestEntries.filter((entry) => entry.status === "pending"), [guestEntries]);
   const visibleGuestEntries = guestEntriesExpanded ? guestEntries : pendingGuestEntries;
   const approvedLeaguePlayerIds = useMemo(() => approvedEntries.map((entry) => entry.player_id), [approvedEntries]);
@@ -817,7 +832,8 @@ export default function CompetitionPage() {
     const map = new Map<string, Entry>();
     for (const entry of entries) {
       if (entry.status !== "approved" && entry.status !== "pending") continue;
-      map.set(entry.player_id, entry);
+      const existing = map.get(entry.player_id);
+      if (!existing || (entry.status === "approved" && existing.status !== "approved")) map.set(entry.player_id, entry);
     }
     return map;
   }, [entries]);
@@ -1616,14 +1632,15 @@ export default function CompetitionPage() {
     }
     return out;
   }, [competition, totalBracketRounds, round1MatchCount, matchesByKey, shortMap]);
-  const paymentOutstandingCount = competition?.entry_fee_pence
-    ? entries.filter((entry) => entry.status !== "rejected" && !["paid", "not_required"].includes(entry.payment_status ?? "pending")).length
-    : 0;
-  const linkedGuestEntryIds = new Set(entries.map((entry) => entry.public_signup_id).filter(Boolean));
+  const activeCompetitionEntries = [...approvedEntries, ...pendingEntries];
+  const linkedGuestEntryIds = new Set(activeCompetitionEntries.map((entry) => entry.public_signup_id).filter(Boolean));
   const paymentRows = [
-    ...entries.filter((entry) => entry.status !== "rejected" && entry.status !== "withdrawn"),
+    ...activeCompetitionEntries,
     ...guestEntries.filter((entry) => entry.status !== "rejected" && !linkedGuestEntryIds.has(entry.id)),
   ];
+  const paymentOutstandingCount = competition?.entry_fee_pence
+    ? paymentRows.filter((entry) => !["paid", "not_required"].includes(entry.payment_status ?? "pending")).length
+    : 0;
   const collectedPence = paymentRows
     .filter((entry) => entry.payment_status === "paid")
     .reduce((total, entry) => total + (entry.payment_amount_pence ?? competition?.entry_fee_pence ?? 0), 0);
@@ -1718,9 +1735,9 @@ export default function CompetitionPage() {
               {admin.isAdmin && showAdminArea("overview") ? (
                 <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <button type="button" onClick={() => selectAdminCompetitionTab("entrants")} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-teal-300">
-                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Approved</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Competition field</p>
                     <p className="mt-1 text-2xl font-black text-slate-950">{approvedEntries.length}</p>
-                    <p className="text-xs text-slate-500">entrants</p>
+                    <p className="text-xs text-slate-500">approved players</p>
                   </button>
                   <button type="button" onClick={() => selectAdminCompetitionTab("entrants")} className={`rounded-2xl border p-4 text-left shadow-sm transition ${pendingEntries.length + pendingGuestEntries.length ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
                     <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Pending</p>
@@ -1802,8 +1819,8 @@ export default function CompetitionPage() {
                   </div>
                 </div>
                 <p className="mt-1 text-sm text-slate-600">
-                  Status: {competition.signup_open ? "Open" : "Closed"} · Registered pending {pendingEntries.length} · Approved {approvedEntries.length}
-                  {admin.isAdmin ? ` · Guest entries ${pendingGuestEntries.length}` : ""}
+                  Status: {competition.signup_open ? "Open" : "Closed"} · Competition field {approvedEntries.length} approved player{approvedEntries.length === 1 ? "" : "s"} · Registered pending {pendingEntries.length}
+                  {admin.isAdmin ? ` · Public sign-ups awaiting review ${pendingGuestEntries.length}` : ""}
                   {competition.max_entries ? ` / Max ${competition.max_entries}` : ""}
                 </p>
                 <p className="mt-1 text-sm text-slate-600">
@@ -1883,18 +1900,18 @@ export default function CompetitionPage() {
                     ) : null}
                   </div>
                 ) : null}
-                {entries.length > 0 ? (
+                {activeCompetitionEntries.length > 0 ? (
                   <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <button
                       type="button"
                       onClick={() => setEntriesExpanded((current) => !current)}
                       className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
                     >
-                      {entriesExpanded ? "Hide entrants" : `Show entrants (${entries.length})`}
+                      {entriesExpanded ? "Hide entry records" : `Show approved field (${approvedEntries.length})${pendingEntries.length ? ` + ${pendingEntries.length} pending` : ""}`}
                     </button>
                     {entriesExpanded ? (
                       <div className="mt-3 space-y-2">
-                        {entries.map((entry) => (
+                        {activeCompetitionEntries.map((entry) => (
                           <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
                             <div>
                               <p className="text-sm text-slate-800">

@@ -111,14 +111,44 @@ export default function CompetitionSignupPage() {
     return map;
   }, [entries, userId]);
 
-  const activeEntryCountByCompetitionId = useMemo(() => {
-    const map = new Map<string, number>();
+  const canonicalActiveEntries = useMemo(() => {
+    const map = new Map<string, Entry>();
     for (const entry of entries) {
       if (entry.status !== "approved" && entry.status !== "pending") continue;
+      const key = `${entry.competition_id}:${entry.player_id}`;
+      const existing = map.get(key);
+      if (!existing || (entry.status === "approved" && existing.status !== "approved")) {
+        map.set(key, entry);
+      }
+    }
+    return [...map.values()];
+  }, [entries]);
+
+  const activeEntryCountByCompetitionId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of canonicalActiveEntries) {
       map.set(entry.competition_id, (map.get(entry.competition_id) ?? 0) + 1);
     }
     return map;
-  }, [entries]);
+  }, [canonicalActiveEntries]);
+
+  const approvedEntryCountByCompetitionId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of canonicalActiveEntries) {
+      if (entry.status !== "approved") continue;
+      map.set(entry.competition_id, (map.get(entry.competition_id) ?? 0) + 1);
+    }
+    return map;
+  }, [canonicalActiveEntries]);
+
+  const pendingEntryCountByCompetitionId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of canonicalActiveEntries) {
+      if (entry.status !== "pending") continue;
+      map.set(entry.competition_id, (map.get(entry.competition_id) ?? 0) + 1);
+    }
+    return map;
+  }, [canonicalActiveEntries]);
 
   const activeCompetitionId = useMemo(() => {
     if (selectedCompetitionId && competitions.some((competition) => competition.id === selectedCompetitionId)) {
@@ -155,9 +185,7 @@ export default function CompetitionSignupPage() {
 
   const financeRows = useMemo<FinanceRow[]>(() => {
     if (!activeCompetitionId) return [];
-    const activeEntries = entries.filter(
-      (entry) => entry.competition_id === activeCompetitionId && (entry.status === "pending" || entry.status === "approved")
-    );
+    const activeEntries = canonicalActiveEntries.filter((entry) => entry.competition_id === activeCompetitionId);
     const linkedSignupIds = new Set(activeEntries.map((entry) => entry.public_signup_id).filter(Boolean));
     const registeredRows = activeEntries.map((entry) => ({
       key: `entry:${entry.id}`,
@@ -182,7 +210,7 @@ export default function CompetitionSignupPage() {
         paid_at: entry.paid_at,
       }));
     return [...registeredRows, ...unlinkedGuestRows].sort((a, b) => a.name.localeCompare(b.name));
-  }, [activeCompetitionId, entries, guestEntries, playerNameById]);
+  }, [activeCompetitionId, canonicalActiveEntries, guestEntries, playerNameById]);
 
   const paidFinanceRows = financeRows.filter((row) => row.payment_status === "paid");
   const outstandingFinanceRows = financeRows.filter((row) => row.payment_status !== "paid" && row.payment_status !== "not_required");
@@ -498,8 +526,13 @@ export default function CompetitionSignupPage() {
                       {sportLabel[selectedCompetition.sport_type]}
                     </span>
                     <span className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-indigo-900">
-                      {activeEntryCountByCompetitionId.get(selectedCompetition.id) ?? 0} registered
+                      {approvedEntryCountByCompetitionId.get(selectedCompetition.id) ?? 0} approved in field
                     </span>
+                    {(pendingEntryCountByCompetitionId.get(selectedCompetition.id) ?? 0) > 0 ? (
+                      <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-amber-900">
+                        {pendingEntryCountByCompetitionId.get(selectedCompetition.id) ?? 0} registered pending
+                      </span>
+                    ) : null}
                     {admin.isAdmin ? (
                       <span className={`rounded-full px-3 py-1 ${pendingGuestEntries.length ? "bg-amber-200 text-amber-950" : "bg-emerald-100 text-emerald-900"}`}>
                         {pendingGuestEntries.length} public to review
@@ -697,9 +730,7 @@ export default function CompetitionSignupPage() {
             {competitions.filter((competition) => competition.id === activeCompetitionId).map((competition) => {
               const myEntry = myEntriesByCompetitionId.get(competition.id) ?? null;
               const currentEntries = activeEntryCountByCompetitionId.get(competition.id) ?? 0;
-              const visibleEntries = entries.filter(
-                (entry) => entry.competition_id === competition.id && (entry.status === "pending" || entry.status === "approved")
-              );
+              const visibleEntries = canonicalActiveEntries.filter((entry) => entry.competition_id === competition.id);
               const approvedCount = visibleEntries.filter((entry) => entry.status === "approved").length;
               const pendingCount = visibleEntries.filter((entry) => entry.status === "pending").length;
               const isFull = Boolean(competition.max_entries && currentEntries >= competition.max_entries);
@@ -718,10 +749,11 @@ export default function CompetitionSignupPage() {
                         {competition.handicap_enabled ? " · handicapped" : ""}
                         {competition.venue ? ` · ${competition.venue}` : ""}
                       </p>
-                      <p className="text-xs text-slate-500">
-                        Entries: {currentEntries}
+                      <p className="text-xs font-semibold text-slate-700">
+                        Competition field: {approvedCount} approved player{approvedCount === 1 ? "" : "s"}
                         {competition.max_entries ? ` / ${competition.max_entries}` : ""}
                       </p>
+                      {pendingCount ? <p className="text-xs text-amber-700">Awaiting approval: {pendingCount}</p> : null}
                       {competition.signup_deadline ? (
                         <p className="text-xs text-slate-500">
                           Deadline: {new Date(competition.signup_deadline).toLocaleString()}
@@ -796,10 +828,10 @@ export default function CompetitionSignupPage() {
                   <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
-                        <p className="text-sm font-semibold text-slate-800">Current field</p>
+                        <p className="text-sm font-semibold text-slate-800">Competition field: {approvedCount} approved player{approvedCount === 1 ? "" : "s"}</p>
                         <p className="mt-1 text-xs text-slate-500">
-                          Approved: {approvedCount} · Pending: {pendingCount}
-                          {competition.max_entries ? ` · Capacity: ${currentEntries}/${competition.max_entries}` : ` · Current entries: ${currentEntries}`}
+                          Pending approval: {pendingCount}
+                          {competition.max_entries ? ` · Active entries against capacity: ${currentEntries}/${competition.max_entries}` : ""}
                         </p>
                       </div>
                       {isFull ? (
@@ -818,7 +850,7 @@ export default function CompetitionSignupPage() {
                         onClick={() => toggleCompetitionField(competition.id)}
                         className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
                       >
-                        {fieldExpanded ? "Hide field" : `Show field${visibleEntries.length ? ` (${visibleEntries.length})` : ""}`}
+                        {fieldExpanded ? "Hide entries" : `Show approved field (${approvedCount})${pendingCount ? ` + ${pendingCount} pending` : ""}`}
                       </button>
                     </div>
                     {fieldExpanded ? (
