@@ -1,5 +1,5 @@
-const CACHE_NAME = "rack-frame-shell-v2";
-const APP_ASSETS = ["/pwa/icon-192.png", "/pwa/icon-512.png"];
+const CACHE_NAME = "rack-frame-shell-v3";
+const APP_ASSETS = ["/pwa/icon-192.png", "/pwa/icon-512.png", "/pwa/notification-badge.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS)));
@@ -26,7 +26,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(payload.title, {
     body: payload.body,
     icon: "/pwa/icon-192.png",
-    badge: "/pwa/icon-192.png",
+    badge: "/pwa/notification-badge.svg",
     tag: payload.tag,
     data: { url: payload.url || "/notifications" },
   }));

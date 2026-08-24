@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Rack and Frame notification badge">
+  <defs>
+    <mask id="eight-ball-cutout">
+      <rect width="96" height="96" fill="white"/>
+      <circle cx="45" cy="41" r="6" fill="black"/>
+      <circle cx="51" cy="55" r="6" fill="black"/>
+    </mask>
+  </defs>
+  <circle cx="48" cy="48" r="39" fill="#000" mask="url(#eight-ball-cutout)"/>
+</svg>
