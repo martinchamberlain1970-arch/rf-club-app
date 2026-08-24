@@ -370,6 +370,7 @@ export default function CompetitionSignupPage() {
           reviewed_at: null,
         };
 
+    let approvedEntryId = existing?.id ?? null;
     if (existing) {
       const { error } = await client
         .from("competition_entries")
@@ -381,22 +382,32 @@ export default function CompetitionSignupPage() {
         return;
       }
     } else {
-      const { error } = await client.from("competition_entries").insert({
+      const { data, error } = await client.from("competition_entries").insert({
         competition_id: competition.id,
         requester_user_id: userId,
         player_id: linkedPlayerId,
         status: nextStatus,
         ...approvalFields,
-      });
+      }).select("id").single();
       setBusyCompetitionId(null);
       if (error) {
         setMessage(error.message);
         return;
       }
+      approvedEntryId = data.id;
     }
 
     if (admin.isSuper) {
       setMessage("Your Super User entry was approved automatically.");
+      const sessionResult = await client.auth.getSession();
+      const accessToken = sessionResult.data.session?.access_token;
+      if (accessToken && approvedEntryId) {
+        await fetch("/api/admin/competition-welcome", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ entryId: approvedEntryId, competitionId: competition.id }),
+        });
+      }
     }
 
     await load();

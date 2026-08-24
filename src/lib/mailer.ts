@@ -48,3 +48,14 @@ export async function sendEmail(input: SendEmailInput) {
   if (!response.ok || !result.id) throw new Error(result.message || result.name || `Resend returned ${response.status}.`);
   return { messageId: result.id, provider: "Resend" as const };
 }
+
+export async function getEmailDeliveryStatus(messageId: string) {
+  if (!process.env.RESEND_API_KEY) return null;
+  const response = await fetch(`https://api.resend.com/emails/${encodeURIComponent(messageId)}`, {
+    headers: { Authorization: `Bearer ${requiredEnv("RESEND_API_KEY")}`, "User-Agent": "rack-and-frame-club/1.0" },
+    cache: "no-store",
+  });
+  const result = await response.json().catch(() => ({})) as { last_event?: string; created_at?: string; error?: { message?: string } };
+  if (!response.ok) return { status: "unknown", checkedAt: new Date().toISOString(), error: result.error?.message ?? `Resend returned ${response.status}.` };
+  return { status: result.last_event ?? "sent", checkedAt: new Date().toISOString(), error: null };
+}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { legionMastersCupName } from "@/lib/legion-masters";
+import { sendCompetitionWelcome } from "@/lib/competition-welcome";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
       .eq("is_archived", false),
     client
       .from("competition_entries")
-      .select("player_id")
+      .select("player_id,requester_user_id,public_signup_id")
       .eq("competition_id", competitionId)
       .eq("status", "approved"),
   ]);
@@ -143,22 +144,35 @@ export async function POST(request: NextRequest) {
     opening_break_player_id: source.app_assign_opening_break ? qualifiers[index % 2 === 0 ? leftIndex : rightIndex].playerId : null,
     is_archived: false,
   }));
-  const cupEntries = qualifiers.map((qualifier) => ({
-    competition_id: cupId,
-    requester_user_id: user.id,
-    player_id: qualifier.playerId,
-    status: "approved",
-    payment_status: "not_required",
-    reviewed_at: new Date().toISOString(),
-  }));
+  const sourceEntryByPlayer = new Map(
+    (entriesResult.data ?? []).map((entry) => [String(entry.player_id), entry])
+  );
+  const cupEntries = qualifiers.map((qualifier) => {
+    const sourceEntry = sourceEntryByPlayer.get(qualifier.playerId);
+    return {
+      competition_id: cupId,
+      requester_user_id: sourceEntry?.requester_user_id ?? user.id,
+      player_id: qualifier.playerId,
+      public_signup_id: sourceEntry?.public_signup_id ?? null,
+      status: "approved",
+      payment_status: "not_required",
+      reviewed_at: new Date().toISOString(),
+    };
+  });
   const [matchInsert, entryInsert] = await Promise.all([
     client.from("matches").insert(cupMatches),
-    client.from("competition_entries").insert(cupEntries),
+    client.from("competition_entries").insert(cupEntries).select("id"),
   ]);
   if (matchInsert.error || entryInsert.error) {
     await client.from("competitions").delete().eq("id", cupId);
     return NextResponse.json({ error: matchInsert.error?.message ?? entryInsert.error?.message ?? "Masters Cup setup failed." }, { status: 400 });
   }
+
+  await Promise.all(
+    (entryInsert.data ?? []).map((entry) =>
+      sendCompetitionWelcome(client, String(entry.id), { user: { id: user.id, email: user.email }, role: isSuper ? "super_user" : role })
+    )
+  );
 
   return NextResponse.json({ ok: true, competitionId: cupId, qualifiers, existing: false });
 }

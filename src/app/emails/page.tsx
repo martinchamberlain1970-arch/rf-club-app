@@ -32,6 +32,9 @@ type StatusFilter = "all" | "sent" | "failed";
 type TypeFilter = "all" | "registration" | "password" | "booking";
 
 const emailActions = [
+  "competition_welcome_sent",
+  "competition_welcome_failed",
+  "competition_welcome_skipped",
   "email_invitation_sent",
   "email_invitation_failed",
   "password_reset_link_sent",
@@ -42,6 +45,7 @@ const emailActions = [
 ];
 
 function emailType(row: EmailRow) {
+  if (row.action.startsWith("competition_welcome")) return { key: "registration" as const, label: "Competition welcome" };
   if (row.action.startsWith("password_reset")) return { key: "password" as const, label: "Password reset" };
   if (row.action.startsWith("table_booking")) return { key: "booking" as const, label: row.meta?.email_type || "Table booking" };
   return { key: "registration" as const, label: "Registration invitation" };

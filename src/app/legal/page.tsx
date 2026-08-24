@@ -43,7 +43,7 @@ export default function LegalPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Ownership</p>
-                <p className="mt-2 text-slate-800">Copyright © 2026 Rack &amp; Frame. All rights reserved.</p>
+                <p className="mt-2 text-slate-800">Copyright © 2026 Martin Chamberlain. Rack &amp; Frame. All rights reserved.</p>
                 <p className="mt-2 text-slate-800">Brand, app name, and visual identity are proprietary.</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">

@@ -34,6 +34,27 @@ type OpenCompetitionRow = {
   created_at: string;
   signup_deadline: string | null;
 };
+type BookingNotificationRow = {
+  id: string;
+  booked_by_user_id: string;
+  starts_at: string;
+  created_at: string;
+  status: string;
+  purpose: string;
+  participant_one: string | null;
+  participant_two: string | null;
+  team_name: string | null;
+  notes: string | null;
+  rejection_reason: string | null;
+  cue_tables: { name?: string } | null;
+};
+type PushStatus = { configured: boolean; publicKey: string | null; subscriptionCount: number; enabledOnDevice: boolean; permission: NotificationPermission | "unsupported" };
+
+function urlBase64ToUint8Array(value: string) {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const raw = window.atob((value + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
+}
 
 function getRoleSummary(isSuper: boolean, isAdmin: boolean) {
   if (isSuper) {
@@ -105,6 +126,8 @@ export default function NotificationsPage() {
   const admin = useAdminStatus();
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [pushStatus, setPushStatus] = useState<PushStatus | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     const raw = window.localStorage.getItem("notifications_dismissed");
@@ -130,6 +153,84 @@ export default function NotificationsPage() {
       window.localStorage.setItem(dismissedKey, JSON.stringify(Array.from(next)));
     }
   };
+
+  const pushRequest = async (method: "GET" | "POST" | "DELETE", body?: Record<string, unknown>) => {
+    const client = supabase;
+    if (!client) throw new Error("The app connection is unavailable.");
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) throw new Error("Please sign in again.");
+    const response = await fetch("/api/push/subscriptions", {
+      method,
+      headers: { ...(body ? { "Content-Type": "application/json" } : {}), Authorization: `Bearer ${accessToken}` },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error ?? "Notification settings could not be updated.");
+    return data;
+  };
+
+  const refreshPushStatus = async () => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      setPushStatus({ configured: false, publicKey: null, subscriptionCount: 0, enabledOnDevice: false, permission: "unsupported" });
+      return;
+    }
+    try {
+      const [data, registration] = await Promise.all([pushRequest("GET"), navigator.serviceWorker.ready]);
+      const subscription = await registration.pushManager.getSubscription();
+      setPushStatus({ configured: Boolean(data.configured), publicKey: data.publicKey ?? null, subscriptionCount: Number(data.subscriptionCount ?? 0), enabledOnDevice: Boolean(subscription), permission: Notification.permission });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Notification status could not be checked.");
+    }
+  };
+
+  const enablePush = async () => {
+    if (!pushStatus?.configured || !pushStatus.publicKey) {
+      setMessage("Android notifications are awaiting server configuration.");
+      return;
+    }
+    setPushBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") throw new Error("Notifications were not allowed. Enable them for Rack & Frame in Android site settings, then try again.");
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      const subscription = existing ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(pushStatus.publicKey) });
+      await pushRequest("POST", { subscription: subscription.toJSON() });
+      const test = await pushRequest("POST", { action: "test" });
+      setMessage(Number(test.sent ?? 0) > 0 ? "Android notifications enabled. A test notification has been sent to this device." : "Notifications were enabled, but the test could not yet be delivered.");
+      await refreshPushStatus();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Notifications could not be enabled.");
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const disablePush = async () => {
+    setPushBusy(true);
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await pushRequest("DELETE", { endpoint: subscription.endpoint });
+        await subscription.unsubscribe();
+      }
+      setMessage("Notifications disabled on this device.");
+      await refreshPushStatus();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Notifications could not be disabled.");
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (admin.loading || !admin.userId) return;
+    void refreshPushStatus();
+    // Push status is refreshed after explicit settings changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admin.loading, admin.userId]);
 
   const loadMatchLabels = async (rows: ResultRow[]) => {
     const client = supabase;
@@ -203,6 +304,34 @@ export default function NotificationsPage() {
             created_at: c.created_at,
             href: "/signups",
             status: "open",
+          });
+        });
+      }
+      let bookingQuery = client
+        .from("table_reservations")
+        .select("id,booked_by_user_id,starts_at,created_at,status,purpose,participant_one,participant_two,team_name,notes,rejection_reason,cue_tables(name)")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      bookingQuery = admin.isAdmin
+        ? bookingQuery.eq("status", "pending")
+        : bookingQuery.eq("booked_by_user_id", admin.userId).in("status", ["pending", "booked", "rejected"]);
+      const bookingResult = await bookingQuery;
+      if (!bookingResult.error) {
+        (bookingResult.data ?? []).forEach((booking) => {
+          const row = booking as unknown as BookingNotificationRow;
+          const bookingName = row.purpose === "league_match"
+            ? row.team_name || "League team booking"
+            : row.purpose === "other"
+              ? row.notes || "Other table booking"
+              : [row.participant_one, row.participant_two].filter(Boolean).join(" vs. ") || "Competition booking";
+          const status = row.status === "booked" ? "approved" : row.status;
+          out.push({
+            key: `table_booking:${row.id}:${row.status}`,
+            title: admin.isAdmin && row.status === "pending" ? "Table booking awaiting review" : `Table booking ${row.status === "booked" ? "approved" : row.status}`,
+            detail: `${bookingName} · ${row.cue_tables?.name ?? "Cue table"} · ${new Date(row.starts_at).toLocaleString()}${row.rejection_reason ? ` · ${row.rejection_reason}` : ""}`,
+            created_at: row.created_at,
+            href: "/table-bookings",
+            status,
           });
         });
       }
@@ -456,6 +585,22 @@ export default function NotificationsPage() {
                   <p className="mt-1 text-2xl font-semibold text-slate-900">{dismissedCount}</p>
                 </div>
               </div>
+            </div>
+          </section>
+          <section className="rounded-3xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="font-semibold text-violet-950">Phone notifications</p>
+                <p className="mt-1 max-w-2xl text-sm text-violet-800">Installed Android PWAs need permission on each phone. Enable this once to receive important competition and booking alerts even when Rack &amp; Frame is closed.</p>
+                <p className="mt-2 text-xs font-semibold text-violet-700">
+                  {!pushStatus ? "Checking this device…" : pushStatus.permission === "unsupported" ? "This browser does not support Web Push." : !pushStatus.configured ? "Server setup pending." : pushStatus.enabledOnDevice && pushStatus.permission === "granted" ? "Enabled on this device" : pushStatus.permission === "denied" ? "Blocked in Android settings" : "Not enabled on this device"}
+                </p>
+              </div>
+              {pushStatus?.enabledOnDevice ? (
+                <button type="button" disabled={pushBusy} onClick={() => void disablePush()} className="rounded-xl border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-900 disabled:opacity-50">Disable on this device</button>
+              ) : (
+                <button type="button" disabled={pushBusy || !pushStatus?.configured || pushStatus?.permission === "unsupported"} onClick={() => void enablePush()} className="rounded-xl bg-violet-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Enable phone notifications</button>
+              )}
             </div>
           </section>
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">

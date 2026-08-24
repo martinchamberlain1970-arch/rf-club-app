@@ -506,6 +506,15 @@ export default function NewEventPage() {
         setMessage(entryRes.error.message);
         return;
       }
+      const sessionResult = await client.auth.getSession();
+      const accessToken = sessionResult.data.session?.access_token;
+      if (accessToken) {
+        await fetch("/api/admin/competition-welcome", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ competitionId }),
+        });
+      }
     }
 
     await logAudit("competition_created", {

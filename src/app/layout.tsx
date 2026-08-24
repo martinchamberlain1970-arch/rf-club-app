@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import PwaSetup from "@/components/PwaSetup";
+import AppCopyright from "@/components/AppCopyright";
 
 export const metadata: Metadata = {
   title: "Rack & Frame Club",
@@ -31,6 +32,7 @@ export default function RootLayout({
       <body className="antialiased">
         <PwaSetup />
         {children}
+        <AppCopyright />
       </body>
     </html>
   );

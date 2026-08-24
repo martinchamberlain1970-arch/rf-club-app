@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { hasMailerConfig, sendEmail } from "@/lib/mailer";
+import { sendPushToUserIds } from "@/lib/push-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -76,34 +76,12 @@ function validTime(value: string) {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
-const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 const bookingTitle = (reservation: { purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null; notes?: string | null }) => reservation.purpose === "league_match"
   ? reservation.team_name || "League team booking"
   : reservation.purpose === "other"
     ? reservation.notes || "Other table booking"
     : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || "Competition booking";
 const londonBookingTime = (startsAt: string, endsAt: string) => `${new Date(startsAt).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}–${new Date(endsAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}`;
-
-async function sendDecisionEmail(reservation: { requester_email?: string | null; starts_at: string; ends_at: string; purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null; notes?: string | null }, tableName: string, decision: "accepted" | "rejected" | "deleted", reason?: string | null) {
-  const title = bookingTitle(reservation);
-  const when = londonBookingTime(reservation.starts_at, reservation.ends_at);
-  const decisionText = decision === "accepted" ? "has been accepted" : decision === "rejected" ? "has been rejected" : "has been removed";
-  const subject = `Table booking ${decision}`;
-  const sender = process.env.EMAIL_FROM_ADDRESS ?? null;
-  const baseResult = { recipient: reservation.requester_email ?? null, subject, provider: "Resend", sender };
-  if (!reservation.requester_email || !hasMailerConfig()) return { ...baseResult, emailSent: false, emailError: reservation.requester_email ? "Resend is not configured." : "No requester email address is available.", messageId: null };
-  try {
-    const emailResult = await sendEmail({
-      to: reservation.requester_email,
-      subject,
-      text: `Your ${tableName} booking for ${title} on ${when} ${decisionText}.${reason ? `\n\nReason: ${reason}` : ""}`,
-      html: `<p>Your <strong>${escapeHtml(tableName)}</strong> booking for <strong>${escapeHtml(title)}</strong> on ${escapeHtml(when)} ${decisionText}.</p>${reason ? `<p><strong>Reason:</strong> ${escapeHtml(reason)}</p>` : ""}`,
-    });
-    return { ...baseResult, emailSent: true, emailError: null, messageId: emailResult.messageId };
-  } catch (error) {
-    return { ...baseResult, emailSent: false, emailError: error instanceof Error ? error.message : "The email could not be sent.", messageId: null };
-  }
-}
 
 export async function GET(request: NextRequest) {
   const auth = await authorize(request);
@@ -262,7 +240,7 @@ export async function POST(request: NextRequest) {
     const reservationId = String(body?.reservationId ?? "");
     const reason = String(body?.reason ?? "").trim().slice(0, 240) || null;
     if (action === "reject" && !reason) return NextResponse.json({ error: "Enter a reason or comment before declining the booking." }, { status: 400 });
-    const reservationResult = await auth.client.from("table_reservations").select("id,table_id,starts_at,ends_at,purpose,notes,participant_one,participant_two,team_name,requester_email,status,cue_tables(name)").eq("id", reservationId).maybeSingle();
+    const reservationResult = await auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,starts_at,ends_at,purpose,notes,participant_one,participant_two,team_name,requester_email,status,cue_tables(name)").eq("id", reservationId).maybeSingle();
     if (reservationResult.error) return NextResponse.json({ error: reservationResult.error.message }, { status: 400 });
     const reservation = reservationResult.data;
     if (!reservation) return NextResponse.json({ error: "Booking request not found." }, { status: 404 });
@@ -291,9 +269,7 @@ export async function POST(request: NextRequest) {
       const deleteResult = await auth.client.from("table_reservations").delete().eq("id", reservationId);
       if (deleteResult.error) return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
     }
-    const tableRelation = reservation.cue_tables as unknown as { name?: string } | null;
     const decision = action === "approve" ? "accepted" : action === "reject" ? "rejected" : "deleted";
-    const email = await sendDecisionEmail(reservation, tableRelation?.name || "cue table", decision, reason);
     await auth.client.from("audit_logs").insert({
       actor_user_id: auth.user.id,
       actor_email: auth.user.email ?? null,
@@ -303,17 +279,17 @@ export async function POST(request: NextRequest) {
       entity_id: reservationId,
       summary: `Table booking ${decision}: ${bookingTitle(reservation)}.`,
       meta: {
-        email_sent: email.emailSent,
-        email_error: email.emailError,
-        recipient: email.recipient,
-        subject: email.subject,
-        provider: email.provider,
-        sender: email.sender,
-        message_id: email.messageId,
-        email_type: "Table booking",
+        notification_type: "in_app",
+        reason,
       },
     });
-    return NextResponse.json({ ok: true, ...email });
+    await sendPushToUserIds(auth.client, [reservation.booked_by_user_id], {
+      title: `Table booking ${decision}`,
+      body: `${bookingTitle(reservation)} · ${londonBookingTime(reservation.starts_at, reservation.ends_at)}${reason ? ` · ${reason}` : ""}`,
+      url: "/table-bookings",
+      tag: `table-booking-${reservationId}`,
+    });
+    return NextResponse.json({ ok: true, notification: "in_app" });
   }
 
   if (action === "cancel") {
@@ -390,5 +366,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
   }
   await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: auth.isSuper ? "table_reserved" : "table_booking_requested", entity_type: "table_reservation", entity_id: insertResult.data.id, summary: `${auth.isSuper ? "Cue table reserved" : "Cue table booking requested"} from ${startsAt.toISOString()} to ${endsAt.toISOString()}.`, meta: { table_id: tableId, player_id: auth.playerId, purpose } });
+  if (!auth.isSuper) {
+    const managersResult = await auth.client.from("app_users").select("id").in("role", ["owner", "super"]);
+    await sendPushToUserIds(auth.client, (managersResult.data ?? []).map((manager) => manager.id), {
+      title: "New table-booking request",
+      body: `${bookingTitle({ purpose, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, notes: otherReason })} · ${londonBookingTime(startsAt.toISOString(), endsAt.toISOString())}`,
+      url: "/table-bookings",
+      tag: `table-booking-request-${insertResult.data.id}`,
+    });
+  }
   return NextResponse.json({ ok: true, id: insertResult.data.id, status });
 }

@@ -62,6 +62,7 @@ type Match = {
 type Player = { id: string; display_name: string; full_name: string | null; snooker_handicap?: number | null };
 type AppUserLink = { id: string; linked_player_id: string | null };
 type CompetitionContact = { entryId: string; playerId: string; name: string; email: string | null; phone: string | null; fixtureAccessToken: string | null };
+type WelcomeAudit = { totals: { approved: number; sent: number; missing: number; failed: number; noEmail: number; delivered: number }; rows: Array<{ entryId: string; playerName: string; email: string | null; status: "sent" | "missing" | "failed" | "no_email"; sentAt: string | null; delivery?: { status?: string } | null }> };
 type AdminCompetitionTab = "overview" | "entrants" | "fixtures" | "table" | "settings";
 type Entry = {
   id: string;
@@ -443,6 +444,9 @@ export default function CompetitionPage() {
   const [competitionContacts, setCompetitionContacts] = useState<CompetitionContact[]>([]);
   const [savingContactEntryId, setSavingContactEntryId] = useState<string | null>(null);
   const [contactSearch, setContactSearch] = useState("");
+  const [welcomeAudit, setWelcomeAudit] = useState<WelcomeAudit | null>(null);
+  const [welcomeAuditBusy, setWelcomeAuditBusy] = useState(false);
+  const [confirmWelcomeSendOpen, setConfirmWelcomeSendOpen] = useState(false);
   const [adminCompetitionTab, setAdminCompetitionTab] = useState<AdminCompetitionTab>(() => {
     if (typeof window === "undefined") return "overview";
     const saved = window.localStorage.getItem(`competition-admin-tab:${id}`);
@@ -454,6 +458,45 @@ export default function CompetitionPage() {
   const selectAdminCompetitionTab = (tab: AdminCompetitionTab) => {
     setAdminCompetitionTab(tab);
     if (typeof window !== "undefined") window.localStorage.setItem(`competition-admin-tab:${id}`, tab);
+  };
+
+  const loadWelcomeAudit = async (verify = false) => {
+    const client = supabase;
+    if (!client || !competition || !admin.isAdmin) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) return;
+    setWelcomeAuditBusy(true);
+    const response = await fetch(`/api/admin/competition-welcome?competitionId=${encodeURIComponent(competition.id)}${verify ? "&verify=true" : ""}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const data = await response.json().catch(() => ({}));
+    setWelcomeAuditBusy(false);
+    if (!response.ok) {
+      setMessage(data.error ?? "Welcome-email coverage could not be loaded.");
+      return;
+    }
+    setWelcomeAudit(data as WelcomeAudit);
+  };
+
+  const sendMissingWelcomeEmails = async () => {
+    const client = supabase;
+    if (!client || !competition || !admin.isAdmin) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) return;
+    setWelcomeAuditBusy(true);
+    const response = await fetch("/api/admin/competition-welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ competitionId: competition.id }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setWelcomeAuditBusy(false);
+    if (!response.ok) {
+      setMessage(data.error ?? "Welcome emails could not be sent.");
+      return;
+    }
+    setMessage(`${Number(data.sent ?? 0)} welcome email${Number(data.sent ?? 0) === 1 ? " was" : "s were"} sent.${Number(data.noEmail ?? 0) ? ` ${Number(data.noEmail)} entrant${Number(data.noEmail) === 1 ? " has" : "s have"} no email address.` : ""}${Number(data.failed ?? 0) ? ` ${Number(data.failed)} failed and need attention.` : ""}`);
+    await loadWelcomeAudit(true);
   };
   const showAdminArea = (tab: AdminCompetitionTab) => !admin.isAdmin || competition?.competition_format !== "league" || adminCompetitionTab === tab;
 
@@ -468,6 +511,13 @@ export default function CompetitionPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [id]);
+
+  useEffect(() => {
+    if (!competition?.id || !admin.isAdmin) return;
+    void loadWelcomeAudit(false);
+    // The audit is refreshed explicitly after email actions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [competition?.id, admin.isAdmin]);
 
   const shareGuestSignup = async () => {
     if (!competition) return;
@@ -582,6 +632,19 @@ export default function CompetitionPage() {
     if (res.error) {
       setMessage(res.error.message);
       return;
+    }
+    if (status === "approved") {
+      const sessionResult = await client.auth.getSession();
+      const accessToken = sessionResult.data.session?.access_token;
+      if (accessToken) {
+        const welcomeResponse = await fetch("/api/admin/competition-welcome", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ entryId, competitionId: competition?.id }),
+        });
+        const welcomeData = await welcomeResponse.json().catch(() => ({}));
+        if (!welcomeResponse.ok || Number(welcomeData.failed ?? 0) > 0) setMessage("Entry approved, but the welcome email needs attention in Email Activity.");
+      }
     }
     setEntries((prev) => prev.map((e) => (e.id === entryId ? { ...e, status } : e)));
   };
@@ -881,8 +944,8 @@ export default function CompetitionPage() {
     };
 
     const res = existingEntry
-      ? await client.from("competition_entries").update(payload).eq("id", existingEntry.id)
-      : await client.from("competition_entries").insert(payload);
+      ? await client.from("competition_entries").update(payload).eq("id", existingEntry.id).select("id").single()
+      : await client.from("competition_entries").insert(payload).select("id").single();
 
     setAddingSuperEntry(false);
     if (res.error) {
@@ -892,6 +955,18 @@ export default function CompetitionPage() {
     setSuperEntryPlayerId("");
     setEntriesExpanded(true);
     setMessage("Player added to the competition and approved.");
+
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (accessToken && res.data?.id) {
+      const welcomeResponse = await fetch("/api/admin/competition-welcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ entryId: res.data.id, competitionId: competition.id }),
+      });
+      const welcomeData = await welcomeResponse.json().catch(() => ({}));
+      if (!welcomeResponse.ok || Number(welcomeData.failed ?? 0) > 0) setMessage("Player added, but the welcome email needs attention in Email Activity.");
+    }
 
     const refreshedEntries = await client
       .from("competition_entries")
@@ -1795,6 +1870,29 @@ export default function CompetitionPage() {
                 ) : null}
               </section> : null}
               {showAdminArea("entrants") ? <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                {admin.isAdmin ? (
+                  <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-sky-950">Welcome-email coverage</p>
+                        <p className="mt-1 text-sm text-sky-800">One professional welcome email per approved entrant. Resend delivery can be checked here.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" disabled={welcomeAuditBusy} onClick={() => void loadWelcomeAudit(true)} className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-900 disabled:opacity-50">Verify delivery</button>
+                        <button type="button" disabled={welcomeAuditBusy || !welcomeAudit || welcomeAudit.totals.missing + welcomeAudit.totals.failed === 0} onClick={() => setConfirmWelcomeSendOpen(true)} className="rounded-lg bg-sky-800 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Send missing welcomes</button>
+                      </div>
+                    </div>
+                    {welcomeAudit ? (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-5">
+                        <div className="rounded-lg bg-white p-2"><p className="text-xs uppercase text-slate-500">Approved</p><p className="text-xl font-black">{welcomeAudit.totals.approved}</p></div>
+                        <div className="rounded-lg bg-white p-2"><p className="text-xs uppercase text-emerald-700">Sent</p><p className="text-xl font-black text-emerald-800">{welcomeAudit.totals.sent}</p></div>
+                        <div className="rounded-lg bg-white p-2"><p className="text-xs uppercase text-sky-700">Delivered</p><p className="text-xl font-black text-sky-800">{welcomeAudit.totals.delivered}</p></div>
+                        <div className="rounded-lg bg-white p-2"><p className="text-xs uppercase text-amber-700">Missing / failed</p><p className="text-xl font-black text-amber-800">{welcomeAudit.totals.missing + welcomeAudit.totals.failed}</p></div>
+                        <div className="rounded-lg bg-white p-2"><p className="text-xs uppercase text-rose-700">No email</p><p className="text-xl font-black text-rose-800">{welcomeAudit.totals.noEmail}</p></div>
+                      </div>
+                    ) : <p className="mt-3 text-sm text-sky-800">{welcomeAuditBusy ? "Checking coverage…" : "Coverage has not been checked yet."}</p>}
+                  </div>
+                ) : null}
                 {admin.isAdmin && competition.entry_fee_pence ? (
                   <div className="mb-4 grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:grid-cols-4">
                     <div><p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Collected</p><p className="mt-1 text-xl font-black text-emerald-950">£{(collectedPence / 100).toFixed(2)}</p></div>
@@ -2572,6 +2670,18 @@ export default function CompetitionPage() {
             </>
           ) : null}
         </RequireAuth>
+        <ConfirmModal
+          open={confirmWelcomeSendOpen}
+          title="Send missing welcome emails?"
+          description={`This will send a professional welcome email through Resend to ${welcomeAudit ? welcomeAudit.totals.missing + welcomeAudit.totals.failed : 0} approved entrant${welcomeAudit && welcomeAudit.totals.missing + welcomeAudit.totals.failed === 1 ? "" : "s"}. Entrants already recorded as sent will not be emailed again.`}
+          confirmLabel="Send Welcome Emails"
+          cancelLabel="Cancel"
+          onCancel={() => setConfirmWelcomeSendOpen(false)}
+          onConfirm={async () => {
+            setConfirmWelcomeSendOpen(false);
+            await sendMissingWelcomeEmails();
+          }}
+        />
         <ConfirmModal
           open={cashPaymentTarget !== null}
           title={cashPaymentTarget?.reset ? "Undo cash payment?" : "Confirm cash received"}
