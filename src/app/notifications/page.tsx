@@ -225,6 +225,18 @@ export default function NotificationsPage() {
     }
   };
 
+  const sendTestPush = async () => {
+    setPushBusy(true);
+    try {
+      const test = await pushRequest("POST", { action: "test" });
+      setMessage(Number(test.sent ?? 0) > 0 ? "A test notification has been sent to this device." : "The test notification could not be delivered yet.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The test notification could not be sent.");
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (admin.loading || !admin.userId) return;
     void refreshPushStatus();
@@ -597,7 +609,10 @@ export default function NotificationsPage() {
                 </p>
               </div>
               {pushStatus?.enabledOnDevice ? (
-                <button type="button" disabled={pushBusy} onClick={() => void disablePush()} className="rounded-xl border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-900 disabled:opacity-50">Disable on this device</button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={pushBusy} onClick={() => void sendTestPush()} className="rounded-xl bg-violet-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Send test notification</button>
+                  <button type="button" disabled={pushBusy} onClick={() => void disablePush()} className="rounded-xl border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-900 disabled:opacity-50">Disable on this device</button>
+                </div>
               ) : (
                 <button type="button" disabled={pushBusy || !pushStatus?.configured || pushStatus?.permission === "unsupported"} onClick={() => void enablePush()} className="rounded-xl bg-violet-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Enable phone notifications</button>
               )}
