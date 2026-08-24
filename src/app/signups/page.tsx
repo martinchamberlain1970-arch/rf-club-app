@@ -32,6 +32,7 @@ type Entry = {
   status: "pending" | "approved" | "rejected" | "withdrawn";
   payment_status: "not_required" | "pending" | "paid" | "failed";
   payment_method: "stripe" | "cash" | null;
+  stripe_checkout_session_id: string | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
   public_signup_id: string | null;
@@ -50,6 +51,7 @@ type GuestEntry = {
   status: "pending" | "added" | "rejected";
   payment_status: "not_required" | "pending" | "paid" | "failed";
   payment_method: "stripe" | "cash" | null;
+  stripe_checkout_session_id: string | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
   created_at: string;
@@ -63,6 +65,7 @@ type FinanceRow = {
   recordId: string;
   payment_status: Entry["payment_status"];
   payment_method: Entry["payment_method"];
+  stripe_checkout_session_id: string | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
 };
@@ -82,6 +85,7 @@ const paidDateTime = (value: string) => new Date(value).toLocaleString("en-GB", 
 export default function CompetitionSignupPage() {
   const admin = useAdminStatus();
   const [message, setMessage] = useState<string | null>(null);
+  const [reconcilingStripe, setReconcilingStripe] = useState(false);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -195,6 +199,7 @@ export default function CompetitionSignupPage() {
       recordId: entry.id,
       payment_status: entry.payment_status,
       payment_method: entry.payment_method,
+      stripe_checkout_session_id: entry.stripe_checkout_session_id,
       payment_amount_pence: entry.payment_amount_pence,
       paid_at: entry.paid_at,
     }));
@@ -207,6 +212,7 @@ export default function CompetitionSignupPage() {
         recordId: entry.id,
         payment_status: entry.payment_status,
         payment_method: entry.payment_method,
+        stripe_checkout_session_id: entry.stripe_checkout_session_id,
         payment_amount_pence: entry.payment_amount_pence,
         paid_at: entry.paid_at,
       }));
@@ -225,13 +231,13 @@ export default function CompetitionSignupPage() {
     0
   );
   const stripeFinancePence = paidFinanceRows
-    .filter((row) => row.payment_method === "stripe")
+    .filter((row) => row.payment_method === "stripe" || Boolean(row.stripe_checkout_session_id))
     .reduce((sum, row) => sum + Number(row.payment_amount_pence ?? entryFeePence), 0);
   const cashFinancePence = paidFinanceRows
     .filter((row) => row.payment_method === "cash")
     .reduce((sum, row) => sum + Number(row.payment_amount_pence ?? entryFeePence), 0);
   const unspecifiedFinancePence = paidFinanceRows
-    .filter((row) => row.payment_method !== "stripe" && row.payment_method !== "cash")
+    .filter((row) => row.payment_method !== "stripe" && row.payment_method !== "cash" && !row.stripe_checkout_session_id)
     .reduce((sum, row) => sum + Number(row.payment_amount_pence ?? entryFeePence), 0);
 
   const load = async () => {
@@ -256,7 +262,7 @@ export default function CompetitionSignupPage() {
         .order("created_at", { ascending: false }),
       client
         .from("competition_entries")
-        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,public_signup_id,created_at")
+        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,public_signup_id,stripe_checkout_session_id,created_at")
         .order("created_at", { ascending: false }),
       client.from("app_users").select("id,linked_player_id").eq("id", uid).maybeSingle(),
       client.from("players").select("id,display_name,full_name").eq("is_archived", false),
@@ -285,6 +291,31 @@ export default function CompetitionSignupPage() {
         setGuestEntries((guestData.entries ?? []) as GuestEntry[]);
       }
     }
+  };
+
+  const reconcileStripePayments = async () => {
+    const client = supabase;
+    if (!client || !selectedCompetition) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setMessage("Please sign in again before checking Stripe.");
+      return;
+    }
+    setReconcilingStripe(true);
+    const response = await fetch("/api/admin/reconcile-stripe-payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ competitionId: selectedCompetition.id }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setReconcilingStripe(false);
+    if (!response.ok) {
+      setMessage(data.error ?? "Stripe payments could not be reconciled.");
+      return;
+    }
+    setMessage(`Stripe confirmed £${(Number(data.confirmedPence ?? 0) / 100).toFixed(2)} across ${Number(data.matchedSessions ?? 0)} payment${Number(data.matchedSessions ?? 0) === 1 ? "" : "s"}. The finance section has been updated.`);
+    await load();
   };
 
   useEffect(() => {
@@ -565,9 +596,14 @@ export default function CompetitionSignupPage() {
                   <p className="text-sm font-medium text-amber-900">{selectedCompetition.name}</p>
                   <p className="mt-1 text-sm text-amber-800">Entry fee £{(entryFeePence / 100).toFixed(2)} per player.</p>
                 </div>
-                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${outstandingFinanceRows.length ? "bg-red-100 text-red-800" : "bg-emerald-700 text-white"}`}>
-                  {outstandingFinanceRows.length ? `${outstandingFinanceRows.length} outstanding` : "All paid"}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" disabled={reconcilingStripe} onClick={() => void reconcileStripePayments()} className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-violet-900 disabled:opacity-50">
+                    {reconcilingStripe ? "Checking Stripe…" : "Reconcile Stripe"}
+                  </button>
+                  <span className={`rounded-full px-3 py-1 text-sm font-semibold ${outstandingFinanceRows.length ? "bg-red-100 text-red-800" : "bg-emerald-700 text-white"}`}>
+                    {outstandingFinanceRows.length ? `${outstandingFinanceRows.length} outstanding` : "All paid"}
+                  </span>
+                </div>
               </div>
 
               <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

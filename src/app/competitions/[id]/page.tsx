@@ -72,6 +72,7 @@ type Entry = {
   status: "pending" | "approved" | "rejected" | "withdrawn";
   payment_status: "not_required" | "pending" | "paid" | "failed";
   payment_method: "stripe" | "cash" | null;
+  stripe_checkout_session_id: string | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
   public_signup_id: string | null;
@@ -87,6 +88,7 @@ type GuestEntry = {
   status: "pending" | "added" | "rejected";
   payment_status: "not_required" | "pending" | "paid" | "failed";
   payment_method: "stripe" | "cash" | null;
+  stripe_checkout_session_id: string | null;
   payment_amount_pence: number | null;
   paid_at: string | null;
   created_at: string;
@@ -821,7 +823,7 @@ export default function CompetitionPage() {
       setFrames(((fRes.data ?? []) as unknown) as Frame[]);
       const entryRes = await client
         .from("competition_entries")
-        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,public_signup_id,created_at")
+        .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,public_signup_id,stripe_checkout_session_id,created_at")
         .eq("competition_id", id)
         .neq("status", "withdrawn")
         .order("created_at", { ascending: false });
@@ -970,7 +972,7 @@ export default function CompetitionPage() {
 
     const refreshedEntries = await client
       .from("competition_entries")
-      .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,public_signup_id,created_at")
+      .select("id,competition_id,requester_user_id,player_id,status,payment_status,payment_method,payment_amount_pence,paid_at,public_signup_id,stripe_checkout_session_id,created_at")
       .eq("competition_id", competition.id)
       .neq("status", "withdrawn")
       .order("created_at", { ascending: false });
@@ -1725,7 +1727,7 @@ export default function CompetitionPage() {
     .filter((entry) => entry.payment_status === "paid" && entry.payment_method === "cash")
     .reduce((total, entry) => total + (entry.payment_amount_pence ?? competition?.entry_fee_pence ?? 0), 0);
   const stripeCollectedPence = paymentRows
-    .filter((entry) => entry.payment_status === "paid" && entry.payment_method === "stripe")
+    .filter((entry) => entry.payment_status === "paid" && (entry.payment_method === "stripe" || Boolean(entry.stripe_checkout_session_id)))
     .reduce((total, entry) => total + (entry.payment_amount_pence ?? competition?.entry_fee_pence ?? 0), 0);
   const filteredCompetitionContacts = competitionContacts.filter((contact) =>
     !contactSearch.trim() || contact.name.toLowerCase().includes(contactSearch.trim().toLowerCase())
