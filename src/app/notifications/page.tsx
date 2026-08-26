@@ -48,6 +48,14 @@ type BookingNotificationRow = {
   rejection_reason: string | null;
   cue_tables: { name?: string } | null;
 };
+type RescheduleNotificationRow = {
+  id: string;
+  match_id: string;
+  original_scheduled_for: string;
+  requested_scheduled_for: string;
+  status: string;
+  created_at: string;
+};
 type PushStatus = { configured: boolean; publicKey: string | null; subscriptionCount: number; enabledOnDevice: boolean; permission: NotificationPermission | "unsupported" };
 
 function urlBase64ToUint8Array(value: string) {
@@ -344,6 +352,29 @@ export default function NotificationsPage() {
             created_at: row.created_at,
             href: "/table-bookings",
             status,
+          });
+        });
+      }
+      let rescheduleQuery = client
+        .from("league_reschedule_requests")
+        .select("id,match_id,original_scheduled_for,requested_scheduled_for,status,created_at")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      rescheduleQuery = admin.isSuper
+        ? rescheduleQuery.eq("status", "pending")
+        : rescheduleQuery.eq("requester_user_id", admin.userId);
+      const rescheduleResult = await rescheduleQuery;
+      if (!rescheduleResult.error) {
+        (rescheduleResult.data ?? []).forEach((item) => {
+          const row = item as RescheduleNotificationRow;
+          const direction = row.requested_scheduled_for < row.original_scheduled_for ? "early" : "later";
+          out.push({
+            key: `reschedule:${row.id}:${row.status}`,
+            title: admin.isSuper ? `Fixture ${direction}-week request` : `Fixture week request ${row.status}`,
+            detail: `Requested one week ${direction}: ${row.original_scheduled_for} → ${row.requested_scheduled_for}`,
+            created_at: row.created_at,
+            href: admin.isSuper ? "/reschedules" : `/matches/${row.match_id}`,
+            status: row.status,
           });
         });
       }

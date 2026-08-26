@@ -34,6 +34,16 @@ const whatsappHref = (value: string, message: string) => {
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 };
 
+const fetchWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, timeoutMs = 20_000) => {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+};
+
 export default function EntrantFixturesPage() {
   const token = String(useParams().token ?? "");
   const [data, setData] = useState<PortalData | null>(null);
@@ -44,14 +54,20 @@ export default function EntrantFixturesPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const response = await fetch(`/api/public/entrant/${encodeURIComponent(token)}`, { cache: "no-store" });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(payload.error ?? "Your fixtures could not be loaded.");
-      return;
+    try {
+      const response = await fetchWithTimeout(`/api/public/entrant/${encodeURIComponent(token)}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload.error ?? "Your fixtures could not be loaded.");
+        return;
+      }
+      setData(payload as PortalData);
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof DOMException && loadError.name === "AbortError"
+        ? "Loading took longer than expected. Check your connection and refresh this page."
+        : "Your fixtures could not be loaded.");
     }
-    setData(payload as PortalData);
-    setError(null);
   }, [token]);
 
   useEffect(() => {
@@ -84,19 +100,26 @@ export default function EntrantFixturesPage() {
     if (!window.confirm(`Submit ${data?.entrant.name} ${entrantScore}-${opponentScore} ${fixture.opponent.name}?`)) return;
     setSubmittingId(fixture.id);
     setNotice(null);
-    const response = await fetch(`/api/public/entrant/${encodeURIComponent(token)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ matchId: fixture.id, entrantScore, opponentScore }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    setSubmittingId(null);
-    if (!response.ok) {
-      setNotice(payload.error ?? "The result could not be submitted.");
-      return;
+    try {
+      const response = await fetchWithTimeout(`/api/public/entrant/${encodeURIComponent(token)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId: fixture.id, entrantScore, opponentScore }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setNotice(payload.error ?? "The result could not be submitted.");
+        return;
+      }
+      setNotice("Result submitted. It will appear in the table after the organiser approves it.");
+      await load();
+    } catch (submitError) {
+      setNotice(submitError instanceof DOMException && submitError.name === "AbortError"
+        ? "Saving took longer than expected. Refresh this page to check whether the result was received before trying again."
+        : "The result could not be submitted. Check your connection and try again.");
+    } finally {
+      setSubmittingId(null);
     }
-    setNotice("Result submitted. It will appear in the table after the organiser approves it.");
-    await load();
   };
 
   if (error) return <main className="min-h-screen bg-slate-100 p-5"><div className="mx-auto max-w-xl rounded-2xl bg-white p-6 shadow"><h1 className="text-2xl font-bold text-slate-950">Private fixture link</h1><p className="mt-3 text-red-700">{error}</p></div></main>;
@@ -174,7 +197,7 @@ export default function EntrantFixturesPage() {
                   </div>
                   {Number.isInteger(chosen) && Number.isInteger(chosenOpponentScore) ? <p className="mt-2 text-sm text-slate-700">Result: <strong>{data.entrant.name} {chosen}–{chosenOpponentScore} {fixture.opponent.name}</strong></p> : null}
                   <button type="button" onClick={() => void submitResult(fixture)} disabled={submittingId === fixture.id || !Number.isInteger(chosen) || !Number.isInteger(chosenOpponentScore)} className="mt-3 w-full rounded-lg bg-emerald-800 px-4 py-3 font-semibold text-white disabled:opacity-50">
-                    {submittingId === fixture.id ? "Submitting…" : "Submit result for approval"}
+                    {submittingId === fixture.id ? "Saving result… please keep this page open" : "Submit result for approval"}
                   </button>
                 </div>
               ) : null}

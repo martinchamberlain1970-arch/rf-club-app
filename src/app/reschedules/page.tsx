@@ -7,6 +7,7 @@ import ScreenHeader from "@/components/ScreenHeader";
 import useAdminStatus from "@/components/useAdminStatus";
 import MessageModal from "@/components/MessageModal";
 import { supabase } from "@/lib/supabase";
+import { logAudit } from "@/lib/audit";
 
 type RescheduleRequest = {
   id: string;
@@ -69,7 +70,8 @@ export default function ReschedulesPage() {
   };
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const playerNameById = useMemo(
@@ -135,6 +137,16 @@ export default function ReschedulesPage() {
       setMessage(requestUpdate.error.message);
       return;
     }
+    const direction = request.requested_scheduled_for < request.original_scheduled_for ? "earlier" : "later";
+    await logAudit(`league_reschedule_${nextStatus}`, {
+      entityType: "match",
+      entityId: request.match_id,
+      summary: `Fixture request to play one week ${direction} ${nextStatus}.`,
+      meta: { competitionId: request.competition_id, originalScheduledFor: request.original_scheduled_for, requestedScheduledFor: request.requested_scheduled_for, direction },
+    });
+    setMessage(nextStatus === "approved"
+      ? `Fixture approved one week ${direction}. Result entry will follow the updated fixture week.`
+      : "Fixture change request rejected.");
     await load();
   };
 
@@ -145,7 +157,7 @@ export default function ReschedulesPage() {
           <ScreenHeader
             title="Reschedule Requests"
             eyebrow="League Admin"
-            subtitle="Super User review for one-week league fixture reschedule requests."
+            subtitle="Approve requests to play a weekly league fixture exactly one week early or later."
           />
           <MessageModal message={message} onClose={() => setMessage(null)} />
 
@@ -175,6 +187,7 @@ export default function ReschedulesPage() {
                   const match = matchById.get(request.match_id);
                   const playerOne = match?.player1_id ? playerNameById.get(match.player1_id) ?? match.player1_id : "TBC";
                   const playerTwo = match?.player2_id ? playerNameById.get(match.player2_id) ?? match.player2_id : "TBC";
+                  const direction = request.requested_scheduled_for < request.original_scheduled_for ? "early" : "later";
                   return (
                     <div key={request.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                       <p className="text-lg font-semibold text-slate-900">{competitionNameById.get(request.competition_id) ?? "League competition"}</p>
@@ -182,7 +195,7 @@ export default function ReschedulesPage() {
                         {playerOne} vs {playerTwo}
                       </p>
                       <p className="mt-2 text-sm text-slate-700">
-                        Original week: {request.original_scheduled_for} · Requested week: {request.requested_scheduled_for}
+                        Requested one week {direction} · Original week: {request.original_scheduled_for} · Requested week: {request.requested_scheduled_for}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
                         Requested on {new Date(request.created_at).toLocaleString()}
@@ -197,7 +210,7 @@ export default function ReschedulesPage() {
                           onClick={() => void reviewRequest(request, "approved")}
                           className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
                         >
-                          Approve reschedule
+                          Approve {direction} week
                         </button>
                         <button
                           type="button"

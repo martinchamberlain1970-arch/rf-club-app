@@ -33,7 +33,7 @@ const faqs: { question: string; answer: string }[] = [
   {
     question: "Can a fixture be rescheduled?",
     answer:
-      "Yes, but only by request. A player can request a one-week delay, and the Super User decides whether to approve or reject it. Only one outstanding reschedule is allowed at a time.",
+      "Yes, but only by request. A player can request to play exactly one week early or one week later, and the Super User decides whether to approve or reject it. Result entry follows the approved fixture week.",
   },
   {
     question: "How do handicapped snooker matches work?",
@@ -85,7 +85,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
         "Competition Sign-ups lets players join open events and track entry status.",
         "Club leagues can be created for snooker or pool, with weekly fixtures generated from the approved field.",
         "League fixtures are expected to be played by the listed Sunday deadline unless a reschedule is approved.",
-        "You can request a one-week reschedule for your own fixture, but only the Super User can approve it.",
+        "You can request to play your own fixture one week early or one week later, but only the Super User can approve it.",
       ],
     },
     stats_rules: {

@@ -250,6 +250,20 @@ function addDaysToIsoDate(isoDate: string, days: number) {
   return next.toISOString().slice(0, 10);
 }
 
+async function withOperationTimeout<T>(operation: PromiseLike<T>, label: string, timeoutMs = 20_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} is taking longer than expected. Check your connection, refresh the fixture, and confirm whether it saved before trying again.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function getMatchStatusLabel(match: Match | null) {
   if (!match) return "";
   if (match.status === "bye") return "Locked";
@@ -355,6 +369,7 @@ export default function MatchPage() {
   const [frames, setFrames] = useState<FrameInput[]>([]);
   const [loading, setLoading] = useState(() => Boolean(supabase));
   const [saving, setSaving] = useState(false);
+  const [savingStage, setSavingStage] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(() => (supabase ? null : "Supabase is not configured."));
   const [confirmEditComplete, setConfirmEditComplete] = useState(false);
   const [submissions, setSubmissions] = useState<ResultSubmission[]>([]);
@@ -377,6 +392,7 @@ export default function MatchPage() {
   const livePoolSaveTimerRef = useRef<number | null>(null);
   const latestLivePoolFramesRef = useRef<FrameInput[]>([]);
   const frameSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const completionInFlightRef = useRef(false);
   const [rejectModal, setRejectModal] = useState<{
     submission: ResultSubmission;
     reason: string;
@@ -700,14 +716,25 @@ export default function MatchPage() {
     [rescheduleRequests]
   );
   const latestRescheduleForMatch = useMemo(() => rescheduleRequests[0] ?? null, [rescheduleRequests]);
+  const approvedRescheduleForMatch = useMemo(
+    () => rescheduleRequests.find((request) => request.status === "approved") ?? null,
+    [rescheduleRequests]
+  );
   const requesterPendingElsewhere = useMemo(
     () => requesterPendingReschedules.find((request) => request.match_id !== matchId) ?? null,
     [requesterPendingReschedules, matchId]
   );
-  const rescheduleTargetDate = useMemo(
-    () => (match?.scheduled_for ? addDaysToIsoDate(match.scheduled_for, 7) : null),
+  const rescheduleTargetDates = useMemo(
+    () => match?.scheduled_for
+      ? { earlier: addDaysToIsoDate(match.scheduled_for, -7), later: addDaysToIsoDate(match.scheduled_for, 7) }
+      : { earlier: null, later: null },
     [match?.scheduled_for]
   );
+  const earlierRescheduleStillPossible = useMemo(() => {
+    if (!rescheduleTargetDates.earlier) return false;
+    const targetWindow = getLeagueFixtureWindow(rescheduleTargetDates.earlier, "weekly", competition?.name);
+    return Boolean(targetWindow && new Date() <= targetWindow.dueAt);
+  }, [competition?.name, rescheduleTargetDates.earlier]);
   const canAdminEditFrames = Boolean(!isByeMatch && !isArchived && canAdminManageMatch && !adminReviewOnly);
   const canParticipantEditFrames = Boolean(
     !admin.loading &&
@@ -732,6 +759,7 @@ export default function MatchPage() {
       !userPendingSubmission &&
       !userApprovedSubmission &&
       !pendingRescheduleForMatch &&
+      !approvedRescheduleForMatch &&
       !requesterPendingElsewhere
   );
   const expectedPreview = useMemo<ExpectedResultPreview | null>(() => {
@@ -779,9 +807,14 @@ export default function MatchPage() {
       frames.every((frame) => frame.winner_side === 0)
   );
 
-  const requestLeagueReschedule = async () => {
+  const requestLeagueReschedule = async (direction: "earlier" | "later") => {
     const client = supabase;
-    if (!client || !admin.userId || !viewerLinkedPlayerId || !match?.scheduled_for || !rescheduleTargetDate) return;
+    const targetDate = rescheduleTargetDates[direction];
+    if (!client || !admin.userId || !viewerLinkedPlayerId || !match?.scheduled_for || !targetDate) return;
+    if (direction === "earlier" && !earlierRescheduleStillPossible) {
+      setMessage("The earlier fixture week has already closed, so it can no longer be requested.");
+      return;
+    }
     setRequestingReschedule(true);
     const insert = await client.from("league_reschedule_requests").insert({
       match_id: match.id,
@@ -789,7 +822,7 @@ export default function MatchPage() {
       requester_user_id: admin.userId,
       requester_player_id: viewerLinkedPlayerId,
       original_scheduled_for: match.scheduled_for,
-      requested_scheduled_for: rescheduleTargetDate,
+      requested_scheduled_for: targetDate,
       status: "pending",
     });
     setRequestingReschedule(false);
@@ -820,8 +853,37 @@ export default function MatchPage() {
       setRequesterPendingReschedules(((refreshPending.data ?? []) as unknown) as LeagueRescheduleRequest[]);
     }
     setInfoModal({
-      title: "Reschedule requested",
-      description: `Your request has been sent to the Super User. If approved, this fixture will move to the following week (${new Date(`${rescheduleTargetDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}).`,
+      title: `${direction === "earlier" ? "Early" : "Later"} fixture request sent`,
+      description: `Your request has been sent to the Super User. If approved, this fixture will move one week ${direction} to ${new Date(`${targetDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}, and result entry will open for that approved week.`,
+    });
+    await logAudit("league_reschedule_requested", {
+      entityType: "match",
+      entityId: match.id,
+      summary: `Player requested fixture one week ${direction}.`,
+      meta: { competitionId: match.competition_id, originalScheduledFor: match.scheduled_for, requestedScheduledFor: targetDate, direction },
+    });
+  };
+
+  const openRescheduleConfirmation = (direction: "earlier" | "later") => {
+    if (!match?.scheduled_for) return;
+    const targetDate = rescheduleTargetDates[direction];
+    if (!targetDate) return;
+    setConfirmModal({
+      title: `Request fixture one week ${direction}?`,
+      description: `This will ask the Super User to move this fixture from ${new Date(`${match.scheduled_for}T12:00:00`).toLocaleDateString("en-GB", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      })} to ${new Date(`${targetDate}T12:00:00`).toLocaleDateString("en-GB", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      })}. Result entry will only open in the approved fixture week.`,
+      confirmLabel: `Request ${direction} week`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        await requestLeagueReschedule(direction);
+      },
     });
   };
 
@@ -1059,17 +1121,22 @@ export default function MatchPage() {
     const operation = frameSaveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
-        const wipe = await client.from("frames").delete().eq("match_id", matchIdToSave);
-        if (wipe.error) return { ok: false as const, error: wipe.error.message };
-        if (!rows.length) return { ok: true as const };
+        try {
+          const wipe = await withOperationTimeout(client.from("frames").delete().eq("match_id", matchIdToSave), "Clearing the previous rack score");
+          if (wipe.error) return { ok: false as const, error: wipe.error.message };
+          if (!rows.length) return { ok: true as const };
 
-        // Upsert makes the write safe if another browser or a delayed live-score
-        // save recreates a rack after the delete but before this write completes.
-        const write = await client
-          .from("frames")
-          .upsert(rows, { onConflict: "match_id,frame_number" });
-        if (write.error) return { ok: false as const, error: write.error.message };
-        return { ok: true as const };
+          // Upsert makes the write safe if another browser or a delayed live-score
+          // save recreates a rack after the delete but before this write completes.
+          const write = await withOperationTimeout(
+            client.from("frames").upsert(rows, { onConflict: "match_id,frame_number" }),
+            "Saving the rack score"
+          );
+          if (write.error) return { ok: false as const, error: write.error.message };
+          return { ok: true as const };
+        } catch (error) {
+          return { ok: false as const, error: error instanceof Error ? error.message : "The rack score could not be saved." };
+        }
       });
     frameSaveQueueRef.current = operation.then(() => undefined, () => undefined);
     return operation;
@@ -1401,7 +1468,10 @@ export default function MatchPage() {
     }
     const client = supabase;
     if (!client || !match || !teams) return;
-    if (!silent) setSaving(true);
+    if (!silent) {
+      setSaving(true);
+      setSavingStage("Saving rack progress…");
+    }
     if (!silent) setMessage(null);
 
     const rows = [];
@@ -1411,6 +1481,7 @@ export default function MatchPage() {
       if (!parsed1.ok) {
         if (!silent) {
           setSaving(false);
+          setSavingStage(null);
           setInfoModal({
             title: "Invalid Break Values",
             description: parsed1.error,
@@ -1421,6 +1492,7 @@ export default function MatchPage() {
       if (!parsed2.ok) {
         if (!silent) {
           setSaving(false);
+          setSavingStage(null);
           setInfoModal({
             title: "Invalid Break Values",
             description: parsed2.error,
@@ -1432,6 +1504,7 @@ export default function MatchPage() {
       if (!valid1.ok) {
         if (!silent) {
           setSaving(false);
+          setSavingStage(null);
           setInfoModal({ title: "Invalid Break Values", description: valid1.error });
         }
         return;
@@ -1440,6 +1513,7 @@ export default function MatchPage() {
       if (!valid2.ok) {
         if (!silent) {
           setSaving(false);
+          setSavingStage(null);
           setInfoModal({ title: "Invalid Break Values", description: valid2.error });
         }
         return;
@@ -1466,15 +1540,20 @@ export default function MatchPage() {
     if (!save.ok) {
       if (!silent) {
         setSaving(false);
+        setSavingStage(null);
         setMessage(save.error);
       }
       return;
     }
 
-    const update = await client.from("matches").update({ status: "in_progress", winner_player_id: null }).eq("id", match.id);
+    const update = await withOperationTimeout(
+      client.from("matches").update({ status: "in_progress", winner_player_id: null }).eq("id", match.id),
+      "Updating the fixture"
+    ).catch((error) => ({ error: { message: error instanceof Error ? error.message : "The fixture could not be updated." } }));
     if (update.error) {
       if (!silent) {
         setSaving(false);
+        setSavingStage(null);
         setMessage(update.error.message);
       }
       return;
@@ -1487,12 +1566,16 @@ export default function MatchPage() {
       summary: `Progress saved at ${wins.team1}-${wins.team2}.`,
       meta: { competitionId: match.competition_id },
     });
-    if (!silent) setSaving(false);
+    if (!silent) {
+      setSaving(false);
+      setSavingStage(null);
+    }
     if (goBack) router.replace(`/competitions/${match.competition_id}`);
     else if (!silent) setMessage("Progress saved.");
   };
 
   const saveResult = async () => {
+    if (completionInFlightRef.current) return;
     if (livePoolSaveTimerRef.current) {
       window.clearTimeout(livePoolSaveTimerRef.current);
       livePoolSaveTimerRef.current = null;
@@ -1519,7 +1602,9 @@ export default function MatchPage() {
       return;
     }
 
+    completionInFlightRef.current = true;
     setSaving(true);
+    setSavingStage(`Saving all ${match.best_of} ${isSnooker ? "frames" : "racks"}…`);
     setMessage(null);
 
     try {
@@ -1576,27 +1661,47 @@ export default function MatchPage() {
 
       const winnerId = winnerSide === 1 ? teams.team1Rep : teams.team2Rep;
       const winnerName = winnerSide === 1 ? teams.team1Label : teams.team2Label;
-      const update = await client.from("matches").update({ status: "complete", winner_player_id: winnerId }).eq("id", match.id);
+      setSavingStage("Confirming the match result…");
+      const update = await withOperationTimeout(
+        client.from("matches").update({ status: "complete", winner_player_id: winnerId }).eq("id", match.id),
+        "Confirming the match result"
+      );
       if (update.error) {
         setMessage(update.error.message);
         return;
       }
 
       setMatch((prev) => (prev ? { ...prev, status: "complete", winner_player_id: winnerId } : prev));
-      await applyRatingsIfNeeded(winnerSide);
-      if (winnerId) await advanceKnockoutWinner(winnerId);
-      await refreshCompetitionCompletion();
-      await logAudit("match_completed", {
-        entityType: "match",
-        entityId: match.id,
-        summary: `Match completed. Winner: ${winnerName}.`,
-        meta: { competitionId: match.competition_id, score: `${wins.team1}-${wins.team2}` },
-      });
+      setSavingStage("Finalising ratings and league table…");
+      try {
+        await withOperationTimeout(
+          (async () => {
+            await applyRatingsIfNeeded(winnerSide);
+            if (winnerId) await advanceKnockoutWinner(winnerId);
+            await refreshCompetitionCompletion();
+            await logAudit("match_completed", {
+              entityType: "match",
+              entityId: match.id,
+              summary: `Match completed. Winner: ${winnerName}.`,
+              meta: { competitionId: match.competition_id, score: `${wins.team1}-${wins.team2}` },
+            });
+          })(),
+          "Finalising ratings and the league table",
+          25_000
+        );
+      } catch {
+        // The result itself has already been committed. Do not invite a second
+        // submission if a non-critical follow-up is slow; all follow-ups are
+        // idempotent and can safely complete or be refreshed afterwards.
+        setMessage("Result saved. Ratings and the league table may take a moment to refresh.");
+      }
       router.replace(`/competitions/${match.competition_id}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to complete match.");
     } finally {
+      completionInFlightRef.current = false;
       setSaving(false);
+      setSavingStage(null);
     }
   };
 
@@ -1864,7 +1969,7 @@ export default function MatchPage() {
 
   const submitDetailedResult = async () => {
     const showSubmitModal = (description: string, title = "Submit Result") => setInfoModal({ title, description });
-    if (admin.isAdmin) return;
+    if (admin.isAdmin || completionInFlightRef.current) return;
     if (!match || !teams) return;
     if (!viewerCanEditThisMatch) {
       showSubmitModal("You can only submit the full result for your own fixture. Other fixtures are view only.");
@@ -1912,46 +2017,77 @@ export default function MatchPage() {
       showSubmitModal("You must be signed in.");
       return;
     }
-    const save = await persistFrames(built.rows);
-    if (!save.ok) {
-      showSubmitModal(save.error);
-      return;
+    completionInFlightRef.current = true;
+    setSaving(true);
+    setSavingStage(`Saving all ${match.best_of} ${isSnooker ? "frames" : "racks"}…`);
+    try {
+      const save = await persistFrames(built.rows);
+      if (!save.ok) {
+        showSubmitModal(save.error);
+        return;
+      }
+      setSavingStage("Locking the fixture for review…");
+      const update = await withOperationTimeout(
+        client.from("matches").update({ status: "in_progress", winner_player_id: null }).eq("id", match.id),
+        "Locking the fixture for review"
+      );
+      if (update.error) {
+        showSubmitModal(update.error.message || "Unable to save the submitted result.");
+        return;
+      }
+      const existingPending = await withOperationTimeout(
+        client.from("result_submissions").select("id").eq("match_id", match.id).eq("submitted_by_user_id", admin.userId).eq("status", "pending").limit(1).maybeSingle(),
+        "Checking for an existing submission"
+      );
+      if (existingPending.error) {
+        showSubmitModal(existingPending.error.message);
+        return;
+      }
+      if (existingPending.data?.id) {
+        showSubmitModal("This result has already been submitted and is waiting for review.", "Already submitted");
+        return;
+      }
+      setSavingStage("Submitting the result for approval…");
+      const res = await withOperationTimeout(
+        client
+          .from("result_submissions")
+          .insert({
+            match_id: match.id,
+            submitted_by_user_id: admin.userId,
+            team1_score: built.summary.team1Score,
+            team2_score: built.summary.team2Score,
+            break_and_run: built.summary.breakRunTeam1 + built.summary.breakRunTeam2 > 0,
+            run_out_against_break: built.summary.runOutTeam1 + built.summary.runOutTeam2 > 0,
+            break_and_run_team1: built.summary.breakRunTeam1,
+            break_and_run_team2: built.summary.breakRunTeam2,
+            run_out_against_break_team1: built.summary.runOutTeam1,
+            run_out_against_break_team2: built.summary.runOutTeam2,
+            status: "pending",
+          })
+          .select("*")
+          .single(),
+        "Submitting the result"
+      );
+      if (res.error || !res.data) {
+        showSubmitModal(res.error?.message ?? "Failed to submit result.");
+        return;
+      }
+      setSubmissions((prev) => [res.data as ResultSubmission, ...prev]);
+      await logAudit("result_submitted_for_approval", {
+        entityType: "match",
+        entityId: match.id,
+        summary: `Full result submitted ${teams.team1Label} ${built.summary.team1Score}-${built.summary.team2Score} ${teams.team2Label}.`,
+        meta: { competitionId: match.competition_id },
+      });
+      setRedirectAfterInfo(true);
+      showSubmitModal("Full result submitted for approval.", "Submitted");
+    } catch (error) {
+      showSubmitModal(error instanceof Error ? error.message : "The result could not be submitted.");
+    } finally {
+      completionInFlightRef.current = false;
+      setSaving(false);
+      setSavingStage(null);
     }
-    const update = await client.from("matches").update({ status: "in_progress", winner_player_id: null }).eq("id", match.id);
-    if (update.error) {
-      showSubmitModal(update.error.message || "Unable to save the submitted result.");
-      return;
-    }
-    const res = await client
-      .from("result_submissions")
-      .insert({
-        match_id: match.id,
-        submitted_by_user_id: admin.userId,
-        team1_score: built.summary.team1Score,
-        team2_score: built.summary.team2Score,
-        break_and_run: built.summary.breakRunTeam1 + built.summary.breakRunTeam2 > 0,
-        run_out_against_break: built.summary.runOutTeam1 + built.summary.runOutTeam2 > 0,
-        break_and_run_team1: built.summary.breakRunTeam1,
-        break_and_run_team2: built.summary.breakRunTeam2,
-        run_out_against_break_team1: built.summary.runOutTeam1,
-        run_out_against_break_team2: built.summary.runOutTeam2,
-        status: "pending",
-      })
-      .select("*")
-      .single();
-    if (res.error || !res.data) {
-      showSubmitModal(res.error?.message ?? "Failed to submit result.");
-      return;
-    }
-    setSubmissions((prev) => [res.data as ResultSubmission, ...prev]);
-    await logAudit("result_submitted_for_approval", {
-      entityType: "match",
-      entityId: match.id,
-      summary: `Full result submitted ${teams.team1Label} ${built.summary.team1Score}-${built.summary.team2Score} ${teams.team2Label}.`,
-      meta: { competitionId: match.competition_id },
-    });
-    setRedirectAfterInfo(true);
-    showSubmitModal("Full result submitted for approval.", "Submitted");
   };
 
   const applySubmission = async (submission: ResultSubmission) => {
@@ -2557,6 +2693,12 @@ export default function MatchPage() {
                     ))}
                   </section>
 
+                  {saving && savingStage ? (
+                    <div role="status" aria-live="polite" className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">
+                      {savingStage} Please keep this screen open.
+                    </div>
+                  ) : null}
+
                   <div className="flex flex-wrap gap-2">
                     {!isFixedRackLeague ? (
                       <button type="button" onClick={addFrame} className={buttonSecondaryClass}>
@@ -2572,7 +2714,7 @@ export default function MatchPage() {
                           Save &amp; Back
                         </button>
                         <button type="button" onClick={saveResult} disabled={saving || !canSaveResult} className={buttonSuccessClass}>
-                          {saving ? "Saving..." : "Save + Complete Match"}
+                          {saving ? savingStage ?? "Saving…" : "Save + Complete Match"}
                         </button>
                         <button
                           type="button"
@@ -2632,7 +2774,7 @@ export default function MatchPage() {
                         disabled={saving || !canSaveResult}
                         className={buttonSuccessClass}
                       >
-                        Submit full result for approval
+                        {saving ? savingStage ?? "Submitting…" : "Submit full result for approval"}
                       </button>
                     )}
                     <button
@@ -2765,11 +2907,11 @@ export default function MatchPage() {
               !isByeMatch &&
               !isArchived ? (
                 <section className={`${cardClass} space-y-3`}>
-                  <h3 className="text-xl font-semibold text-slate-900">Reschedule</h3>
+                  <h3 className="text-xl font-semibold text-slate-900">Play a week early or later</h3>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                    <p className="font-medium text-slate-900">Need one extra week?</p>
+                    <p className="font-medium text-slate-900">Holiday or availability clash?</p>
                     <p className="mt-1">
-                      One reschedule request can be submitted per player at a time. If approved by the Super User, this fixture will move to the following week only.
+                      Request to play this fixture exactly one week early or one week later. The Super User must approve it before result entry opens for the changed week. One approved change is allowed per fixture.
                     </p>
                     {pendingRescheduleForMatch ? (
                       <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
@@ -2782,7 +2924,13 @@ export default function MatchPage() {
                     ) : null}
                     {!pendingRescheduleForMatch && latestRescheduleForMatch?.status === "approved" ? (
                       <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900">
-                        Reschedule approved. This fixture now plays by {leagueFixtureWindow?.dueAt.toLocaleString("en-GB", {
+                        Change approved. This fixture is now open from {leagueFixtureWindow?.opensAt.toLocaleString("en-GB", {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        }) ?? "the updated start"} until {leagueFixtureWindow?.dueAt.toLocaleString("en-GB", {
                           weekday: "long",
                           day: "numeric",
                           month: "long",
@@ -2802,32 +2950,15 @@ export default function MatchPage() {
                       </p>
                     ) : null}
                     {canRequestReschedule ? (
-                      <button
-                        type="button"
-                        disabled={requestingReschedule}
-                        onClick={() =>
-                          setConfirmModal({
-                            title: "Request one-week reschedule?",
-                            description: `This will ask the Super User to move this fixture from ${new Date(`${match.scheduled_for}T12:00:00`).toLocaleDateString("en-GB", {
-                              weekday: "long",
-                              day: "numeric",
-                              month: "long",
-                            })} to ${rescheduleTargetDate ? new Date(`${rescheduleTargetDate}T12:00:00`).toLocaleDateString("en-GB", {
-                              weekday: "long",
-                              day: "numeric",
-                              month: "long",
-                            }) : "the following week"}. Only one outstanding reschedule request is allowed at a time.`,
-                            confirmLabel: "Request reschedule",
-                            onConfirm: async () => {
-                              setConfirmModal(null);
-                              await requestLeagueReschedule();
-                            },
-                          })
-                        }
-                        className={buttonSecondaryClass}
-                      >
-                        Request one-week reschedule
-                      </button>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" disabled={requestingReschedule || !earlierRescheduleStillPossible} onClick={() => openRescheduleConfirmation("earlier")} className={buttonSecondaryClass}>
+                          Request one week early
+                        </button>
+                        <button type="button" disabled={requestingReschedule} onClick={() => openRescheduleConfirmation("later")} className={buttonSecondaryClass}>
+                          Request one week later
+                        </button>
+                        {!earlierRescheduleStillPossible ? <p className="basis-full text-xs text-slate-500">The earlier week has already closed.</p> : null}
+                      </div>
                     ) : null}
                   </div>
                 </section>

@@ -43,7 +43,7 @@ const systemToolLinks = [
   { href: "/signup-requests", title: "Signup Requests", desc: "Review pending access, profile, and child requests." },
   { href: "/snooker-handicap-exceptions", title: "Handicap Exceptions", desc: "Set first-time snooker handicaps and seed starting Elo." },
   { href: "/shared-player-links", title: "Shared Player Links", desc: "Review suggested club-to-league player matches and create Elo links." },
-  { href: "/reschedules", title: "Reschedules", desc: "Review one-week league reschedule requests." },
+  { href: "/reschedules", title: "Fixture week requests", desc: "Review requests to play one week early or later." },
   { href: "/backup", title: "Data Management", desc: "Run maintenance and data cleanup tools." },
   { href: "/audit", title: "Audit Log", desc: "Check important account and system actions." },
   { href: "/emails", title: "System Email Activity", desc: "Track registration, password-reset and table-booking emails." },
@@ -537,7 +537,7 @@ export default function HomePage() {
       }
       return;
     }
-    setShowProfilePrompt(false);
+    queueMicrotask(() => setShowProfilePrompt(false));
   }, [admin.loading, admin.isSuper, admin.userId, userPlayerId, userMissingAvatar]);
 
   useEffect(() => {
