@@ -17,7 +17,7 @@ type NotificationItem = {
   status: string;
 };
 
-type ResultRow = { id: string; match_id: string; submitted_at: string; status: string };
+type ResultRow = { id: string; match_id: string; submitted_at: string; status: string; reviewed_at?: string | null; note?: string | null };
 type MatchLookup = {
   id: string;
   match_mode: "singles" | "doubles";
@@ -379,8 +379,9 @@ export default function NotificationsPage() {
         });
       }
       if (admin.isSuper) {
-        const [resultRes, claimRes, updateRes, adminReqRes, premiumRes, locationReqRes] = await Promise.all([
+        const [resultRes, autoResultRes, claimRes, updateRes, adminReqRes, premiumRes, locationReqRes] = await Promise.all([
           client.from("result_submissions").select("id,match_id,submitted_at,status").eq("status", "pending").order("submitted_at", { ascending: false }),
+          client.from("result_submissions").select("id,match_id,submitted_at,status,reviewed_at,note").eq("status", "approved").eq("note", "Automatically approved because both players submitted the same score.").order("reviewed_at", { ascending: false }).limit(100),
           client.from("player_claim_requests").select("id,created_at,status").eq("status", "pending").order("created_at", { ascending: false }),
           client.from("player_update_requests").select("id,player_id,created_at,status").eq("status", "pending").order("created_at", { ascending: false }),
           client.from("admin_requests").select("id,created_at,status").eq("status", "pending").order("created_at", { ascending: false }),
@@ -388,9 +389,10 @@ export default function NotificationsPage() {
           client.from("location_requests").select("id,requester_full_name,requested_location_name,created_at,status").eq("status", "pending").order("created_at", { ascending: false }),
         ]);
 
-        if (resultRes.error || claimRes.error || updateRes.error || adminReqRes.error || premiumRes.error || locationReqRes.error) {
+        if (resultRes.error || autoResultRes.error || claimRes.error || updateRes.error || adminReqRes.error || premiumRes.error || locationReqRes.error) {
           const firstError =
             resultRes.error?.message ??
+            autoResultRes.error?.message ??
             claimRes.error?.message ??
             updateRes.error?.message ??
             adminReqRes.error?.message ??
@@ -402,7 +404,8 @@ export default function NotificationsPage() {
         }
 
         const resultRows = (resultRes.data ?? []) as ResultRow[];
-        const labels = await loadMatchLabels(resultRows);
+        const autoResultRows = (autoResultRes.data ?? []) as ResultRow[];
+        const labels = await loadMatchLabels([...resultRows, ...autoResultRows]);
         resultRows.forEach((r) => {
           out.push({
             key: `result:${r.id}`,
@@ -411,6 +414,19 @@ export default function NotificationsPage() {
             created_at: r.submitted_at,
             href: `/matches/${r.match_id}`,
             status: r.status,
+          });
+        });
+        const seenAutoApprovedMatches = new Set<string>();
+        autoResultRows.forEach((r) => {
+          if (seenAutoApprovedMatches.has(r.match_id)) return;
+          seenAutoApprovedMatches.add(r.match_id);
+          out.push({
+            key: `result-auto-approved:${r.match_id}`,
+            title: "Result auto-approved — scores agreed",
+            detail: labels.get(r.match_id) ?? `Match ${r.match_id.slice(0, 8)}`,
+            created_at: r.reviewed_at ?? r.submitted_at,
+            href: `/matches/${r.match_id}`,
+            status: "approved",
           });
         });
         (claimRes.data ?? []).forEach((r: { id: string; created_at: string; status: string }) => {

@@ -111,7 +111,9 @@ export default function EntrantFixturesPage() {
         setNotice(payload.error ?? "The result could not be submitted.");
         return;
       }
-      setNotice("Result submitted. It will appear in the table after the organiser approves it.");
+      setNotice(payload.autoApproved
+        ? "Both players submitted the same score. The result has been approved automatically."
+        : "Result submitted. If your opponent submits the same score it will be approved automatically; otherwise the organiser will review it.");
       await load();
     } catch (submitError) {
       setNotice(submitError instanceof DOMException && submitError.name === "AbortError"

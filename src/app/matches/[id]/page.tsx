@@ -2007,10 +2007,6 @@ export default function MatchPage() {
       showSubmitModal("You already have a pending submission for this match. This match is locked until an administrator reviews it.");
       return;
     }
-    if (hasPendingSubmission) {
-      showSubmitModal("A result for this fixture is already pending review. This match is locked until an administrator reviews it.");
-      return;
-    }
     if (userApprovedSubmission) {
       showSubmitModal("Your submitted result has already been approved. This match is locked.");
       return;
@@ -2089,6 +2085,23 @@ export default function MatchPage() {
         return;
       }
       setSubmissions((prev) => [res.data as ResultSubmission, ...prev]);
+      setSavingStage("Comparing both players’ submissions…");
+      const session = await client.auth.getSession();
+      const accessToken = session.data.session?.access_token;
+      let autoApproved = false;
+      let autoApprovedWinnerSide: 1 | 2 | null = null;
+      if (accessToken) {
+        const comparisonResponse = await withOperationTimeout(fetch("/api/results/auto-approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ matchId: match.id }),
+        }), "Comparing both players’ submissions");
+        const comparisonPayload = (await comparisonResponse.json().catch(() => ({}))) as { autoApproved?: boolean; winnerSide?: 1 | 2; error?: string };
+        if (comparisonResponse.ok && comparisonPayload.autoApproved) {
+          autoApproved = true;
+          autoApprovedWinnerSide = comparisonPayload.winnerSide ?? null;
+        }
+      }
       await logAudit("result_submitted_for_approval", {
         entityType: "match",
         entityId: match.id,
@@ -2096,7 +2109,14 @@ export default function MatchPage() {
         meta: { competitionId: match.competition_id },
       });
       setRedirectAfterInfo(true);
-      showSubmitModal("Full result submitted for approval.", "Submitted");
+      if (autoApproved && autoApprovedWinnerSide) {
+        const winnerId = autoApprovedWinnerSide === 1 ? teams.team1Rep : teams.team2Rep;
+        setMatch((current) => current ? { ...current, status: "complete", winner_player_id: winnerId } : current);
+        setSubmissions((current) => current.map((submission) => ({ ...submission, status: "approved" })));
+        showSubmitModal("Both players submitted the same score, so the result has been approved automatically. The organiser will see it for information.", "Result agreed and approved");
+      } else {
+        showSubmitModal("Result submitted. If your opponent submits the same score it will be approved automatically; otherwise the organiser will review it.", "Submitted");
+      }
     } catch (error) {
       showSubmitModal(error instanceof Error ? error.message : "The result could not be submitted.");
     } finally {
@@ -2146,11 +2166,6 @@ export default function MatchPage() {
     // rows from the submission being approved so an earlier conflicting claim
     // cannot determine the league points.
     if (isFixedRackLeague && existingFrames.length) {
-      const clearFrames = await client.from("frames").delete().eq("match_id", match.id);
-      if (clearFrames.error) {
-        showReviewModal(clearFrames.error.message || "Unable to replace the disputed rack score.");
-        return;
-      }
       existingFrames = [];
     }
     let rows: Array<{
@@ -2779,7 +2794,7 @@ export default function MatchPage() {
                         onClick={() =>
                           setConfirmModal({
                             title: "Submit Full Result For Approval",
-                            description: `Submit the full ${competition.sport_type === "snooker" ? "frame" : "rack"} result for ${teams.team1Label} vs ${teams.team2Label}? This will lock the fixture until an administrator reviews it.`,
+                            description: `Submit the full ${competition.sport_type === "snooker" ? "frame" : "rack"} result for ${teams.team1Label} vs ${teams.team2Label}? It will be approved automatically if your opponent submits the same score; otherwise the organiser will review it.`,
                             confirmLabel: "Submit result",
                             onConfirm: async () => {
                               setConfirmModal(null);
@@ -2790,7 +2805,7 @@ export default function MatchPage() {
                         disabled={saving || !canSaveResult}
                         className={buttonSuccessClass}
                       >
-                        {saving ? savingStage ?? "Submitting…" : "Submit full result for approval"}
+                        {saving ? savingStage ?? "Submitting…" : "Submit full result"}
                       </button>
                     )}
                     <button
@@ -2893,7 +2908,7 @@ export default function MatchPage() {
                   ) : null}
                   {userPendingSubmission ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                      Submitted. Pending review since {new Date(userPendingSubmission.submitted_at).toLocaleString()}. Match is locked until reviewed.
+                      Submitted {new Date(userPendingSubmission.submitted_at).toLocaleString()}. Waiting for your opponent to enter the same score or for organiser review.
                     </div>
                   ) : null}
                   {isVoidedMatch ? (
