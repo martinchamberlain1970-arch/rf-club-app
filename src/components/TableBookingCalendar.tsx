@@ -78,11 +78,11 @@ export default function TableBookingCalendar({ tables, reservations, availabilit
       const key = dateKey(day);
       const closed = slots.total === 0;
       const full = !closed && slots.free.length === 0;
-      const limited = !closed && !full && slots.free.length <= Math.max(2, Math.ceil(slots.total / 4));
+      const partlyBooked = !closed && !full && slots.free.length < slots.total;
       const selectable = slots.free.length > 0;
-      const colour = closed || day < today || day > latest ? "bg-slate-100 text-slate-400" : full ? "bg-slate-200 text-slate-600" : limited ? "bg-amber-100 text-amber-950" : "bg-emerald-100 text-emerald-950";
-      const fullLabel = closed ? "Closed" : full ? "Full" : limited ? "Limited" : "Available";
-      const shortLabel = closed ? "—" : full ? "Full" : limited ? "Few" : "Free";
+      const colour = closed || day < today || day > latest ? "bg-slate-100 text-slate-400" : full ? "bg-slate-200 text-slate-600" : partlyBooked ? "bg-amber-100 text-amber-950" : "bg-emerald-100 text-emerald-950";
+      const fullLabel = closed ? "Closed" : full ? "Full" : partlyBooked ? "Partly booked" : "Available";
+      const shortLabel = closed ? "—" : full ? "Full" : partlyBooked ? "Part" : "Free";
       return <button key={key} type="button" aria-label={`${day.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}: ${fullLabel}`} disabled={!selectable} onClick={() => setSelectedDate(key)} className={`min-h-20 min-w-0 overflow-hidden rounded-lg border p-1.5 text-left sm:p-2 ${colour} ${selectedDate === key ? "border-emerald-800 ring-2 ring-emerald-600" : "border-transparent"} disabled:cursor-default`}><span className="block text-sm font-black sm:text-base">{day.getDate()}</span><span className="mt-1 block truncate text-[9px] font-bold sm:hidden">{shortLabel}</span><span className="mt-1 hidden truncate text-xs font-bold sm:block">{fullLabel}</span></button>;
     })}</div>
     <div className="mt-5 rounded-xl bg-slate-50 p-4"><h3 className="font-black text-slate-950">{selected.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</h3>{selectedSlots.length ? <div className="mt-3 flex flex-wrap gap-2">{selectedSlots.map((slot) => <button key={slot.start.toISOString()} type="button" onClick={() => onChooseSlot(table.id, slot.start.toISOString(), slot.duration)} className="rounded-lg bg-emerald-800 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700">{slot.label}</button>)}</div> : <p className="mt-2 text-sm text-slate-600">No online booking times are available on this date.</p>}</div>
