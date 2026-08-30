@@ -75,6 +75,7 @@ async function applyPoolRating(client: SupabaseClient, match: MatchRow, winnerSi
   const delta2 = -delta1;
   const next1 = Math.max(100, rating1 + delta1);
   const next2 = Math.max(100, rating2 + delta2);
+  const expectedTeam1 = expectedScore(rating1, rating2);
   const [update1, update2] = await Promise.all([
     client.from("players").update({ rating_pool: next1, peak_rating_pool: Math.max(player1.peak_rating_pool ?? 1000, next1), rated_matches_pool: matches1 + 1 }).eq("id", player1.id),
     client.from("players").update({ rating_pool: next2, peak_rating_pool: Math.max(player2.peak_rating_pool ?? 1000, next2), rated_matches_pool: matches2 + 1 }).eq("id", player2.id),
@@ -82,7 +83,16 @@ async function applyPoolRating(client: SupabaseClient, match: MatchRow, winnerSi
   if (update1.error || update2.error) return update1.error?.message || update2.error?.message || "Ratings could not be updated.";
   const mark = await client
     .from("matches")
-    .update({ rating_applied_at: new Date().toISOString(), rating_delta_team1: delta1, rating_delta_team2: delta2 })
+    .update({
+      rating_applied_at: new Date().toISOString(),
+      rating_delta_team1: delta1,
+      rating_delta_team2: delta2,
+      elo_team1_before: rating1,
+      elo_team2_before: rating2,
+      elo_team1_after: next1,
+      elo_team2_after: next2,
+      expected_team1_probability: expectedTeam1,
+    })
     .eq("id", match.id)
     .is("rating_applied_at", null);
   return mark.error?.message ?? null;
@@ -122,6 +132,10 @@ async function applySnookerRating(client: SupabaseClient, match: MatchRow, compe
   const loser = players.get(loserId);
   const winnerDelta = Number(payload.delta_winner ?? 0);
   const loserDelta = Number(payload.delta_loser ?? 0);
+  const player1 = players.get(match.player1_id);
+  const player2 = players.get(match.player2_id);
+  const rating1Before = player1?.rating_snooker ?? 1000;
+  const rating2Before = player2?.rating_snooker ?? 1000;
   if (winner) {
     const current = winner.rating_snooker ?? 1000;
     const next = Math.max(100, current + winnerDelta);
@@ -138,6 +152,11 @@ async function applySnookerRating(client: SupabaseClient, match: MatchRow, compe
     rating_applied_at: new Date().toISOString(),
     rating_delta_team1: winnerSide === 1 ? winnerDelta : loserDelta,
     rating_delta_team2: winnerSide === 2 ? winnerDelta : loserDelta,
+    elo_team1_before: rating1Before,
+    elo_team2_before: rating2Before,
+    elo_team1_after: Math.max(100, rating1Before + (winnerSide === 1 ? winnerDelta : loserDelta)),
+    elo_team2_after: Math.max(100, rating2Before + (winnerSide === 2 ? winnerDelta : loserDelta)),
+    expected_team1_probability: expectedScore(rating1Before, rating2Before),
   }).eq("id", match.id).is("rating_applied_at", null);
   return mark.error?.message ?? null;
 }

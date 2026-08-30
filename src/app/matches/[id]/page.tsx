@@ -1361,6 +1361,19 @@ export default function MatchPage() {
         return;
       }
       if (!syncPayload.skipped) {
+        const player1 = players.find((player) => player.id === match.player1_id);
+        const player2 = players.find((player) => player.id === match.player2_id);
+        const rating1Before = player1?.rating_snooker ?? 1000;
+        const rating2Before = player2?.rating_snooker ?? 1000;
+        const delta1 = Number(syncPayload.deltaTeam1 ?? 0);
+        const delta2 = Number(syncPayload.deltaTeam2 ?? 0);
+        await client.from("matches").update({
+          elo_team1_before: rating1Before,
+          elo_team2_before: rating2Before,
+          elo_team1_after: Math.max(100, rating1Before + delta1),
+          elo_team2_after: Math.max(100, rating2Before + delta2),
+          expected_team1_probability: expectedScore(rating1Before, rating2Before),
+        }).eq("id", match.id);
         await logAudit("rating_applied", {
           entityType: "match",
           entityId: match.id,
@@ -1455,7 +1468,16 @@ export default function MatchPage() {
 
     await client
       .from("matches")
-      .update({ rating_applied_at: new Date().toISOString(), rating_delta_team1: deltaTeam1, rating_delta_team2: deltaTeam2 })
+      .update({
+        rating_applied_at: new Date().toISOString(),
+        rating_delta_team1: deltaTeam1,
+        rating_delta_team2: deltaTeam2,
+        elo_team1_before: team1AvgRating,
+        elo_team2_before: team2AvgRating,
+        elo_team1_after: Math.max(100, team1AvgRating + deltaTeam1),
+        elo_team2_after: Math.max(100, team2AvgRating + deltaTeam2),
+        expected_team1_probability: expectedTeam1,
+      })
       .eq("id", match.id);
 
     await logAudit("rating_applied", {

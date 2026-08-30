@@ -1,0 +1,39 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import type { WeeklyReviewData } from "@/lib/weekly-review";
+
+const displayDate = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
+
+export default function PublicWeeklyReviewPage() {
+  const params = useParams<{ competitionId: string; weekStart: string }>();
+  const [report, setReport] = useState<WeeklyReviewData | null>(null);
+  const [publishedAt, setPublishedAt] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    fetch(`/api/public/weekly-reviews/${encodeURIComponent(params.competitionId)}/${encodeURIComponent(params.weekStart)}`, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error ?? "Weekly review could not be loaded.");
+        setReport(payload.report as WeeklyReviewData);
+        setPublishedAt(payload.publishedAt ?? null);
+      })
+      .catch((cause) => setError(cause instanceof Error ? cause.message : "Weekly review could not be loaded."));
+  }, [params.competitionId, params.weekStart]);
+  if (error) return <main className="min-h-screen bg-slate-950 p-5 text-white"><div className="mx-auto max-w-3xl rounded-2xl bg-white p-6 text-slate-900">{error}</div></main>;
+  if (!report) return <main className="min-h-screen bg-slate-950 p-5 text-white"><p className="mx-auto max-w-3xl">Loading weekly review…</p></main>;
+  const unit = report.competition.sportType === "snooker" ? "frames" : "racks";
+  return <main className="min-h-screen bg-gradient-to-b from-slate-950 via-emerald-950 to-slate-950 px-4 py-6 text-white">
+    <div className="mx-auto max-w-4xl space-y-5">
+      <header className="rounded-3xl border border-lime-500/40 bg-black/60 p-6 shadow-2xl"><p className="text-xs font-bold uppercase tracking-[0.24em] text-lime-300">Weekly review</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">{report.competition.name}</h1><p className="mt-2 text-slate-300">{displayDate(report.weekStart)} – {displayDate(report.weekEnd)} · Official fixture week</p></header>
+      <section className="grid gap-3 sm:grid-cols-4"><div className="rounded-2xl bg-white p-4 text-slate-950"><p className="text-xs font-bold uppercase text-slate-500">Fixtures</p><p className="mt-1 text-3xl font-black">{report.totalFixtures}</p></div><div className="rounded-2xl bg-white p-4 text-slate-950"><p className="text-xs font-bold uppercase text-slate-500">Completed</p><p className="mt-1 text-3xl font-black">{report.completedFixtures}</p></div><div className="rounded-2xl bg-white p-4 text-slate-950"><p className="text-xs font-bold uppercase text-slate-500">Void</p><p className="mt-1 text-3xl font-black">{report.voidFixtures}</p></div><div className="rounded-2xl bg-white p-4 text-slate-950"><p className="text-xs font-bold uppercase text-slate-500">Outstanding</p><p className="mt-1 text-3xl font-black">{report.unresolvedFixtures}</p></div></section>
+      {report.biggestUpset ? <section className="rounded-3xl border border-amber-300 bg-amber-100 p-5 text-amber-950"><p className="text-xs font-black uppercase tracking-[0.18em]">Upset of the week</p><h2 className="mt-2 text-2xl font-black">{report.biggestUpset.actualWinner} beat the odds</h2><p className="mt-1">Only a {report.biggestUpset.actualWinner === report.biggestUpset.player1 ? report.biggestUpset.expected1Pct : report.biggestUpset.expected2Pct}% pre-match chance · won {report.biggestUpset.score1}–{report.biggestUpset.score2}.</p></section> : null}
+      <section className="rounded-3xl bg-white p-5 text-slate-950 shadow-xl"><p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Results and expectations</p><h2 className="mt-1 text-2xl font-black">How the week unfolded</h2><div className="mt-4 space-y-3">{report.results.map((result) => <article key={result.matchId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center"><div><p className="font-bold">{result.player1}</p><p className="text-xs text-slate-500">Elo {result.elo1Before} → {result.elo1After} ({signed(result.eloDelta1)})</p></div><div className="rounded-xl bg-slate-900 px-4 py-2 text-xl font-black text-white">{result.voided ? "VOID" : `${result.score1}–${result.score2}`}</div><div><p className="font-bold">{result.player2}</p><p className="text-xs text-slate-500">Elo {result.elo2Before} → {result.elo2After} ({signed(result.eloDelta2)})</p></div></div><p className="mt-3 text-center text-sm text-slate-600">Pre-match: {result.expectedFavourite} favourite · {result.expected1Pct}% vs {result.expected2Pct}%{result.voided ? " · No winner, so no expectation comparison" : result.upset ? " · Actual result was an upset" : " · Result followed the Elo expectation"}</p>{result.estimatedExpectation ? <p className="mt-1 text-center text-xs text-amber-700">Expectation estimated because this match was completed before Elo snapshots were introduced.</p> : null}</article>)}{!report.results.length ? <p className="text-slate-600">No completed results in this official fixture week.</p> : null}</div></section>
+      <section className="rounded-3xl bg-white p-5 text-slate-950 shadow-xl"><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Elo movement</p><h2 className="mt-1 text-2xl font-black">Movers this week</h2><div className="mt-4 grid gap-2 sm:grid-cols-2">{report.eloMovers.map((mover) => <div key={mover.playerId} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2"><span className="font-semibold">{mover.playerName}</span><span className={`font-black ${mover.change > 0 ? "text-emerald-700" : mover.change < 0 ? "text-rose-700" : "text-slate-600"}`}>{signed(mover.change)}</span></div>)}</div></section>
+      <section className="rounded-3xl bg-white p-5 text-slate-950 shadow-xl"><p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-700">League table</p><h2 className="mt-1 text-2xl font-black">After this fixture week</h2><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[560px] text-sm"><thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">Move</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Pts</th></tr></thead><tbody>{report.table.map((row) => <tr key={row.playerId} className="border-b border-slate-200"><td className="p-2 font-black">{row.position}</td><td className="p-2 font-semibold">{row.playerName}</td><td className="p-2 text-center">{row.movement == null || row.movement === 0 ? "–" : row.movement > 0 ? `↑${row.movement}` : `↓${Math.abs(row.movement)}`}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center text-lg font-black">{row.points}</td></tr>)}</tbody></table></div></section>
+      <footer className="pb-4 text-center text-xs text-slate-400">Every {unit.slice(0, -1)} counts · Published {publishedAt ? new Date(publishedAt).toLocaleString("en-GB") : "by Rack & Frame"} · © 2026 Martin Chamberlain</footer>
+    </div>
+  </main>;
+}

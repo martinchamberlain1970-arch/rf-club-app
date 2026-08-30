@@ -44,6 +44,7 @@ const systemToolLinks = [
   { href: "/snooker-handicap-exceptions", title: "Handicap Exceptions", desc: "Set first-time snooker handicaps and seed starting Elo." },
   { href: "/shared-player-links", title: "Shared Player Links", desc: "Review suggested club-to-league player matches and create Elo links." },
   { href: "/reschedules", title: "Fixture week requests", desc: "Review requests to play one week early or later." },
+  { href: "/weekly-reviews", title: "Weekly Reviews", desc: "Generate, publish and share weekly league reports." },
   { href: "/backup", title: "Data Management", desc: "Run maintenance and data cleanup tools." },
   { href: "/audit", title: "Audit Log", desc: "Check important account and system actions." },
   { href: "/emails", title: "System Email Activity", desc: "Track registration, password-reset and table-booking emails." },
