@@ -828,6 +828,7 @@ export default function HomePage() {
                   ["Fixtures", "/events"],
                   ["Live", "/live"],
                   ["Results", "/results"],
+                  ["Weekly reviews", "/weekly-reviews"],
                 ].map(([label, href]) => (
                   <Link key={label} href={href} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-800 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-900">
                     {label}
