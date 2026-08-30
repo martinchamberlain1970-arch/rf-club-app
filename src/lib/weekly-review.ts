@@ -36,7 +36,8 @@ export type WeeklyReviewData = {
   unresolvedFixtures: number;
   allResolved: boolean;
   results: WeeklyReviewResult[];
-  eloMovers: Array<{ playerId: string; playerName: string; change: number }>;
+  eloMovers: Array<{ playerId: string; playerName: string; change: number; currentRating?: number }>;
+  eloTop10?: Array<{ position: number; playerId: string; playerName: string; rating: number }>;
   biggestUpset: WeeklyReviewResult | null;
   table: Array<{ position: number; previousPosition: number | null; movement: number | null; playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number }>;
 };
@@ -175,7 +176,18 @@ export async function buildWeeklyReview(client: SupabaseClient, competitionId: s
     moverMap.set(result.player1Id, { playerId: result.player1Id, playerName: result.player1, change: (moverMap.get(result.player1Id)?.change ?? 0) + result.eloDelta1 });
     moverMap.set(result.player2Id, { playerId: result.player2Id, playerName: result.player2, change: (moverMap.get(result.player2Id)?.change ?? 0) + result.eloDelta2 });
   }
-  const eloMovers = [...moverMap.values()].sort((a, b) => b.change - a.change || a.playerName.localeCompare(b.playerName));
+  const eloMovers = [...moverMap.values()]
+    .map((mover) => ({ ...mover, currentRating: Math.round(currentRatingById.get(mover.playerId) ?? 1000) }))
+    .sort((a, b) => b.change - a.change || a.playerName.localeCompare(b.playerName));
+  const eloTop10 = playerIds
+    .map((playerId) => ({
+      playerId,
+      playerName: nameById.get(playerId) ?? "Player",
+      rating: Math.round(currentRatingById.get(playerId) ?? 1000),
+    }))
+    .sort((a, b) => b.rating - a.rating || a.playerName.localeCompare(b.playerName))
+    .slice(0, 10)
+    .map((player, index) => ({ ...player, position: index + 1 }));
   const upsetResults = results.filter((result) => result.upset);
   const biggestUpset = upsetResults.sort((a, b) => {
     const aWinnerExpected = a.actualWinner === a.player1 ? a.expected1Pct : a.expected2Pct;
@@ -206,6 +218,7 @@ export async function buildWeeklyReview(client: SupabaseClient, competitionId: s
     allResolved: weekMatches.length > 0 && weekMatches.every((match) => ["complete", "bye"].includes(match.status)),
     results,
     eloMovers,
+    eloTop10,
     biggestUpset,
     table,
   };
