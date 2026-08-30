@@ -68,7 +68,12 @@ export default function TableBookingCalendar({ tables, reservations, availabilit
   return <section className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div><h2 className="text-2xl font-black text-slate-950">Choose an available time</h2><p className="mt-1 text-sm text-slate-600">Select a date, then choose a free time to fill in the booking form.</p></div>
-      <select value={table.id} onChange={(event) => { setTableId(event.target.value); setSelectedDate(dateKey(today)); }} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold">{tables.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Choose table calendar">
+        {tables.map((entry) => {
+          const selected = entry.id === table.id;
+          return <button key={entry.id} type="button" aria-pressed={selected} onClick={() => setTableId(entry.id)} className={`rounded-xl border px-4 py-2 text-sm font-bold transition ${selected ? "border-emerald-800 bg-emerald-800 text-white" : "border-slate-300 bg-white text-slate-700 hover:border-emerald-400 hover:bg-emerald-50"}`}>{entry.sport_type === "pool" ? "Pool Table" : "Snooker Table"}</button>;
+        })}
+      </div>
     </div>
     <div className="mt-5 flex items-center justify-between gap-3"><button type="button" disabled={!canPrevious} onClick={() => { setShownMonth(monthKey(previousMonth)); setSelectedDate(dateKey(previousMonth < today ? today : previousMonth)); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold disabled:opacity-30">Previous</button><h3 className="text-lg font-black text-slate-900">{first.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</h3><button type="button" disabled={!canNext} onClick={() => { setShownMonth(monthKey(nextMonth)); setSelectedDate(dateKey(nextMonth)); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold disabled:opacity-30">Next</button></div>
     <div className="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-bold uppercase text-slate-500">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => <span key={day} className="py-2">{day}</span>)}</div>
