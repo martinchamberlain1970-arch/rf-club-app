@@ -89,7 +89,8 @@ export async function GET(request: NextRequest) {
   const { eligibleSports, canBookOther } = await eligibility(auth);
   const now = new Date();
   const from = now.toISOString();
-  const to = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString();
+  const bookingViewDays = auth.isSuper ? 400 : 60;
+  const to = new Date(now.getTime() + bookingViewDays * 24 * 60 * 60 * 1000).toISOString();
   let reservationsQuery = auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,booked_for_player_id,starts_at,ends_at,purpose,notes,status,created_at,participant_one,participant_two,team_name,requester_email,rejection_reason,reviewed_at").gt("ends_at", from).lte("starts_at", to).order("starts_at");
   if (!auth.isSuper) reservationsQuery = reservationsQuery.or(`status.eq.booked,booked_by_user_id.eq.${auth.user.id}`);
   const [tablesResult, reservationsResult, hoursResult, blocksResult] = await Promise.all([
