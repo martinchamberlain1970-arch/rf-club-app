@@ -31,15 +31,19 @@ async function eligibility(auth: NonNullable<Awaited<ReturnType<typeof authorize
     const [mastersResult, grantsResult] = await Promise.all([
       auth.client
         .from("competition_entries")
-        .select("id,competitions!inner(name)")
+        .select("id,competitions!inner(name,sport_type)")
         .eq("player_id", auth.playerId)
         .eq("status", "approved")
-        .ilike("competitions.name", "Greenhithe Legion Masters 2026"),
+        .ilike("competitions.name", "Greenhithe Legion Masters%2026"),
       auth.client.from("table_booking_access").select("sport_type,access_role").eq("player_id", auth.playerId),
     ]);
     if (mastersResult.error) throw mastersResult.error;
     if (grantsResult.error) throw grantsResult.error;
-    if ((mastersResult.data ?? []).length) sports.add("pool");
+    for (const entry of mastersResult.data ?? []) {
+      const competition = entry.competitions as unknown as { sport_type?: string } | null;
+      if (competition?.sport_type === "snooker") sports.add("snooker");
+      if (["pool_8_ball", "pool_9_ball"].includes(competition?.sport_type ?? "")) sports.add("pool");
+    }
     for (const grant of grantsResult.data ?? []) {
       sports.add(grant.sport_type);
       if (["captain", "vice_captain"].includes(grant.access_role)) canBookOther = true;
@@ -331,7 +335,7 @@ export async function POST(request: NextRequest) {
   const tableResult = await auth.client.from("cue_tables").select("id,sport_type,is_active").eq("id", tableId).maybeSingle();
   if (!tableResult.data?.is_active) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
   const maximumMinutes = tableResult.data.sport_type === "pool" ? 30 : 60;
-  if (!auth.isSuper && durationMinutes > maximumMinutes) return NextResponse.json({ error: `${tableResult.data.sport_type === "pool" ? "Pool" : "Snooker"} table bookings are limited to ${maximumMinutes} minutes.` }, { status: 400 });
+  if (!auth.isSuper && durationMinutes !== maximumMinutes) return NextResponse.json({ error: `${tableResult.data.sport_type === "pool" ? "Pool" : "Snooker"} table bookings must be ${maximumMinutes}-minute sessions.` }, { status: 400 });
   const { eligibleSports, canBookOther } = await eligibility(auth);
   if (!eligibleSports.includes(tableResult.data.sport_type)) return NextResponse.json({ error: `You do not currently have ${tableResult.data.sport_type} table booking access.` }, { status: 403 });
   if (purpose === "other" && !canBookOther) return NextResponse.json({ error: "Other bookings are limited to team captains, vice-captains and the Super User." }, { status: 403 });
