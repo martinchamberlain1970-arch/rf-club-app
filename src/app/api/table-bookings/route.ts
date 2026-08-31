@@ -336,6 +336,7 @@ export async function POST(request: NextRequest) {
   if (!tableResult.data?.is_active) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
   const maximumMinutes = tableResult.data.sport_type === "pool" ? 30 : 60;
   if (!auth.isSuper && durationMinutes !== maximumMinutes) return NextResponse.json({ error: `${tableResult.data.sport_type === "pool" ? "Pool" : "Snooker"} table bookings must be ${maximumMinutes}-minute sessions.` }, { status: 400 });
+  if (!auth.isSuper && startInLondon.minutes % 30 !== 0) return NextResponse.json({ error: "Table bookings must start on the hour or half hour." }, { status: 400 });
   const { eligibleSports, canBookOther } = await eligibility(auth);
   if (!eligibleSports.includes(tableResult.data.sport_type)) return NextResponse.json({ error: `You do not currently have ${tableResult.data.sport_type} table booking access.` }, { status: 403 });
   if (purpose === "other" && !canBookOther) return NextResponse.json({ error: "Other bookings are limited to team captains, vice-captains and the Super User." }, { status: 403 });

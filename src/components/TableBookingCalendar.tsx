@@ -37,16 +37,17 @@ export default function TableBookingCalendar({ tables, reservations, availabilit
     const rule = availability.find((entry) => entry.table_id === table.id && entry.weekday === day.getDay());
     if (!rule) return { total: 0, free: [] as { start: Date; label: string; duration: number }[] };
     const duration = table.sport_type === "pool" ? 30 : 60;
+    const startInterval = 30;
     const free: { start: Date; label: string; duration: number }[] = [];
     let total = 0;
-    for (let value = minutes(rule.opens_at); value + duration <= minutes(rule.closes_at); value += duration) {
+    for (let value = minutes(rule.opens_at); value + duration <= minutes(rule.closes_at); value += startInterval) {
       const start = new Date(`${dateKey(day)}T${timeValue(value)}:00`);
       const end = new Date(start.getTime() + duration * 60000);
       if (start < new Date()) continue;
       total += 1;
       const unavailable = reservations.some((entry) => entry.table_id === table.id && entry.status === "booked" && overlaps(start, end, entry))
         || blocks.some((entry) => (!entry.table_id || entry.table_id === table.id) && overlaps(start, end, entry));
-      if (!unavailable) free.push({ start, label: timeValue(value), duration });
+      if (!unavailable) free.push({ start, label: `${timeValue(value)}–${timeValue(value + duration)}`, duration });
     }
     return { total, free };
   };
