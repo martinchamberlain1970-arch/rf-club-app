@@ -111,6 +111,12 @@ const paidDateTime = (value: string) => new Date(value).toLocaleString("en-GB", 
   timeStyle: "short",
   timeZone: "Europe/London",
 });
+const londonDateKey = (value = new Date()) => value.toLocaleDateString("en-CA", {
+  timeZone: "Europe/London",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 const paidMethodLabel = (method: Entry["payment_method"] | GuestEntry["payment_method"]) =>
   method === "cash" ? " cash" : method === "stripe" ? " by Stripe" : "";
 type LeaguePairing = {
@@ -1573,12 +1579,15 @@ export default function CompetitionPage() {
       framesByMatch.set(frame.match_id, prev);
     });
 
+    const today = londonDateKey();
     matches.filter((match) => !isOneDayLeague || (match.round_no ?? 1) <= roundRobinRoundCount).forEach((match) => {
       if (!match.player1_id) return;
       const row1 = ensureRow(match.player1_id);
       const row2 = match.player2_id && match.player2_id !== match.player1_id ? ensureRow(match.player2_id) : null;
       if (match.status === "bye") {
-        row1.byes += 1;
+        // Generated fixture lists contain every bye for the whole season. Only
+        // show a bye in the live table once its scheduled week has arrived.
+        if (!match.scheduled_for || match.scheduled_for.slice(0, 10) <= today) row1.byes += 1;
         return;
       }
       if (match.status !== "complete") return;
