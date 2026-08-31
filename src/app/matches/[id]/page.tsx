@@ -400,6 +400,8 @@ export default function MatchPage() {
   } | null>(null);
   const [expectedPreviewDismissed, setExpectedPreviewDismissed] = useState(false);
   const [fixtureContacts, setFixtureContacts] = useState<FixtureContact[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const openDisplay = () => {
     if (!matchId) return;
@@ -419,8 +421,22 @@ export default function MatchPage() {
     if (!client) return;
 
     let active = true;
+    let loadTimeout: ReturnType<typeof setTimeout> | null = null;
+    const finishLoading = () => {
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
+      }
+      if (active) setLoading(false);
+    };
     const load = async () => {
       setLoading(true);
+      setLoadError(null);
+      loadTimeout = setTimeout(() => {
+        if (!active) return;
+        setLoading(false);
+        setLoadError("This match is taking longer than expected to load. Check your connection and try again.");
+      }, 15_000);
 
       const mRes = await client
         .from("matches")
@@ -430,8 +446,8 @@ export default function MatchPage() {
 
       if (!active) return;
       if (mRes.error || !mRes.data) {
-        setLoading(false);
-        setMessage(mRes.error?.message ?? "Match not found.");
+        finishLoading();
+        setLoadError(mRes.error?.message ?? "Match not found.");
         return;
       }
       const loadedMatch = mRes.data as Match;
@@ -478,8 +494,8 @@ export default function MatchPage() {
 
       if (!active) return;
       if (playersRes.error || competitionRes.error || framesRes.error || submissionsRes.error || !playersRes.data || !competitionRes.data || !framesRes.data) {
-        setLoading(false);
-        setMessage(
+        finishLoading();
+        setLoadError(
           [
             playersRes.error?.message && `Players: ${playersRes.error.message}`,
             competitionRes.error?.message && `Competition: ${competitionRes.error.message}`,
@@ -495,9 +511,9 @@ export default function MatchPage() {
         return;
       }
 
-      let effectiveMatch = loadedMatch;
-      let effectiveFrameRows = ((framesRes.data ?? []) as unknown) as FrameRow[];
-      let effectiveSubmissionRows = ((submissionsRes.data ?? []) as unknown) as ResultSubmission[];
+      const effectiveMatch = loadedMatch;
+      const effectiveFrameRows = ((framesRes.data ?? []) as unknown) as FrameRow[];
+      const effectiveSubmissionRows = ((submissionsRes.data ?? []) as unknown) as ResultSubmission[];
       let effectiveRescheduleRows: LeagueRescheduleRequest[] = [];
       let effectiveRequesterPendingRows: LeagueRescheduleRequest[] = [];
       const sessionRes = await client.auth.getSession();
@@ -513,39 +529,6 @@ export default function MatchPage() {
           setFixtureContacts([]);
         }
       }
-      if (accessToken && competitionRes.data.competition_format === "league") {
-        await fetch("/api/admin/auto-void-league-fixtures", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ competitionId: loadedMatch.competition_id }),
-        }).catch(() => null);
-        const [refreshedMatchRes, refreshedFramesRes, refreshedSubmissionsRes] = await Promise.all([
-          client
-            .from("matches")
-            .select("id,competition_id,round_no,match_no,best_of,status,match_mode,is_archived,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,winner_player_id,opening_break_player_id,rating_applied_at,scheduled_for,team1_handicap_start,team2_handicap_start")
-            .eq("id", matchId)
-            .maybeSingle(),
-          client
-            .from("frames")
-            .select(
-              "frame_number,winner_player_id,break_and_run,run_out_against_break,is_walkover_award,team1_points,team2_points,breaks_over_30_team1_values,breaks_over_30_team2_values,high_break_team1,high_break_team2"
-            )
-            .eq("match_id", matchId)
-            .order("frame_number", { ascending: true }),
-          client
-            .from("result_submissions")
-            .select("id,match_id,submitted_by_user_id,competition_entry_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status,reviewed_by_user_id,reviewed_at,note")
-            .eq("match_id", matchId)
-            .order("submitted_at", { ascending: false }),
-        ]);
-        if (refreshedMatchRes.data) effectiveMatch = (refreshedMatchRes.data as unknown) as Match;
-        if (!refreshedFramesRes.error) effectiveFrameRows = ((refreshedFramesRes.data ?? []) as unknown) as FrameRow[];
-        if (!refreshedSubmissionsRes.error) effectiveSubmissionRows = ((refreshedSubmissionsRes.data ?? []) as unknown) as ResultSubmission[];
-      }
-
       if (competitionRes.data.competition_format === "league") {
         const [matchRescheduleRes, requesterPendingRes] = await Promise.all([
           client
@@ -563,8 +546,8 @@ export default function MatchPage() {
             : Promise.resolve({ data: [], error: null }),
         ]);
         if (matchRescheduleRes.error || requesterPendingRes.error) {
-          setLoading(false);
-          setMessage(matchRescheduleRes.error?.message || requesterPendingRes.error?.message || "Failed to load reschedule requests.");
+          finishLoading();
+          setLoadError(matchRescheduleRes.error?.message || requesterPendingRes.error?.message || "Failed to load reschedule requests.");
           return;
         }
         effectiveRescheduleRows = ((matchRescheduleRes.data ?? []) as unknown) as LeagueRescheduleRequest[];
@@ -614,14 +597,20 @@ export default function MatchPage() {
       setSubmissions(effectiveSubmissionRows);
       setRescheduleRequests(effectiveRescheduleRows);
       setRequesterPendingReschedules(effectiveRequesterPendingRows);
-      setLoading(false);
+      setLoadError(null);
+      finishLoading();
     };
 
-    load();
+    void load().catch((error: unknown) => {
+      if (!active) return;
+      finishLoading();
+      setLoadError(error instanceof Error ? error.message : "The match could not be loaded. Please try again.");
+    });
     return () => {
       active = false;
+      if (loadTimeout) clearTimeout(loadTimeout);
     };
-  }, [matchId, admin.loading, admin.isSuper]);
+  }, [matchId, admin.loading, admin.isAdmin, admin.isSuper, loadAttempt]);
 
   useEffect(() => () => {
     if (livePoolSaveTimerRef.current) window.clearTimeout(livePoolSaveTimerRef.current);
@@ -2420,6 +2409,18 @@ export default function MatchPage() {
           />
 
           {loading ? <p className="rounded-xl border border-slate-200 bg-white p-4">Loading match...</p> : null}
+          {!loading && loadError ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+              <p>{loadError}</p>
+              <button
+                type="button"
+                onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+                className="mt-3 rounded-xl border border-amber-700 bg-amber-700 px-4 py-2 text-sm font-bold text-white"
+              >
+                Try again
+              </button>
+            </div>
+          ) : null}
           <MessageModal message={message} onClose={() => setMessage(null)} />
 
           {match && competition && teams ? (
