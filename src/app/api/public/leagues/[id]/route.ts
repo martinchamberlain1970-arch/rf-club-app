@@ -41,7 +41,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       ? client.from("players").select("id,display_name,full_name").in("id", playerIds)
       : Promise.resolve({ data: [], error: null }),
     matchIds.length
-      ? client.from("frames").select("match_id,winner_player_id,is_walkover_award").in("match_id", matchIds)
+      ? client.from("frames").select("match_id,winner_player_id,is_walkover_award,team1_points,team2_points").in("match_id", matchIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
   if (playersResult.error || framesResult.error) {
@@ -55,14 +55,14 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const leagueMatches = (matchesResult.data ?? []).filter((match) => (
     competition.league_schedule_mode !== "one_day" || (match.round_no ?? 1) <= roundRobinRoundCount
   ));
-  const framesByMatch = new Map<string, Array<{ winner_player_id: string | null; is_walkover_award: boolean }>>();
+  const framesByMatch = new Map<string, Array<{ winner_player_id: string | null; is_walkover_award: boolean; team1_points: number | null; team2_points: number | null }>>();
   for (const frame of framesResult.data ?? []) {
     framesByMatch.set(frame.match_id, [...(framesByMatch.get(frame.match_id) ?? []), frame]);
   }
 
-  const stats = new Map<string, { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number }>();
+  const stats = new Map<string, { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number }>();
   for (const playerId of playerIds) {
-    stats.set(playerId, { playerId, playerName: nameById.get(playerId) || "Player", played: 0, won: 0, lost: 0, voided: 0, points: 0 });
+    stats.set(playerId, { playerId, playerName: nameById.get(playerId) || "Player", played: 0, won: 0, lost: 0, voided: 0, points: 0, pointsFor: 0, pointsAgainst: 0 });
   }
   for (const match of leagueMatches) {
     if (match.status !== "complete" || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id) continue;
@@ -80,6 +80,16 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
     player1.points += player1Score;
     player2.points += player2Score;
+    const player1PointsFor = competition.sport_type === "snooker"
+      ? frames.reduce((total, frame) => total + Number(frame.team1_points ?? 0), 0)
+      : player1Score;
+    const player2PointsFor = competition.sport_type === "snooker"
+      ? frames.reduce((total, frame) => total + Number(frame.team2_points ?? 0), 0)
+      : player2Score;
+    player1.pointsFor += player1PointsFor;
+    player1.pointsAgainst += player2PointsFor;
+    player2.pointsFor += player2PointsFor;
+    player2.pointsAgainst += player1PointsFor;
     if (!match.winner_player_id) {
       player1.voided += 1;
       player2.voided += 1;
@@ -92,7 +102,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
   }
 
-  const table = [...stats.values()].sort((a, b) => b.points - a.points || b.won - a.won || a.lost - b.lost || a.playerName.localeCompare(b.playerName));
+  const table = [...stats.values()]
+    .map((row) => ({ ...row, pointsDifference: row.pointsFor - row.pointsAgainst }))
+    .sort((a, b) => b.points - a.points || b.pointsDifference - a.pointsDifference || b.pointsFor - a.pointsFor || b.won - a.won || a.lost - b.lost || a.playerName.localeCompare(b.playerName));
   const fixtures = leagueMatches.map((match) => {
     const frames = framesByMatch.get(match.id) ?? [];
     const player1Score = frames.filter((frame) => frame.winner_player_id === match.player1_id).length;

@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { isLegionMastersLeague } from "@/lib/legion-masters";
 
 type Fixture = { id: string; week: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; score: { player1: number; player2: number; void: boolean } | null };
-type TableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number };
+type TableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
 type LeagueData = { competition: { id: string; name: string; venue: string | null; sport_type: string; league_schedule_mode: string | null; league_finals_size: number | null }; fixtures: Fixture[]; table: TableRow[]; updatedAt: string };
 
 const displayDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : null;
@@ -87,12 +87,13 @@ export default function PublicLeaguePage() {
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Live standings</p>
           <h2 className="mt-1 text-2xl font-black">League table</h2>
           {isMasters ? <p className="mt-2 rounded-xl border border-lime-300 bg-lime-50 px-3 py-2 text-sm text-emerald-950"><strong>Top 8 highlighted:</strong> current Legion Masters Cup qualification places.</p> : null}
+          <p className="mt-2 text-xs text-slate-600">{data.competition.sport_type === "snooker" ? "PF = points scored, PA = points conceded and PD = points difference, using final scores including handicaps." : "PF = racks won, PA = racks conceded and PD = rack difference."}</p>
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
-              <thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Void</th><th className="p-2 text-center">Pts</th></tr></thead>
+            <table className="w-full min-w-[720px] text-sm">
+              <thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Void</th><th className="p-2 text-center">PF</th><th className="p-2 text-center">PA</th><th className="p-2 text-center">PD</th><th className="p-2 text-center">Pts</th></tr></thead>
               <tbody>{data.table.map((row, index) => {
                 const qualifying = isMasters && index < 8;
-                return <tr key={row.playerId} className={`border-b border-slate-200 ${qualifying ? "bg-lime-50" : ""}`}><td className="p-2 font-black">{index + 1}{qualifying ? <span className="ml-1 text-lime-700">★</span> : null}</td><td className="p-2 font-semibold">{row.playerName}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center text-lg font-black">{row.points}</td></tr>;
+                return <tr key={row.playerId} className={`border-b border-slate-200 ${qualifying ? "bg-lime-50" : ""}`}><td className="p-2 font-black">{index + 1}{qualifying ? <span className="ml-1 text-lime-700">★</span> : null}</td><td className="p-2 font-semibold">{row.playerName}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center">{row.pointsFor}</td><td className="p-2 text-center">{row.pointsAgainst}</td><td className="p-2 text-center font-bold">{row.pointsDifference > 0 ? "+" : ""}{row.pointsDifference}</td><td className="p-2 text-center text-lg font-black">{row.points}</td></tr>;
               })}</tbody>
             </table>
           </div>

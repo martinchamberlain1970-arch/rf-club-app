@@ -104,6 +104,8 @@ type ResultSubmission = {
 type Frame = {
   match_id: string;
   winner_player_id: string | null;
+  team1_points: number | null;
+  team2_points: number | null;
 };
 
 const paidDateTime = (value: string) => new Date(value).toLocaleString("en-GB", {
@@ -776,7 +778,7 @@ export default function CompetitionPage() {
           .order("round_no")
           .order("match_no"),
         client.from("players").select("id,display_name,full_name,snooker_handicap").eq("is_archived", false),
-        client.from("frames").select("match_id,winner_player_id"),
+        client.from("frames").select("match_id,winner_player_id,team1_points,team2_points"),
         client.from("app_users").select("id,linked_player_id").not("linked_player_id", "is", null),
       ]);
       if (!active) return;
@@ -1131,7 +1133,7 @@ export default function CompetitionPage() {
       .order("round_no")
       .order("match_no");
     if (reload.data) setMatches(reload.data as Match[]);
-    const frameReload = await client.from("frames").select("match_id,winner_player_id");
+    const frameReload = await client.from("frames").select("match_id,winner_player_id,team1_points,team2_points");
     if (frameReload.data) setFrames(frameReload.data as Frame[]);
   };
 
@@ -1538,8 +1540,10 @@ export default function CompetitionPage() {
       lost: number;
       voided: number;
       byes: number;
-        points: number;
-        framesFor: number;
+      points: number;
+      pointsFor: number;
+      pointsAgainst: number;
+      pointsDifference: number;
       }>;
     const stats = new Map<string, {
       playerId: string;
@@ -1550,7 +1554,8 @@ export default function CompetitionPage() {
       voided: number;
       byes: number;
       points: number;
-      framesFor: number;
+      pointsFor: number;
+      pointsAgainst: number;
     }>();
     const ensureRow = (playerId: string) => {
       const existing = stats.get(playerId);
@@ -1564,7 +1569,8 @@ export default function CompetitionPage() {
         voided: 0,
         byes: 0,
         points: 0,
-        framesFor: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
       };
       stats.set(playerId, row);
       return row;
@@ -1604,11 +1610,19 @@ export default function CompetitionPage() {
         if (match.winner_player_id === match.player1_id) player1Frames = 1;
         if (row2 && match.winner_player_id === match.player2_id) player2Frames = 1;
       }
-      row1.framesFor += player1Frames;
       row1.points += player1Frames;
+      const player1PointsFor = competition.sport_type === "snooker"
+        ? matchFrames.reduce((total, frame) => total + Number(frame.team1_points ?? 0), 0)
+        : player1Frames;
+      const player2PointsFor = competition.sport_type === "snooker"
+        ? matchFrames.reduce((total, frame) => total + Number(frame.team2_points ?? 0), 0)
+        : player2Frames;
+      row1.pointsFor += player1PointsFor;
+      row1.pointsAgainst += player2PointsFor;
       if (row2) {
-        row2.framesFor += player2Frames;
         row2.points += player2Frames;
+        row2.pointsFor += player2PointsFor;
+        row2.pointsAgainst += player1PointsFor;
       }
       if (!match.winner_player_id) {
         row1.voided += 1;
@@ -1624,12 +1638,16 @@ export default function CompetitionPage() {
       }
     });
 
-    return [...stats.values()].sort((a, b) =>
-      b.points - a.points ||
-      b.won - a.won ||
-      a.lost - b.lost ||
-      a.playerName.localeCompare(b.playerName)
-    );
+    return [...stats.values()]
+      .map((row) => ({ ...row, pointsDifference: row.pointsFor - row.pointsAgainst }))
+      .sort((a, b) =>
+        b.points - a.points ||
+        b.pointsDifference - a.pointsDifference ||
+        b.pointsFor - a.pointsFor ||
+        b.won - a.won ||
+        a.lost - b.lost ||
+        a.playerName.localeCompare(b.playerName)
+      );
   })();
   const leagueStageComplete = matches.some((match) => match.status !== "bye") && matches
     .filter((match) => match.status !== "bye")
@@ -2369,6 +2387,7 @@ export default function CompetitionPage() {
                         <p className="text-sm font-semibold text-slate-900">League table</p>
                         <p className="mt-1 text-xs text-slate-500">
                           Every {competition.sport_type === "snooker" ? "frame" : "rack"} won is one point. Completed void fixtures score no points.
+                          {competition.sport_type === "snooker" ? " PF, PA and PD use the final frame scores including handicaps." : " PF, PA and PD show racks won, conceded and the difference."}
                           {hasTopEightFinals ? " The top 8 positions qualify for the end-of-season knockout." : ""}
                           {isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4 ? " The top four qualify for the semi-finals." : ""}
                         </p>
@@ -2383,6 +2402,9 @@ export default function CompetitionPage() {
                                 <th className="px-2 py-2 text-center">L</th>
                                 <th className="px-2 py-2 text-center">Void</th>
                                 <th className="px-2 py-2 text-center">Bye</th>
+                                <th className="px-2 py-2 text-center">PF</th>
+                                <th className="px-2 py-2 text-center">PA</th>
+                                <th className="px-2 py-2 text-center">PD</th>
                                 <th className="px-2 py-2 text-center">Pts</th>
                                 {hasTopEightFinals || (isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4) ? <th className="px-2 py-2 text-center">Finals</th> : null}
                               </tr>
@@ -2400,6 +2422,9 @@ export default function CompetitionPage() {
                                   <td className="px-2 py-2 text-center tabular-nums">{row.lost}</td>
                                   <td className="px-2 py-2 text-center tabular-nums">{row.voided}</td>
                                   <td className="px-2 py-2 text-center tabular-nums">{row.byes}</td>
+                                  <td className="px-2 py-2 text-center tabular-nums">{row.pointsFor}</td>
+                                  <td className="px-2 py-2 text-center tabular-nums">{row.pointsAgainst}</td>
+                                  <td className="px-2 py-2 text-center font-medium tabular-nums">{row.pointsDifference > 0 ? "+" : ""}{row.pointsDifference}</td>
                                   <td className="px-2 py-2 text-center font-semibold tabular-nums">{row.points}</td>
                                   {hasTopEightFinals || (isOneDayLeague && Number(competition.league_finals_size ?? 0) === 4) ? (
                                     <td className="px-2 py-2 text-center">
