@@ -61,10 +61,18 @@ type PriorityCard = {
 };
 type DashboardLink = { href: string; title: string; desc: string };
 type ExperienceMode = "player" | "manage";
+type HomeTableBooking = {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  tableName: string;
+  title: string;
+  status: "pending" | "booked" | "rejected";
+};
 
 const playerExperienceLinks = [
   { href: "/my-fixtures", title: "My Fixtures", desc: "Weekly view, all fixtures, results and tables.", symbol: "PLAY" },
-  { href: "/table-bookings", title: "Book a Table", desc: "Reserve an authorised pool or snooker table.", symbol: "BOOK" },
+  { href: "/table-bookings", title: "Table Bookings", desc: "View your bookings or reserve a pool or snooker table.", symbol: "BOOK" },
   { href: "/events", title: "Competitions", desc: "Open events, draws and tables.", symbol: "PLAY" },
   { href: "/rankings", title: "Rankings", desc: "See where you stand.", symbol: "RANK" },
   { href: "/high-breaks", title: "High Breaks", desc: "Club snooker break table.", symbol: "BREAK" },
@@ -100,6 +108,8 @@ export default function HomePage() {
   const [pendingResultSubmissionsCount, setPendingResultSubmissionsCount] = useState<number>(0);
   const [sharedLinkSuggestionsCount, setSharedLinkSuggestionsCount] = useState<number>(0);
   const [sharedLinksMonthlyReviewDue, setSharedLinksMonthlyReviewDue] = useState(false);
+  const [tableBookingsLoading, setTableBookingsLoading] = useState(true);
+  const [upcomingTableBookings, setUpcomingTableBookings] = useState<HomeTableBooking[]>([]);
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>("manage");
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
   const [confirmState, setConfirmState] = useState<{
@@ -404,6 +414,77 @@ export default function HomePage() {
     };
     run();
   }, [admin.isSuper]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!admin.userId) {
+        setUpcomingTableBookings([]);
+        setTableBookingsLoading(false);
+        return;
+      }
+      const client = supabase;
+      if (!client) {
+        setTableBookingsLoading(false);
+        return;
+      }
+      setTableBookingsLoading(true);
+      const session = await client.auth.getSession();
+      const token = session.data.session?.access_token;
+      if (!token) {
+        setTableBookingsLoading(false);
+        return;
+      }
+      const response = await fetch("/api/table-bookings", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      }).catch(() => null);
+      if (!response?.ok) {
+        setUpcomingTableBookings([]);
+        setTableBookingsLoading(false);
+        return;
+      }
+      const payload = (await response.json().catch(() => ({}))) as {
+        tables?: Array<{ id: string; name: string }>;
+        reservations?: Array<{
+          id: string;
+          table_id: string;
+          booked_by_user_id: string;
+          booked_for_player_id: string;
+          starts_at: string;
+          ends_at: string;
+          purpose: "fixture" | "league_match" | "other";
+          notes: string | null;
+          status: "pending" | "booked" | "rejected" | "cancelled";
+          participant_one: string | null;
+          participant_two: string | null;
+          team_name: string | null;
+        }>;
+      };
+      const tableNames = new Map((payload.tables ?? []).map((table) => [table.id, table.name]));
+      const ownBookings = (payload.reservations ?? [])
+        .filter((booking) => (
+          booking.booked_by_user_id === admin.userId ||
+          Boolean(userPlayerId && booking.booked_for_player_id === userPlayerId)
+        ) && booking.status !== "cancelled")
+        .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+        .slice(0, 3)
+        .map((booking) => ({
+          id: booking.id,
+          startsAt: booking.starts_at,
+          endsAt: booking.ends_at,
+          tableName: tableNames.get(booking.table_id) ?? "Cue table",
+          title: booking.purpose === "league_match"
+            ? booking.team_name || "Home league match"
+            : booking.purpose === "other"
+              ? booking.notes || "Other booking"
+              : [booking.participant_one, booking.participant_two].filter(Boolean).join(" vs. ") || "Competition fixture",
+          status: booking.status,
+        })) as HomeTableBooking[];
+      setUpcomingTableBookings(ownBookings);
+      setTableBookingsLoading(false);
+    };
+    void run();
+  }, [admin.userId, userPlayerId]);
 
   useEffect(() => {
     const run = async () => {
@@ -788,6 +869,45 @@ export default function HomePage() {
             ) : null}
             {profileMessage ? <p className="mt-2 text-sm text-slate-700">{profileMessage}</p> : null}
           </section>
+
+          {!isManageMode ? (
+            <section className="rounded-3xl border border-emerald-200 bg-white p-4 shadow-lg sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">My upcoming table bookings</p>
+                  <h2 className="mt-1 text-xl font-black text-slate-950">Your reserved table time</h2>
+                </div>
+                <Link href="/table-bookings" className="rounded-full bg-emerald-800 px-4 py-2 text-sm font-bold text-white">View all / manage</Link>
+              </div>
+              {tableBookingsLoading ? <p className="mt-4 text-sm text-slate-600">Checking your bookings…</p> : upcomingTableBookings.length ? (
+                <div className="mt-4 divide-y divide-slate-200">
+                  {upcomingTableBookings.map((booking) => {
+                    const start = new Date(booking.startsAt);
+                    const end = new Date(booking.endsAt);
+                    const date = start.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "Europe/London" });
+                    const startTime = start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+                    const endTime = end.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+                    return (
+                      <article key={booking.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                        <div>
+                          <p className="font-black text-slate-950">{date}, {startTime}–{endTime}</p>
+                          <p className="mt-1 text-sm text-slate-700">{booking.tableName} · <strong>{booking.title}</strong></p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${booking.status === "booked" ? "bg-emerald-100 text-emerald-800" : booking.status === "pending" ? "bg-amber-100 text-amber-900" : "bg-red-100 text-red-800"}`}>
+                          {booking.status === "booked" ? "Confirmed" : booking.status}
+                        </span>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                  <p className="text-sm text-slate-700">You have no upcoming table bookings.</p>
+                  <Link href="/table-bookings" className="mt-3 inline-flex rounded-full border border-emerald-700 px-4 py-2 text-sm font-bold text-emerald-800">Make a booking</Link>
+                </div>
+              )}
+            </section>
+          ) : null}
 
           {!isManageMode ? (
             <section className="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-xl">
