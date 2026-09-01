@@ -8,6 +8,7 @@ import PageNav from "@/components/PageNav";
 import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
 import ConfirmModal from "@/components/ConfirmModal";
+import useExperienceMode from "@/components/useExperienceMode";
 import { buildSharedLinkSuggestion, SharedLinkPlayer } from "@/lib/shared-player-links";
 
 const coreActionLinks = [
@@ -60,8 +61,6 @@ type PriorityCard = {
   detail: string;
 };
 type DashboardLink = { href: string; title: string; desc: string };
-type ExperienceMode = "player" | "manage";
-
 const playerExperienceLinks = [
   { href: "/my-fixtures", title: "My Fixtures", desc: "Weekly view, all fixtures, results and tables.", symbol: "PLAY" },
   { href: "/table-bookings#request-table", title: "Book a Table", desc: "Reserve a pool or snooker table.", symbol: "BOOK" },
@@ -101,7 +100,7 @@ export default function HomePage() {
   const [pendingResultSubmissionsCount, setPendingResultSubmissionsCount] = useState<number>(0);
   const [sharedLinkSuggestionsCount, setSharedLinkSuggestionsCount] = useState<number>(0);
   const [sharedLinksMonthlyReviewDue, setSharedLinksMonthlyReviewDue] = useState(false);
-  const [experienceMode, setExperienceMode] = useState<ExperienceMode>("manage");
+  const [experienceMode, setExperienceMode] = useExperienceMode();
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
   const [confirmState, setConfirmState] = useState<{
     open: boolean;
@@ -304,7 +303,7 @@ export default function HomePage() {
     resolver?.(result);
   };
 
-  const changeExperienceMode = (mode: ExperienceMode) => {
+  const changeExperienceMode = (mode: "player" | "manage") => {
     setExperienceMode(mode);
   };
 

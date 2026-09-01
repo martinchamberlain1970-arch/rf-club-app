@@ -5,6 +5,7 @@ import RequireAuth from "@/components/RequireAuth";
 import PageNav from "@/components/PageNav";
 import MessageModal from "@/components/MessageModal";
 import TableBookingCalendar from "@/components/TableBookingCalendar";
+import useExperienceMode from "@/components/useExperienceMode";
 import { supabase } from "@/lib/supabase";
 
 type CueTable = { id: string; name: string; sport_type: "pool" | "snooker"; location_id: string };
@@ -34,7 +35,7 @@ export default function TableBookingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [bookingView, setBookingView] = useState<"player" | "manage">("manage");
+  const [bookingView, setBookingView] = useExperienceMode();
   const [tableId, setTableId] = useState("");
   const [startsAt, setStartsAt] = useState(() => { const date = new Date(); date.setHours(date.getHours() + 1, 0, 0, 0); return localInputValue(date); });
   const [duration, setDuration] = useState("30");
