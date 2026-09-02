@@ -288,7 +288,7 @@ export default function MyFixturesPage() {
                 ["weekly", "Weekly view", "Last, this and next week"],
                 ["all", "All fixtures", `${allFixtureRows.length} total`],
                 ["results", "My results", `${resultRows.length} completed`],
-                ["weekly-results", "Weekly results", "Everyone's results"],
+                ["weekly-results", "Weekly fixtures & results", "Everyone's matches"],
                 ["tables", "League tables", `${leagueCompetitions.length} league${leagueCompetitions.length === 1 ? "" : "s"}`],
               ] as Array<[FixtureView, string, string]>).map(([value, label, detail]) => <button key={value} type="button" onClick={() => { setView(value); if (value === "all" || value === "results") { setFixtureCompetitionFilter("all"); setOpponentFilter("all"); } }} className={`rounded-xl border p-3 text-left transition ${view === value ? "border-teal-700 bg-teal-700 text-white shadow-sm" : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-white"}`}><span className="block text-sm font-bold">{label}</span><span className={`mt-1 block text-xs ${view === value ? "text-teal-50" : "text-slate-500"}`}>{detail}</span></button>)}
             </div>
@@ -338,7 +338,7 @@ export default function MyFixturesPage() {
               : view === "results" ? renderFixtureCards(filteredFixtureRows, fixtureCompetitionFilter !== "all" || opponentFilter !== "all" ? "No results match those filters." : "You do not have any completed results yet.")
                 : view === "weekly-results" ? <section className={cardClass}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">All players</p><h2 className="mt-1 text-xl font-bold text-slate-950">Weekly competition results</h2><p className="mt-1 text-sm text-slate-600">Choose a competition and week to see every approved result.</p></div>
+                    <div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">All players</p><h2 className="mt-1 text-xl font-bold text-slate-950">Weekly fixtures &amp; results</h2><p className="mt-1 text-sm text-slate-600">Choose a competition and week to see completed results and fixtures still to be played.</p></div>
                     {activeLeague ? <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">{competitionWeekResults.length} of {competitionWeekFixtures.length} completed</span> : null}
                   </div>
                   {activeLeague ? <>
@@ -347,11 +347,11 @@ export default function MyFixturesPage() {
                       <label className="text-sm font-medium text-slate-700">Week<select value={selectedResultsWeek} onChange={(event) => setSelectedResultsWeek(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="current">Current (Week {activeLeagueCurrentWeek})</option>{activeLeagueWeeks.map((week) => <option key={week} value={week}>Week {week}</option>)}</select></label>
                     </div>
                     <div className="mt-4 space-y-3">
-                      {competitionWeekResults.map((fixture) => <article key={fixture.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Week {fixture.week} · Match {fixture.matchNo}</p>{fixture.scheduledFor ? <p className="text-xs text-slate-500">{new Date(`${fixture.scheduledFor.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}</div>
-                        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span className="font-semibold">{fixture.player1}</span><strong className="min-w-16 rounded-lg bg-slate-900 px-2 py-1.5 text-white">{fixture.score?.void ? "VOID" : `${fixture.score?.player1 ?? 0} – ${fixture.score?.player2 ?? 0}`}</strong><span className="font-semibold">{fixture.player2}</span></div>
+                      {competitionWeekFixtures.map((fixture) => <article key={fixture.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Week {fixture.week} · Match {fixture.matchNo}</p><div className="flex items-center gap-2">{fixture.scheduledFor ? <p className="text-xs text-slate-500">{new Date(`${fixture.scheduledFor.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}<span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${fixture.status === "complete" ? "border-blue-200 bg-blue-50 text-blue-800" : fixture.status === "in_progress" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{fixture.status === "complete" ? "Result" : fixture.status === "in_progress" ? "Live" : "To play"}</span></div></div>
+                        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span className="font-semibold">{fixture.player1}</span><strong className={`min-w-16 rounded-lg px-2 py-1.5 ${fixture.score ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{fixture.score?.void ? "VOID" : fixture.score ? `${fixture.score.player1} – ${fixture.score.player2}` : "v"}</strong><span className="font-semibold">{fixture.player2}</span></div>
                       </article>)}
-                      {!competitionWeekResults.length ? <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No approved results have been recorded for Week {visibleCompetitionWeek} yet.</p> : null}
+                      {!competitionWeekFixtures.length ? <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No fixtures are scheduled for Week {visibleCompetitionWeek}.</p> : null}
                     </div>
                   </> : <p className="mt-4 text-sm text-slate-600">You are not currently listed in a league competition.</p>}
                 </section>
