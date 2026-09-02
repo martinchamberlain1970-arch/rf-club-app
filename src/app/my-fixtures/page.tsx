@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
 
 type WeekFilter = "last" | "this" | "next";
-type FixtureView = "weekly" | "all" | "results" | "tables";
+type FixtureView = "weekly" | "all" | "results" | "weekly-results" | "tables";
 
 type MatchRow = {
   id: string;
@@ -43,7 +43,8 @@ type PlayerRow = {
 
 type FrameRow = { match_id: string; winner_player_id: string | null };
 type LeagueTableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
-type LeagueData = { competition: CompetitionRow; table: LeagueTableRow[]; updatedAt: string };
+type LeagueFixture = { id: string; week: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; score: { player1: number; player2: number; void: boolean } | null };
+type LeagueData = { competition: CompetitionRow; fixtures: LeagueFixture[]; table: LeagueTableRow[]; updatedAt: string };
 
 function startOfWeek(date: Date) {
   const d = new Date(date);
@@ -85,6 +86,7 @@ export default function MyFixturesPage() {
   const [filter, setFilter] = useState<WeekFilter>("this");
   const [view, setView] = useState<FixtureView>("weekly");
   const [selectedLeagueId, setSelectedLeagueId] = useState("");
+  const [selectedResultsWeek, setSelectedResultsWeek] = useState("current");
   const [fixtureCompetitionFilter, setFixtureCompetitionFilter] = useState("all");
   const [opponentFilter, setOpponentFilter] = useState("all");
   const [message, setMessage] = useState<string | null>(null);
@@ -233,6 +235,14 @@ export default function MyFixturesPage() {
   const leagueCompetitions = useMemo(() => competitions.filter((competition) => competition.competition_format === "league" && leagueData[competition.id]), [competitions, leagueData]);
   const activeLeagueId = selectedLeagueId || leagueCompetitions[0]?.id || "";
   const activeLeague = activeLeagueId ? leagueData[activeLeagueId] : null;
+  const activeLeagueWeeks = useMemo(() => [...new Set((activeLeague?.fixtures ?? []).map((fixture) => fixture.week))].sort((a, b) => a - b), [activeLeague]);
+  const activeLeagueCurrentWeek = useMemo(() => {
+    const unfinished = activeLeague?.fixtures.find((fixture) => !["complete", "bye"].includes(fixture.status));
+    return unfinished?.week ?? activeLeagueWeeks.at(-1) ?? 1;
+  }, [activeLeague, activeLeagueWeeks]);
+  const visibleCompetitionWeek = selectedResultsWeek === "current" ? activeLeagueCurrentWeek : Number(selectedResultsWeek);
+  const competitionWeekFixtures = useMemo(() => (activeLeague?.fixtures ?? []).filter((fixture) => fixture.week === visibleCompetitionWeek && fixture.status !== "bye"), [activeLeague, visibleCompetitionWeek]);
+  const competitionWeekResults = useMemo(() => competitionWeekFixtures.filter((fixture) => fixture.status === "complete" && fixture.score), [competitionWeekFixtures]);
 
   const renderFixtureCards = (rows: typeof allFixtureRows, emptyMessage: string) => rows.length ? (
     <section className="space-y-3">
@@ -265,7 +275,7 @@ export default function MyFixturesPage() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Player</p>
                 <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">My Fixtures</h1>
-                <p className="mt-1 text-sm text-slate-600">Your recent, current, and upcoming fixtures by week.</p>
+                <p className="mt-1 text-sm text-slate-600">Your fixtures, competition-wide weekly results and league tables.</p>
               </div>
               <PageNav />
             </div>
@@ -273,11 +283,12 @@ export default function MyFixturesPage() {
 
           <section className={cardClass}>
             <div><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">My competition centre</p><h2 className="mt-1 text-xl font-bold text-slate-950">Fixtures, results and tables</h2></div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
               {([
                 ["weekly", "Weekly view", "Last, this and next week"],
                 ["all", "All fixtures", `${allFixtureRows.length} total`],
                 ["results", "My results", `${resultRows.length} completed`],
+                ["weekly-results", "Weekly results", "Everyone's results"],
                 ["tables", "League tables", `${leagueCompetitions.length} league${leagueCompetitions.length === 1 ? "" : "s"}`],
               ] as Array<[FixtureView, string, string]>).map(([value, label, detail]) => <button key={value} type="button" onClick={() => { setView(value); if (value === "all" || value === "results") { setFixtureCompetitionFilter("all"); setOpponentFilter("all"); } }} className={`rounded-xl border p-3 text-left transition ${view === value ? "border-teal-700 bg-teal-700 text-white shadow-sm" : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-white"}`}><span className="block text-sm font-bold">{label}</span><span className={`mt-1 block text-xs ${view === value ? "text-teal-50" : "text-slate-500"}`}>{detail}</span></button>)}
             </div>
@@ -325,6 +336,25 @@ export default function MyFixturesPage() {
           ) : view === "weekly" ? renderFixtureCards(fixtureRows, "No fixtures found for this week selection.")
             : view === "all" ? renderFixtureCards(filteredFixtureRows, fixtureCompetitionFilter !== "all" || opponentFilter !== "all" ? "No fixtures match those filters." : "No fixtures have been published for you yet.")
               : view === "results" ? renderFixtureCards(filteredFixtureRows, fixtureCompetitionFilter !== "all" || opponentFilter !== "all" ? "No results match those filters." : "You do not have any completed results yet.")
+                : view === "weekly-results" ? <section className={cardClass}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">All players</p><h2 className="mt-1 text-xl font-bold text-slate-950">Weekly competition results</h2><p className="mt-1 text-sm text-slate-600">Choose a competition and week to see every approved result.</p></div>
+                    {activeLeague ? <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">{competitionWeekResults.length} of {competitionWeekFixtures.length} completed</span> : null}
+                  </div>
+                  {activeLeague ? <>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <label className="text-sm font-medium text-slate-700">Competition<select value={activeLeagueId} onChange={(event) => { setSelectedLeagueId(event.target.value); setSelectedResultsWeek("current"); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">{leagueCompetitions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name}</option>)}</select></label>
+                      <label className="text-sm font-medium text-slate-700">Week<select value={selectedResultsWeek} onChange={(event) => setSelectedResultsWeek(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="current">Current (Week {activeLeagueCurrentWeek})</option>{activeLeagueWeeks.map((week) => <option key={week} value={week}>Week {week}</option>)}</select></label>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {competitionWeekResults.map((fixture) => <article key={fixture.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Week {fixture.week} · Match {fixture.matchNo}</p>{fixture.scheduledFor ? <p className="text-xs text-slate-500">{new Date(`${fixture.scheduledFor.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}</div>
+                        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span className="font-semibold">{fixture.player1}</span><strong className="min-w-16 rounded-lg bg-slate-900 px-2 py-1.5 text-white">{fixture.score?.void ? "VOID" : `${fixture.score?.player1 ?? 0} – ${fixture.score?.player2 ?? 0}`}</strong><span className="font-semibold">{fixture.player2}</span></div>
+                      </article>)}
+                      {!competitionWeekResults.length ? <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No approved results have been recorded for Week {visibleCompetitionWeek} yet.</p> : null}
+                    </div>
+                  </> : <p className="mt-4 text-sm text-slate-600">You are not currently listed in a league competition.</p>}
+                </section>
                 : <section className={cardClass}>
                   <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Live standings</p><h2 className="mt-1 text-xl font-bold text-slate-950">League table</h2></div>{leagueCompetitions.length > 1 ? <label className="text-sm font-medium text-slate-700">Competition<select value={activeLeagueId} onChange={(event) => setSelectedLeagueId(event.target.value)} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2">{leagueCompetitions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name}</option>)}</select></label> : null}</div>
                   {activeLeague ? <><p className="mt-2 font-semibold text-slate-800">{activeLeague.competition.name}</p><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Void</th><th className="p-2 text-center">PF</th><th className="p-2 text-center">PA</th><th className="p-2 text-center">PD</th><th className="p-2 text-center">Pts</th></tr></thead><tbody>{activeLeague.table.map((row, index) => <tr key={row.playerId} className={`border-b border-slate-200 ${row.playerId === linkedPlayerId ? "bg-lime-100" : ""}`}><td className="p-2 font-black">{index + 1}</td><td className="p-2 font-semibold">{row.playerName}{row.playerId === linkedPlayerId ? <span className="ml-2 text-xs font-bold text-emerald-800">YOU</span> : null}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center">{row.pointsFor}</td><td className="p-2 text-center">{row.pointsAgainst}</td><td className="p-2 text-center font-bold">{row.pointsDifference > 0 ? "+" : ""}{row.pointsDifference}</td><td className="p-2 text-center text-lg font-black">{row.points}</td></tr>)}</tbody></table></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">Updated {new Date(activeLeague.updatedAt).toLocaleString("en-GB")}</p><Link href={`/league/${activeLeagueId}`} className="rounded-lg border border-teal-300 px-3 py-2 text-sm font-bold text-teal-800">Open full league centre</Link></div></> : <p className="mt-4 text-sm text-slate-600">You are not currently listed in a league competition with a published table.</p>}

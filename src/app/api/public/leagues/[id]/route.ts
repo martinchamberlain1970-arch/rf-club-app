@@ -107,8 +107,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     .sort((a, b) => b.points - a.points || b.pointsDifference - a.pointsDifference || b.pointsFor - a.pointsFor || b.won - a.won || a.lost - b.lost || a.playerName.localeCompare(b.playerName));
   const fixtures = leagueMatches.map((match) => {
     const frames = framesByMatch.get(match.id) ?? [];
-    const player1Score = frames.filter((frame) => frame.winner_player_id === match.player1_id).length;
-    const player2Score = frames.filter((frame) => frame.winner_player_id === match.player2_id).length;
+    const player1Score = competition.sport_type === "snooker"
+      ? frames.reduce((total, frame) => total + Number(frame.team1_points ?? 0), 0)
+      : frames.filter((frame) => frame.winner_player_id === match.player1_id).length;
+    const player2Score = competition.sport_type === "snooker"
+      ? frames.reduce((total, frame) => total + Number(frame.team2_points ?? 0), 0)
+      : frames.filter((frame) => frame.winner_player_id === match.player2_id).length;
     const isBye = match.status === "bye" || Boolean(match.player1_id && match.player1_id === match.player2_id);
     return {
       id: match.id,
