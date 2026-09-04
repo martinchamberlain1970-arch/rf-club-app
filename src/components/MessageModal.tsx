@@ -9,6 +9,8 @@ type MessageModalProps = {
 function deriveTitle(message: string) {
   const text = message.trim().toLowerCase();
 
+  if (/\btaking longer than expected\b/.test(text)) return "Action Required";
+
   if (/\bquick match|player 1|player 2|doubles team|best of\b/.test(text)) return "Quick Match Validation";
   if (/\bclaim|profile|guardian|minor|adult|location\b/.test(text)) return "Profile Update";
   if (/\bsubmission|approve|reject|result\b/.test(text)) return "Submission Review";

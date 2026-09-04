@@ -1111,36 +1111,24 @@ export default function MatchPage() {
       .catch(() => undefined)
       .then(async () => {
         try {
-          if (!rows.length) {
-            const wipe = await withOperationTimeout(client.from("frames").delete().eq("match_id", matchIdToSave), "Clearing the rack score");
-            if (wipe.error) return { ok: false as const, error: wipe.error.message };
-            return { ok: true as const };
-          }
-
-          // Write the known rack numbers directly. Deleting every row first made a
-          // completed result dependent on two network operations and could leave a
-          // mobile submission waiting on the delete. The unique match/frame key
-          // makes this retry-safe and prevents duplicate racks.
-          const write = await withOperationTimeout(
-            client.from("frames").upsert(rows, { onConflict: "match_id,frame_number" }),
-            "Saving the rack score"
+          const sessionResult = await client.auth.getSession();
+          const token = sessionResult.data.session?.access_token;
+          if (!token) return { ok: false as const, error: "Sign in again before saving this result." };
+          const scoreLabel = isSnooker ? "frame" : "rack";
+          const response = await withOperationTimeout(
+            fetch(`/api/matches/${encodeURIComponent(matchIdToSave)}/frames`, {
+              method: "POST",
+              headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+              body: JSON.stringify({ rows, cleanupSurplus: !isFixedRackLeague }),
+            }),
+            `${rows.length ? "Saving" : "Clearing"} the ${scoreLabel} score`,
+            30_000
           );
-          if (write.error) return { ok: false as const, error: write.error.message };
-
-          // Fixed-rack leagues always submit the complete numbered set, so there
-          // cannot be a surplus rack to remove. Variable-length formats still need
-          // a narrow cleanup when a previously entered result is shortened.
-          if (!isFixedRackLeague) {
-            const highestFrameNumber = Math.max(...rows.map((row) => row.frame_number));
-            const cleanup = await withOperationTimeout(
-              client.from("frames").delete().eq("match_id", matchIdToSave).gt("frame_number", highestFrameNumber),
-              "Removing obsolete rack scores"
-            );
-            if (cleanup.error) return { ok: false as const, error: cleanup.error.message };
-          }
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) return { ok: false as const, error: payload.error || `The ${scoreLabel} score could not be saved.` };
           return { ok: true as const };
         } catch (error) {
-          return { ok: false as const, error: error instanceof Error ? error.message : "The rack score could not be saved." };
+          return { ok: false as const, error: error instanceof Error ? error.message : `The ${isSnooker ? "frame" : "rack"} score could not be saved.` };
         }
       });
     frameSaveQueueRef.current = operation.then(() => undefined, () => undefined);
