@@ -61,6 +61,7 @@ type PriorityCard = {
 type DashboardLink = { href: string; title: string; desc: string };
 const playerExperienceLinks = [
   { href: "/my-fixtures", title: "My Fixtures", desc: "Weekly view, all fixtures, results and tables.", symbol: "PLAY" },
+  { href: "/my-fixtures?view=all&action=reschedule", title: "Reschedule Fixture", desc: "Request to play an eligible fixture in a different week.", symbol: "MOVE" },
   { href: "/table-bookings#request-table", title: "Book a Table", desc: "Reserve a pool or snooker table.", symbol: "BOOK" },
   { href: "/table-bookings#confirmed-bookings", title: "Table Reservations", desc: "See upcoming confirmed bookings.", symbol: "VIEW" },
   { href: "/events", title: "Competitions", desc: "Open events, draws and tables.", symbol: "PLAY" },
@@ -757,13 +758,13 @@ export default function HomePage() {
               </div>
               <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 sm:p-5">
                 {playerExperienceLinks
-                  .filter((item) => item.href !== "/my-fixtures" || userPlayerId)
+                  .filter((item) => !item.href.startsWith("/my-fixtures") || userPlayerId)
                   .filter((item) => item.href !== "/quick-match" || quickMatchAllowed)
                   .map((item, index) => (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`group min-h-32 rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-lg ${index === 0 ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}
+                      className={`group min-h-32 rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-lg ${item.title === "Reschedule Fixture" ? "border-amber-300 bg-amber-50" : index === 0 ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}
                     >
                       <span className="text-[10px] font-black tracking-[0.16em] text-emerald-700">{item.symbol}</span>
                       <h3 className="mt-4 text-lg font-black text-slate-950">{item.title}</h3>

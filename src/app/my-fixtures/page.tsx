@@ -93,6 +93,14 @@ export default function MyFixturesPage() {
   const cardClass = "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm";
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") !== "all") return;
+    const timer = window.setTimeout(() => setView("all"), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     const run = async () => {
       const client = supabase;
       if (!client) return;
