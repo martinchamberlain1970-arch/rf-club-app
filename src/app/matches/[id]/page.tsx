@@ -1312,67 +1312,6 @@ export default function MatchPage() {
     if (match.match_mode === "doubles") return;
     if (competition.is_practice) return;
 
-    if (competition.sport_type === "snooker") {
-      const sessionRes = await client.auth.getSession();
-      const token = sessionRes.data.session?.access_token;
-      if (!token) return;
-      const syncRes = await fetch("/api/rating/sync-snooker", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          matchId: match.id,
-          winnerSide,
-        }),
-      });
-      const syncPayload = (await syncRes.json().catch(() => ({}))) as {
-        error?: string;
-        ok?: boolean;
-        skipped?: boolean;
-        deltaTeam1?: number;
-        deltaTeam2?: number;
-      };
-      if (!syncRes.ok || !syncPayload.ok) {
-        setInfoModal({
-          title: "Shared rating sync failed",
-          description: syncPayload.error ?? "Unable to sync official snooker Elo with the league app.",
-        });
-        return;
-      }
-      if (!syncPayload.skipped) {
-        const player1 = players.find((player) => player.id === match.player1_id);
-        const player2 = players.find((player) => player.id === match.player2_id);
-        const rating1Before = player1?.rating_snooker ?? 1000;
-        const rating2Before = player2?.rating_snooker ?? 1000;
-        const delta1 = Number(syncPayload.deltaTeam1 ?? 0);
-        const delta2 = Number(syncPayload.deltaTeam2 ?? 0);
-        await client.from("matches").update({
-          elo_team1_before: rating1Before,
-          elo_team2_before: rating2Before,
-          elo_team1_after: Math.max(100, rating1Before + delta1),
-          elo_team2_after: Math.max(100, rating2Before + delta2),
-          expected_team1_probability: expectedScore(rating1Before, rating2Before),
-        }).eq("id", match.id);
-        await logAudit("rating_applied", {
-          entityType: "match",
-          entityId: match.id,
-          summary: `Shared snooker ratings updated: team1 ${Number(syncPayload.deltaTeam1 ?? 0) >= 0 ? "+" : ""}${Number(syncPayload.deltaTeam1 ?? 0)}, team2 ${
-            Number(syncPayload.deltaTeam2 ?? 0) >= 0 ? "+" : ""
-          }${Number(syncPayload.deltaTeam2 ?? 0)}.`,
-          meta: {
-            competitionId: match.competition_id,
-            sport: competition.sport_type,
-            deltaTeam1: syncPayload.deltaTeam1 ?? 0,
-            deltaTeam2: syncPayload.deltaTeam2 ?? 0,
-            sharedSource: "league",
-          },
-        });
-      }
-      return;
-    }
-
     const keys = ratingKeysForSport(competition.sport_type);
     const matchRead = await client
       .from("matches")

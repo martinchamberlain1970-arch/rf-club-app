@@ -47,8 +47,8 @@ export default function SnookerHandicapExceptionsPage() {
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [rebuildingElo, setRebuildingElo] = useState(false);
   const [handicapByPlayerId, setHandicapByPlayerId] = useState<Record<string, string>>({});
-  const [refreshingOfficial, setRefreshingOfficial] = useState(false);
 
   const load = async () => {
     const client = supabase;
@@ -181,31 +181,22 @@ export default function SnookerHandicapExceptionsPage() {
     await load();
   };
 
-  const refreshOfficialSnookerRatings = async () => {
+  const rebuildClubSnookerElo = async () => {
     const client = supabase;
     if (!client) return;
-    const sessionRes = await client.auth.getSession();
-    const token = sessionRes.data.session?.access_token;
-    if (!token) {
-      setMessage("You need to be signed in to refresh official snooker ratings.");
-      return;
-    }
-    setRefreshingOfficial(true);
+    const session = await client.auth.getSession();
+    const token = session.data.session?.access_token;
+    if (!token) return setMessage("You need to be signed in as the Super User.");
+    setRebuildingElo(true);
     setMessage(null);
-    const res = await fetch("/api/rating/refresh-snooker-from-league", {
+    const response = await fetch("/api/admin/rebuild-club-snooker-elo", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     });
-    const body = (await res.json().catch(() => ({}))) as { error?: string; updated?: number };
-    setRefreshingOfficial(false);
-    if (!res.ok) {
-      setMessage(body.error ?? "Failed to refresh official snooker ratings.");
-      return;
-    }
-    setMessage(`Official snooker Elo and handicaps refreshed for ${body.updated ?? 0} mapped player(s).`);
+    const body = (await response.json().catch(() => ({}))) as { error?: string; matches?: number; rankedPlayers?: number };
+    setRebuildingElo(false);
+    if (!response.ok) return setMessage(body.error ?? "Unable to rebuild club snooker Elo.");
+    setMessage(`Club snooker Elo rebuilt from ${body.matches ?? 0} eligible matches for ${body.rankedPlayers ?? 0} ranked players.`);
     await load();
   };
 
@@ -247,18 +238,18 @@ export default function SnookerHandicapExceptionsPage() {
                 </div>
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3">
                   <div>
-                    <p className="text-sm font-semibold text-cyan-900">Official league sync</p>
+                    <p className="text-sm font-semibold text-cyan-900">Club-only ratings</p>
                     <p className="text-sm text-cyan-800">
-                      Pull current official snooker Elo and handicap figures from the league app for all mapped club players.
+                      Snooker Elo is calculated only from eligible Rack &amp; Frame matches. BYEs, walkovers and league-app results are excluded.
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => void refreshOfficialSnookerRatings()}
-                    disabled={refreshingOfficial}
-                    className="rounded-xl border border-cyan-300 bg-white px-4 py-2 text-sm font-semibold text-cyan-800 disabled:opacity-60"
+                    onClick={() => void rebuildClubSnookerElo()}
+                    disabled={rebuildingElo}
+                    className="rounded-xl border border-cyan-300 bg-white px-4 py-2 text-sm font-semibold text-cyan-900 disabled:opacity-60"
                   >
-                    {refreshingOfficial ? "Refreshing..." : "Refresh official snooker Elo"}
+                    {rebuildingElo ? "Rebuilding…" : "Rebuild club snooker Elo"}
                   </button>
                 </div>
               </section>

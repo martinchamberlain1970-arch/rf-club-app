@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { isLegionMastersLeague } from "@/lib/legion-masters";
 
-type Fixture = { id: string; week: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; score: { player1: number; player2: number; void: boolean } | null };
+type Fixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
 type TableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
 type LeagueData = { competition: { id: string; name: string; venue: string | null; sport_type: string; league_schedule_mode: string | null; league_finals_size: number | null }; fixtures: Fixture[]; table: TableRow[]; updatedAt: string };
 
@@ -29,7 +29,7 @@ export default function PublicLeaguePage() {
   const weeks = useMemo(() => [...new Set((data?.fixtures ?? []).map((fixture) => fixture.week))].sort((a, b) => a - b), [data]);
   const currentWeek = useMemo(() => {
     if (!data?.fixtures.length) return weeks[0] ?? 1;
-    const unfinished = data.fixtures.find((fixture) => !["complete", "bye"].includes(fixture.status));
+    const unfinished = data.fixtures.find((fixture) => !fixture.isReschedulePlaceholder && !["complete", "bye"].includes(fixture.status));
     return unfinished?.week ?? weeks.at(-1) ?? 1;
   }, [data, weeks]);
   const visibleFixtures = useMemo(() => {
@@ -68,14 +68,18 @@ export default function PublicLeaguePage() {
           </div>
           <div className="mt-4 space-y-3">
             {visibleFixtures.map((fixture) => (
-              <article key={fixture.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <article key={fixture.id} className={`rounded-2xl border p-4 ${fixture.isReschedulePlaceholder ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500"><span>Week {fixture.week} · Match {fixture.matchNo}</span><span>{displayDate(fixture.scheduledFor)}</span></div>
                 <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
                   <p className="font-bold">{fixture.player1}</p>
                   <div className="min-w-20 rounded-xl bg-slate-900 px-3 py-2 font-black text-white">{fixture.score ? (fixture.score.void ? "VOID" : `${fixture.score.player1} – ${fixture.score.player2}`) : "v"}</div>
                   <p className="font-bold">{fixture.player2}</p>
                 </div>
-                <p className="mt-2 text-center text-xs text-slate-500">Play all {fixture.bestOf} {unit} · {fixture.status.replace("_", " ")}</p>
+                {fixture.isReschedulePlaceholder ? (
+                  <p className="mt-3 text-center text-sm font-bold text-amber-900">Rescheduled to {displayDate(fixture.rescheduledTo)} — results are entered against the fixture in its new week.</p>
+                ) : (
+                  <p className="mt-2 text-center text-xs text-slate-500">Play all {fixture.bestOf} {unit} · {fixture.status.replace("_", " ")}{fixture.rescheduledFrom ? ` · Rescheduled from ${displayDate(fixture.rescheduledFrom)}` : ""}</p>
+                )}
                 {fixture.openingBreaker ? <p className="mt-2 text-center text-xs font-bold text-emerald-700">Opening break: {fixture.openingBreaker}</p> : null}
               </article>
             ))}

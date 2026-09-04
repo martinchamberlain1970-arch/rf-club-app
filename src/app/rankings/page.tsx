@@ -82,19 +82,6 @@ export default function RankingsPage() {
     let active = true;
 
     const run = async () => {
-      const sessionRes = await client.auth.getSession();
-      const token = sessionRes.data.session?.access_token;
-      let refreshWarning: string | null = null;
-      if (token) {
-        const refreshRes = await fetch("/api/rating/refresh-snooker-from-league", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!refreshRes.ok) {
-          const refreshBody = (await refreshRes.json().catch(() => ({}))) as { error?: string };
-          refreshWarning = refreshBody.error ?? "Official League snooker ratings could not be refreshed.";
-        }
-      }
       const [playerRes, locationRes, competitionRes, entryRes, matchRes] = await Promise.all([
         client
           .from("players")
@@ -125,9 +112,6 @@ export default function RankingsPage() {
       setCompetitions((competitionRes.data ?? []) as Competition[]);
       setCompetitionEntries((entryRes.data ?? []) as CompetitionEntry[]);
       setMatches((matchRes.data ?? []) as MatchRow[]);
-      if (refreshWarning) {
-        setMessage(`Rankings loaded, but the League rating refresh failed: ${refreshWarning}`);
-      }
     };
 
     run();
@@ -186,12 +170,23 @@ export default function RankingsPage() {
     }
     return result;
   }, [activityReferenceTime, competitionEntries, competitions, matches, players]);
+  const activeSnookerEntrantIds = useMemo(() => {
+    const competitionById = new Map(competitions.map((competition) => [competition.id, competition]));
+    return new Set(
+      competitionEntries
+        .filter((entry) => {
+          const competition = competitionById.get(entry.competition_id);
+          return entry.status === "approved" && competition?.sport_type === "snooker" && !competition.is_archived && !competition.is_completed;
+        })
+        .map((entry) => entry.player_id)
+    );
+  }, [competitionEntries, competitions]);
   const filteredPlayers = useMemo(() => {
     const liveIds = livePlayerIdsByDiscipline[discipline];
     const visible = (locationFilter === "all" ? players : players.filter((player) => player.location_id === locationFilter))
       .filter((player) =>
         discipline === "snooker"
-          ? Number(player.rated_matches_snooker ?? 0) > 0
+          ? Number(player.rated_matches_snooker ?? 0) > 0 || activeSnookerEntrantIds.has(player.id)
           : liveIds.has(player.id) && Number(player.rated_matches_pool ?? 0) > 0
       );
     return [...visible].sort((a, b) => {
@@ -200,7 +195,10 @@ export default function RankingsPage() {
       if (bRating !== aRating) return bRating - aRating;
       return (a.full_name?.trim() || a.display_name).localeCompare(b.full_name?.trim() || b.display_name);
     });
-  }, [discipline, livePlayerIdsByDiscipline, locationFilter, players]);
+  }, [activeSnookerEntrantIds, discipline, livePlayerIdsByDiscipline, locationFilter, players]);
+  const provisionalSnookerPlayers = discipline === "snooker"
+    ? filteredPlayers.filter((player) => Number(player.rated_matches_snooker ?? 0) === 0).length
+    : 0;
   const disciplineMeta = getDisciplineMeta(discipline);
   const topPlayer = filteredPlayers[0] ?? null;
   const highestPeak =
@@ -238,7 +236,7 @@ export default function RankingsPage() {
                   {disciplineMeta.label}
                 </span>
                 <p className="max-w-2xl text-sm text-slate-700">
-                  Ratings use the current Elo-style values stored on each player profile. Official League snooker ratings refresh automatically when this page opens. Singles results feed the rating model; doubles, BYE, walkover, and void outcomes are excluded.
+                  These are Rack &amp; Frame club ratings only. Singles results played in this app feed the Elo model; league-app results, doubles, BYE, walkover, and void outcomes are excluded.
                 </p>
               </div>
               <div className="grid min-w-[220px] flex-1 gap-3 sm:grid-cols-3">
@@ -304,7 +302,11 @@ export default function RankingsPage() {
               <p className="text-sm font-semibold text-slate-900">
                 {discipline === "snooker" ? "Snooker" : "Pool"} rankings
               </p>
-              <p className="text-sm text-slate-600">{filteredPlayers.length} ranked players</p>
+              <p className="text-sm text-slate-600">
+                {discipline === "snooker"
+                  ? `${filteredPlayers.length - provisionalSnookerPlayers} ranked · ${provisionalSnookerPlayers} provisional`
+                  : `${filteredPlayers.length} ranked players`}
+              </p>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -338,6 +340,7 @@ export default function RankingsPage() {
                           <Link href={`/players/${player.id}`} className="font-medium text-teal-700 underline">
                             {playerName}
                           </Link>
+                          {discipline === "snooker" && ratedMatches === 0 ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">Provisional</span> : null}
                         </td>
                         <td className="px-4 py-3 text-slate-600">{locationMap.get(player.location_id ?? "") ?? "Not set"}</td>
                         <td className="px-4 py-3 font-semibold text-slate-900">{Math.round(rating)}</td>

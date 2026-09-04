@@ -9,7 +9,6 @@ import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
 import ConfirmModal from "@/components/ConfirmModal";
 import useExperienceMode from "@/components/useExperienceMode";
-import { buildSharedLinkSuggestion, SharedLinkPlayer } from "@/lib/shared-player-links";
 
 const coreActionLinks = [
   { href: "/quick-match", title: "Quick Match", desc: "Start a local practice or social match." },
@@ -43,7 +42,6 @@ const systemToolLinks = [
   { href: "/locations", title: "Locations", desc: "Review and tidy club and venue records." },
   { href: "/signup-requests", title: "Signup Requests", desc: "Review pending access, profile, and child requests." },
   { href: "/snooker-handicap-exceptions", title: "Handicap Exceptions", desc: "Set first-time snooker handicaps and seed starting Elo." },
-  { href: "/shared-player-links", title: "Shared Player Links", desc: "Review suggested club-to-league player matches and create Elo links." },
   { href: "/reschedules", title: "Fixture week requests", desc: "Review exceptional requests to play early or up to two weeks later." },
   { href: "/weekly-reviews", title: "Weekly Reviews", desc: "Generate, publish and share weekly league reports." },
   { href: "/backup", title: "Data Management", desc: "Run maintenance and data cleanup tools." },
@@ -98,8 +96,6 @@ export default function HomePage() {
   const [resultsQueueCount, setResultsQueueCount] = useState<number | null>(null);
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number | null>(null);
   const [pendingResultSubmissionsCount, setPendingResultSubmissionsCount] = useState<number>(0);
-  const [sharedLinkSuggestionsCount, setSharedLinkSuggestionsCount] = useState<number>(0);
-  const [sharedLinksMonthlyReviewDue, setSharedLinksMonthlyReviewDue] = useState(false);
   const [experienceMode, setExperienceMode] = useExperienceMode();
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
   const [confirmState, setConfirmState] = useState<{
@@ -190,11 +186,11 @@ export default function HomePage() {
           detail: "Access, profile, child, and other queued requests for review.",
         },
         {
-          href: "/shared-player-links",
-          title: "Shared Player Links",
-          value: sharedLinkSuggestionsCount,
+          href: "/rankings",
+          title: "Club Rankings",
+          value: 0,
           tone: "indigo",
-          detail: "Live club-to-league mapping suggestions waiting to be checked.",
+          detail: "Rack & Frame Elo rankings, kept separate from the league system.",
         },
       ];
     }
@@ -246,7 +242,7 @@ export default function HomePage() {
         detail: "Jump straight to the dedicated club snooker break table.",
       },
     ];
-  }, [admin.isAdmin, admin.isSuper, openEventsCount, pendingRequestsCount, resultsQueueCount, sharedLinkSuggestionsCount]);
+  }, [admin.isAdmin, admin.isSuper, openEventsCount, pendingRequestsCount, resultsQueueCount]);
   const priorityCardClass = (tone: PriorityTone) => {
     if (tone === "teal") return "border-teal-200 bg-gradient-to-br from-teal-50 to-white";
     if (tone === "emerald") return "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white";
@@ -427,37 +423,6 @@ export default function HomePage() {
       }
 
       if (admin.isSuper) {
-        const sessionRes = await client.auth.getSession();
-        const token = sessionRes.data.session?.access_token;
-        if (token) {
-          const sharedRes = await fetch("/api/rating/shared-link-candidates", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          const sharedBody = (await sharedRes.json().catch(() => ({}))) as {
-            clubPlayers?: SharedLinkPlayer[];
-            leaguePlayers?: SharedLinkPlayer[];
-            existingLinks?: Array<{ source_player_id: string; league_player_id: string }>;
-          };
-          if (sharedRes.ok) {
-            const clubPlayers = sharedBody.clubPlayers ?? [];
-            const leaguePlayers = sharedBody.leaguePlayers ?? [];
-            const existingLinks = sharedBody.existingLinks ?? [];
-            const linkedClubIds = new Set(existingLinks.map((link) => link.source_player_id));
-            const linkedLeagueIds = new Set(existingLinks.map((link) => link.league_player_id));
-            const suggestions = clubPlayers
-              .filter((clubPlayer) => !linkedClubIds.has(clubPlayer.id))
-              .flatMap((clubPlayer) =>
-                leaguePlayers
-                  .filter((leaguePlayer) => !linkedLeagueIds.has(leaguePlayer.id))
-                  .map((leaguePlayer) => buildSharedLinkSuggestion(clubPlayer, leaguePlayer))
-                  .filter((row) => Boolean(row))
-                  .slice(0, 3)
-              );
-            setSharedLinkSuggestionsCount(suggestions.length);
-          } else {
-            setSharedLinkSuggestionsCount(0);
-          }
-        }
         const tables = [
           "player_claim_requests",
           "player_update_requests",
@@ -470,12 +435,6 @@ export default function HomePage() {
         const counts = await Promise.all(tables.map((table) => client.from(table).select("id", { count: "exact", head: true }).eq("status", "pending")));
         setPendingRequestsCount(counts.reduce((sum, result) => sum + (result.count ?? 0), 0));
         setPendingResultSubmissionsCount(0);
-        if (typeof window !== "undefined") {
-          const lastReviewedAt = window.localStorage.getItem("shared_player_links_last_reviewed_at");
-          const thresholdMs = 1000 * 60 * 60 * 24 * 30;
-          const due = !lastReviewedAt || Date.now() - new Date(lastReviewedAt).getTime() >= thresholdMs;
-          setSharedLinksMonthlyReviewDue(due);
-        }
         return;
       }
 
@@ -905,7 +864,6 @@ export default function HomePage() {
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-slate-900">
                   <span>System administration</span>
                   <span className="flex items-center gap-2">
-                    {sharedLinkSuggestionsCount > 0 ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{sharedLinkSuggestionsCount} to review</span> : null}
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{visibleSystemTools.length}</span>
                   </span>
                 </summary>
@@ -915,28 +873,12 @@ export default function HomePage() {
                       <Link key={item.href} href={item.href} className={`${primaryCardClass(item.href)} p-3 sm:p-4`}>
                         <div className="flex items-start justify-between gap-2">
                           <h3 className="text-sm font-bold text-slate-900 sm:text-lg">{item.title}</h3>
-                          {item.href === "/shared-player-links" && sharedLinkSuggestionsCount > 0 ? (
-                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900">
-                              {sharedLinkSuggestionsCount}
-                            </span>
-                          ) : null}
                         </div>
                         <p className="mt-1 hidden text-sm text-slate-600 sm:block">{item.desc}</p>
                       </Link>
                     ))}
                 </div>
               </details>
-            ) : null}
-
-            {admin.isSuper && sharedLinksMonthlyReviewDue ? (
-              <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-cyan-50 p-3 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="max-w-3xl">
-                    <p className="text-sm font-semibold text-amber-800">Monthly shared-player-link review is due</p>
-                  </div>
-                  <Link href="/shared-player-links" className={actionLinkClass}>Review</Link>
-                </div>
-              </div>
             ) : null}
 
             {!admin.isSuper ? (

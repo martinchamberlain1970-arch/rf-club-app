@@ -43,7 +43,7 @@ type PlayerRow = {
 
 type FrameRow = { match_id: string; winner_player_id: string | null };
 type LeagueTableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
-type LeagueFixture = { id: string; week: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; score: { player1: number; player2: number; void: boolean } | null };
+type LeagueFixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
 type LeagueData = { competition: CompetitionRow; fixtures: LeagueFixture[]; table: LeagueTableRow[]; updatedAt: string };
 
 function startOfWeek(date: Date) {
@@ -186,7 +186,13 @@ export default function MyFixturesPage() {
   const allFixtureRows = useMemo(() => {
     const framesByMatch = new Map<string, FrameRow[]>();
     for (const frame of frames) framesByMatch.set(frame.match_id, [...(framesByMatch.get(frame.match_id) ?? []), frame]);
-    return matches.map((match) => {
+    const publishedFixtureByMatch = new Map<string, LeagueFixture>();
+    for (const league of Object.values(leagueData)) {
+      for (const fixture of league.fixtures) {
+        if (!fixture.isReschedulePlaceholder) publishedFixtureByMatch.set(fixture.sourceMatchId ?? fixture.id, fixture);
+      }
+    }
+    return matches.flatMap((match) => {
         const isDoubles = Boolean(match.team1_player1_id || match.team2_player1_id);
         const onTeamOne = isDoubles
           ? [match.team1_player1_id, match.team1_player2_id].includes(linkedPlayerId)
@@ -206,19 +212,36 @@ export default function MyFixturesPage() {
           teamOneScore = teamOneIds.includes(match.winner_player_id) ? 1 : 0;
           teamTwoScore = teamTwoIds.includes(match.winner_player_id) ? 1 : 0;
         }
-        return {
+        const publishedFixture = publishedFixtureByMatch.get(match.id);
+        const activeRow = {
           match,
           competition: competitionById.get(match.competition_id),
           myLabel: myIds.filter(Boolean).map((id) => playerNameById.get(id as string) ?? "TBC").join(" & "),
           opponentLabel: opponentIds.filter(Boolean).map((id) => playerNameById.get(id as string) ?? "TBC").join(" & ") || "BYE",
           opponentIds: opponentIds.filter(Boolean) as string[],
           scoreLabel: match.status === "complete" ? (!match.winner_player_id ? "VOID" : onTeamOne ? `${teamOneScore} – ${teamTwoScore}` : `${teamTwoScore} – ${teamOneScore}`) : null,
+          displayScheduledFor: match.scheduled_for,
+          displayWeek: publishedFixture?.week ?? match.round_no ?? 1,
+          isReschedulePlaceholder: false,
+          rescheduledFrom: publishedFixture?.rescheduledFrom ?? null,
+          rescheduledTo: publishedFixture?.rescheduledTo ?? null,
         };
-      });
-  }, [competitionById, frames, linkedPlayerId, matches, playerNameById]);
+        if (!activeRow.rescheduledFrom || !activeRow.rescheduledTo) return [activeRow];
+        return [
+          activeRow,
+          {
+            ...activeRow,
+            displayScheduledFor: activeRow.rescheduledFrom,
+            displayWeek: publishedFixture?.originalWeek ?? match.round_no ?? 1,
+            isReschedulePlaceholder: true,
+            scoreLabel: null,
+          },
+        ];
+      }).sort((a, b) => String(a.displayScheduledFor ?? "").localeCompare(String(b.displayScheduledFor ?? "")) || a.displayWeek - b.displayWeek);
+  }, [competitionById, frames, leagueData, linkedPlayerId, matches, playerNameById]);
 
-  const fixtureRows = useMemo(() => allFixtureRows.filter(({ match }) => match.scheduled_for && match.scheduled_for >= range.from && match.scheduled_for <= range.to), [allFixtureRows, range]);
-  const resultRows = useMemo(() => allFixtureRows.filter(({ match }) => match.status === "complete"), [allFixtureRows]);
+  const fixtureRows = useMemo(() => allFixtureRows.filter(({ displayScheduledFor }) => displayScheduledFor && displayScheduledFor >= range.from && displayScheduledFor <= range.to), [allFixtureRows, range]);
+  const resultRows = useMemo(() => allFixtureRows.filter(({ match, isReschedulePlaceholder }) => match.status === "complete" && !isReschedulePlaceholder), [allFixtureRows]);
   const filterSourceRows = view === "results" ? resultRows : allFixtureRows;
   const fixtureCompetitionOptions = useMemo(() => {
     const options = new Map<string, string>();
@@ -237,32 +260,40 @@ export default function MyFixturesPage() {
   const activeLeague = activeLeagueId ? leagueData[activeLeagueId] : null;
   const activeLeagueWeeks = useMemo(() => [...new Set((activeLeague?.fixtures ?? []).map((fixture) => fixture.week))].sort((a, b) => a - b), [activeLeague]);
   const activeLeagueCurrentWeek = useMemo(() => {
-    const unfinished = activeLeague?.fixtures.find((fixture) => !["complete", "bye"].includes(fixture.status));
+    const unfinished = activeLeague?.fixtures.find((fixture) => !fixture.isReschedulePlaceholder && !["complete", "bye"].includes(fixture.status));
     return unfinished?.week ?? activeLeagueWeeks.at(-1) ?? 1;
   }, [activeLeague, activeLeagueWeeks]);
   const visibleCompetitionWeek = selectedResultsWeek === "current" ? activeLeagueCurrentWeek : Number(selectedResultsWeek);
   const competitionWeekFixtures = useMemo(() => (activeLeague?.fixtures ?? []).filter((fixture) => fixture.week === visibleCompetitionWeek && fixture.status !== "bye"), [activeLeague, visibleCompetitionWeek]);
-  const competitionWeekResults = useMemo(() => competitionWeekFixtures.filter((fixture) => fixture.status === "complete" && fixture.score), [competitionWeekFixtures]);
+  const playableCompetitionWeekFixtures = useMemo(() => competitionWeekFixtures.filter((fixture) => !fixture.isReschedulePlaceholder), [competitionWeekFixtures]);
+  const competitionWeekResults = useMemo(() => playableCompetitionWeekFixtures.filter((fixture) => fixture.status === "complete" && fixture.score), [playableCompetitionWeekFixtures]);
 
   const renderFixtureCards = (rows: typeof allFixtureRows, emptyMessage: string) => rows.length ? (
     <section className="space-y-3">
-      {rows.map(({ match, competition, myLabel, opponentLabel, scoreLabel }) => (
-        <Link key={match.id} href={`/matches/${match.id}`} className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md">
+      {rows.map(({ match, competition, myLabel, opponentLabel, scoreLabel, displayScheduledFor, displayWeek, isReschedulePlaceholder, rescheduledFrom, rescheduledTo }) => {
+        const card = (
+          <div className={`block rounded-2xl border p-4 shadow-sm ${isReschedulePlaceholder ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="font-semibold text-slate-900">{competition?.name ?? "Competition fixture"}</p>
-            <span className={`rounded-full border px-2 py-0.5 text-xs ${match.status === "complete" ? "border-blue-200 bg-blue-50 text-blue-800" : match.status === "in_progress" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-slate-50 text-slate-700"}`}>
-              {match.status === "complete" ? "Result" : match.status === "in_progress" ? "Live" : match.status === "bye" ? "BYE" : "Scheduled"}
+            <span className={`rounded-full border px-2 py-0.5 text-xs ${isReschedulePlaceholder ? "border-amber-300 bg-amber-100 text-amber-900" : match.status === "complete" ? "border-blue-200 bg-blue-50 text-blue-800" : match.status === "in_progress" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-slate-50 text-slate-700"}`}>
+              {isReschedulePlaceholder ? "Rescheduled" : match.status === "complete" ? "Result" : match.status === "in_progress" ? "Live" : match.status === "bye" ? "BYE" : rescheduledFrom ? "Rescheduled fixture" : "Scheduled"}
             </span>
           </div>
           <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span>{myLabel}</span><strong className="min-w-14 rounded-lg bg-slate-900 px-2 py-1.5 text-white">{scoreLabel ?? "v"}</strong><span>{opponentLabel}</span></div>
           <p className="mt-2 text-xs text-slate-500">
-            {competition?.competition_format === "league" ? `Week ${match.round_no ?? 1}` : `Round ${match.round_no ?? 1} · Match ${match.match_no ?? 1}`}
-            {fixtureTimingLabel(match.scheduled_for, competition?.competition_format === "league", match.status === "complete", competition?.name)}
+            {competition?.competition_format === "league" ? `Week ${displayWeek}` : `Round ${match.round_no ?? 1} · Match ${match.match_no ?? 1}`}
+            {fixtureTimingLabel(displayScheduledFor, competition?.competition_format === "league", match.status === "complete", competition?.name)}
           </p>
+          {isReschedulePlaceholder ? <p className="mt-2 text-sm font-semibold text-amber-900">Rescheduled to {rescheduledTo ? new Date(`${rescheduledTo}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "the new fixture week"}. Enter the result against the fixture in its new week.</p> : null}
+          {!isReschedulePlaceholder && rescheduledFrom ? <p className="mt-2 text-xs font-semibold text-teal-800">Rescheduled from {new Date(`${rescheduledFrom}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}
           {match.opening_break_player_id ? <p className="mt-2 text-xs font-semibold text-emerald-700">Opening break: {playerNameById.get(match.opening_break_player_id) ?? "Assigned player"}</p> : null}
-          <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open fixture</p>
-        </Link>
-      ))}
+          {!isReschedulePlaceholder ? <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open fixture</p> : null}
+        </div>
+        );
+        return isReschedulePlaceholder
+          ? <div key={`${match.id}:original`}>{card}</div>
+          : <Link key={`${match.id}:active`} href={`/matches/${match.id}`} className="block transition hover:-translate-y-0.5 hover:shadow-md">{card}</Link>;
+      })}
     </section>
   ) : <section className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-600 shadow-sm">{emptyMessage}</section>;
 
@@ -286,7 +317,7 @@ export default function MyFixturesPage() {
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
               {([
                 ["weekly", "Weekly view", "Last, this and next week"],
-                ["all", "All fixtures", `${allFixtureRows.length} total`],
+                ["all", "All fixtures", `${matches.length} total`],
                 ["results", "My results", `${resultRows.length} completed`],
                 ["weekly-results", "Weekly fixtures & results", "Everyone's matches"],
                 ["tables", "League tables", `${leagueCompetitions.length} league${leagueCompetitions.length === 1 ? "" : "s"}`],
@@ -339,7 +370,7 @@ export default function MyFixturesPage() {
                 : view === "weekly-results" ? <section className={cardClass}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">All players</p><h2 className="mt-1 text-xl font-bold text-slate-950">Weekly fixtures &amp; results</h2><p className="mt-1 text-sm text-slate-600">Choose a competition and week to see completed results and fixtures still to be played.</p></div>
-                    {activeLeague ? <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">{competitionWeekResults.length} of {competitionWeekFixtures.length} completed</span> : null}
+                    {activeLeague ? <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">{competitionWeekResults.length} of {playableCompetitionWeekFixtures.length} completed</span> : null}
                   </div>
                   {activeLeague ? <>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -347,9 +378,11 @@ export default function MyFixturesPage() {
                       <label className="text-sm font-medium text-slate-700">Week<select value={selectedResultsWeek} onChange={(event) => setSelectedResultsWeek(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="current">Current (Week {activeLeagueCurrentWeek})</option>{activeLeagueWeeks.map((week) => <option key={week} value={week}>Week {week}</option>)}</select></label>
                     </div>
                     <div className="mt-4 space-y-3">
-                      {competitionWeekFixtures.map((fixture) => <article key={fixture.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Week {fixture.week} · Match {fixture.matchNo}</p><div className="flex items-center gap-2">{fixture.scheduledFor ? <p className="text-xs text-slate-500">{new Date(`${fixture.scheduledFor.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}<span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${fixture.status === "complete" ? "border-blue-200 bg-blue-50 text-blue-800" : fixture.status === "in_progress" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{fixture.status === "complete" ? "Result" : fixture.status === "in_progress" ? "Live" : "To play"}</span></div></div>
+                      {competitionWeekFixtures.map((fixture) => <article key={fixture.id} className={`rounded-2xl border p-4 ${fixture.isReschedulePlaceholder ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Week {fixture.week} · Match {fixture.matchNo}</p><div className="flex items-center gap-2">{fixture.scheduledFor ? <p className="text-xs text-slate-500">{new Date(`${fixture.scheduledFor.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}<span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${fixture.isReschedulePlaceholder ? "border-amber-300 bg-amber-100 text-amber-900" : fixture.status === "complete" ? "border-blue-200 bg-blue-50 text-blue-800" : fixture.status === "in_progress" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{fixture.isReschedulePlaceholder ? "Rescheduled" : fixture.status === "complete" ? "Result" : fixture.status === "in_progress" ? "Live" : "To play"}</span></div></div>
                         <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span className="font-semibold">{fixture.player1}</span><strong className={`min-w-16 rounded-lg px-2 py-1.5 ${fixture.score ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{fixture.score?.void ? "VOID" : fixture.score ? `${fixture.score.player1} – ${fixture.score.player2}` : "v"}</strong><span className="font-semibold">{fixture.player2}</span></div>
+                        {fixture.isReschedulePlaceholder ? <p className="mt-2 text-center text-sm font-semibold text-amber-900">Rescheduled to {fixture.rescheduledTo ? new Date(`${fixture.rescheduledTo}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "the new fixture week"}.</p> : null}
+                        {!fixture.isReschedulePlaceholder && fixture.rescheduledFrom ? <p className="mt-2 text-center text-xs font-semibold text-teal-800">Rescheduled from {new Date(`${fixture.rescheduledFrom}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}
                       </article>)}
                       {!competitionWeekFixtures.length ? <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No fixtures are scheduled for Week {visibleCompetitionWeek}.</p> : null}
                     </div>

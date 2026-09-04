@@ -36,16 +36,23 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
   const playerIds = [...new Set((entriesResult.data ?? []).map((entry) => entry.player_id).filter(Boolean))];
   const matchIds = (matchesResult.data ?? []).map((match) => match.id);
-  const [playersResult, framesResult] = await Promise.all([
+  const [playersResult, framesResult, reschedulesResult] = await Promise.all([
     playerIds.length
       ? client.from("players").select("id,display_name,full_name").in("id", playerIds)
       : Promise.resolve({ data: [], error: null }),
     matchIds.length
       ? client.from("frames").select("match_id,winner_player_id,is_walkover_award,team1_points,team2_points").in("match_id", matchIds)
       : Promise.resolve({ data: [], error: null }),
+    matchIds.length
+      ? client
+          .from("league_reschedule_requests")
+          .select("match_id,original_scheduled_for,requested_scheduled_for")
+          .in("match_id", matchIds)
+          .eq("status", "approved")
+      : Promise.resolve({ data: [], error: null }),
   ]);
-  if (playersResult.error || framesResult.error) {
-    return NextResponse.json({ error: playersResult.error?.message || framesResult.error?.message }, { status: 400 });
+  if (playersResult.error || framesResult.error || reschedulesResult.error) {
+    return NextResponse.json({ error: playersResult.error?.message || framesResult.error?.message || reschedulesResult.error?.message }, { status: 400 });
   }
 
   const nameById = new Map((playersResult.data ?? []).map((player) => [player.id, player.full_name?.trim() || player.display_name]));
@@ -105,7 +112,15 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const table = [...stats.values()]
     .map((row) => ({ ...row, pointsDifference: row.pointsFor - row.pointsAgainst }))
     .sort((a, b) => b.points - a.points || b.pointsDifference - a.pointsDifference || b.pointsFor - a.pointsFor || b.won - a.won || a.lost - b.lost || a.playerName.localeCompare(b.playerName));
-  const fixtures = leagueMatches.map((match) => {
+  const approvedRescheduleByMatch = new Map(
+    (reschedulesResult.data ?? []).map((request) => [request.match_id, request])
+  );
+  const weekByScheduledDate = new Map<string, number>();
+  for (const match of leagueMatches) {
+    if (!match.scheduled_for || approvedRescheduleByMatch.has(match.id)) continue;
+    if (!weekByScheduledDate.has(match.scheduled_for)) weekByScheduledDate.set(match.scheduled_for, match.round_no ?? 1);
+  }
+  const activeFixtures = leagueMatches.map((match) => {
     const frames = framesByMatch.get(match.id) ?? [];
     const player1Score = competition.sport_type === "snooker"
       ? frames.reduce((total, frame) => total + Number(frame.team1_points ?? 0), 0)
@@ -114,9 +129,18 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       ? frames.reduce((total, frame) => total + Number(frame.team2_points ?? 0), 0)
       : frames.filter((frame) => frame.winner_player_id === match.player2_id).length;
     const isBye = match.status === "bye" || Boolean(match.player1_id && match.player1_id === match.player2_id);
+    const reschedule = approvedRescheduleByMatch.get(match.id);
+    const dayDifference = reschedule
+      ? Math.round((new Date(`${reschedule.requested_scheduled_for}T12:00:00`).getTime() - new Date(`${reschedule.original_scheduled_for}T12:00:00`).getTime()) / 86_400_000)
+      : 0;
+    const displayedWeek = reschedule
+      ? weekByScheduledDate.get(reschedule.requested_scheduled_for) ?? Math.max(1, (match.round_no ?? 1) + Math.round(dayDifference / 7))
+      : match.round_no ?? 1;
     return {
       id: match.id,
-      week: match.round_no ?? 1,
+      sourceMatchId: match.id,
+      week: displayedWeek,
+      originalWeek: match.round_no ?? 1,
       matchNo: match.match_no ?? 1,
       bestOf: match.best_of,
       status: match.status,
@@ -125,7 +149,24 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       player2: isBye ? "BYE" : nameById.get(match.player2_id ?? "") || "TBC",
       openingBreaker: isBye ? null : nameById.get(match.opening_break_player_id ?? "") || null,
       score: match.status === "complete" && !isBye ? { player1: player1Score, player2: player2Score, void: !match.winner_player_id } : null,
+      isReschedulePlaceholder: false,
+      rescheduledFrom: reschedule?.original_scheduled_for ?? null,
+      rescheduledTo: reschedule?.requested_scheduled_for ?? null,
     };
   });
+  const reschedulePlaceholders = activeFixtures
+    .filter((fixture) => fixture.rescheduledFrom && fixture.rescheduledTo)
+    .map((fixture) => ({
+      ...fixture,
+      id: `${fixture.id}:original`,
+      week: fixture.originalWeek,
+      status: "rescheduled",
+      scheduledFor: fixture.rescheduledFrom,
+      openingBreaker: null,
+      score: null,
+      isReschedulePlaceholder: true,
+    }));
+  const fixtures = [...activeFixtures, ...reschedulePlaceholders]
+    .sort((a, b) => a.week - b.week || a.matchNo - b.matchNo || Number(a.isReschedulePlaceholder) - Number(b.isReschedulePlaceholder));
   return NextResponse.json({ competition, fixtures, table, updatedAt: new Date().toISOString() }, { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" } });
 }
