@@ -142,6 +142,23 @@ type LeagueRescheduleRequest = {
   created_at: string;
 };
 
+const RESCHEDULE_REASONS = [
+  "Holiday",
+  "Illness or injury",
+  "Working away from home",
+  "Exceptional work commitment",
+  "Family or caring emergency",
+  "Other exceptional reason",
+] as const;
+
+type RescheduleTiming = "earlier" | "later" | "later_two";
+
+function rescheduleTimingLabel(timing: RescheduleTiming) {
+  if (timing === "earlier") return "one week early";
+  if (timing === "later_two") return "two weeks later";
+  return "one week later";
+}
+
 const REJECTION_REASONS = [
   "Incorrect final score",
   "Wrong match or players selected",
@@ -374,7 +391,8 @@ export default function MatchPage() {
   const [confirmEditComplete, setConfirmEditComplete] = useState(false);
   const [submissions, setSubmissions] = useState<ResultSubmission[]>([]);
   const [rescheduleRequests, setRescheduleRequests] = useState<LeagueRescheduleRequest[]>([]);
-  const [requesterPendingReschedules, setRequesterPendingReschedules] = useState<LeagueRescheduleRequest[]>([]);
+  const [rescheduleReason, setRescheduleReason] = useState("");
+  const [rescheduleDetails, setRescheduleDetails] = useState("");
   const [adminLocationId, setAdminLocationId] = useState<string | null>(null);
   const [viewerLinkedPlayerId, setViewerLinkedPlayerId] = useState<string | null>(null);
   const [assigningBreaker, setAssigningBreaker] = useState(false);
@@ -515,7 +533,6 @@ export default function MatchPage() {
       const effectiveFrameRows = ((framesRes.data ?? []) as unknown) as FrameRow[];
       const effectiveSubmissionRows = ((submissionsRes.data ?? []) as unknown) as ResultSubmission[];
       let effectiveRescheduleRows: LeagueRescheduleRequest[] = [];
-      let effectiveRequesterPendingRows: LeagueRescheduleRequest[] = [];
       const sessionRes = await client.auth.getSession();
       const accessToken = sessionRes.data.session?.access_token ?? null;
       if (accessToken) {
@@ -530,28 +547,17 @@ export default function MatchPage() {
         }
       }
       if (competitionRes.data.competition_format === "league") {
-        const [matchRescheduleRes, requesterPendingRes] = await Promise.all([
-          client
-            .from("league_reschedule_requests")
-            .select("id,match_id,requester_user_id,requester_player_id,original_scheduled_for,requested_scheduled_for,status,reviewed_by_user_id,reviewed_at,note,created_at")
-            .eq("match_id", matchId)
-            .order("created_at", { ascending: false }),
-          signedInUserId
-            ? client
-                .from("league_reschedule_requests")
-                .select("id,match_id,requester_user_id,requester_player_id,original_scheduled_for,requested_scheduled_for,status,reviewed_by_user_id,reviewed_at,note,created_at")
-                .eq("requester_user_id", signedInUserId)
-                .eq("status", "pending")
-                .order("created_at", { ascending: false })
-            : Promise.resolve({ data: [], error: null }),
-        ]);
-        if (matchRescheduleRes.error || requesterPendingRes.error) {
+        const matchRescheduleRes = await client
+          .from("league_reschedule_requests")
+          .select("id,match_id,requester_user_id,requester_player_id,original_scheduled_for,requested_scheduled_for,status,reviewed_by_user_id,reviewed_at,note,created_at")
+          .eq("match_id", matchId)
+          .order("created_at", { ascending: false });
+        if (matchRescheduleRes.error) {
           finishLoading();
-          setLoadError(matchRescheduleRes.error?.message || requesterPendingRes.error?.message || "Failed to load reschedule requests.");
+          setLoadError(matchRescheduleRes.error.message || "Failed to load reschedule requests.");
           return;
         }
         effectiveRescheduleRows = ((matchRescheduleRes.data ?? []) as unknown) as LeagueRescheduleRequest[];
-        effectiveRequesterPendingRows = ((requesterPendingRes.data ?? []) as unknown) as LeagueRescheduleRequest[];
       }
 
       const loadedPlayers = (playersRes.data as unknown) as Player[];
@@ -596,7 +602,6 @@ export default function MatchPage() {
       );
       setSubmissions(effectiveSubmissionRows);
       setRescheduleRequests(effectiveRescheduleRows);
-      setRequesterPendingReschedules(effectiveRequesterPendingRows);
       setLoadError(null);
       finishLoading();
     };
@@ -709,14 +714,14 @@ export default function MatchPage() {
     () => rescheduleRequests.find((request) => request.status === "approved") ?? null,
     [rescheduleRequests]
   );
-  const requesterPendingElsewhere = useMemo(
-    () => requesterPendingReschedules.find((request) => request.match_id !== matchId) ?? null,
-    [requesterPendingReschedules, matchId]
-  );
   const rescheduleTargetDates = useMemo(
     () => match?.scheduled_for
-      ? { earlier: addDaysToIsoDate(match.scheduled_for, -7), later: addDaysToIsoDate(match.scheduled_for, 7) }
-      : { earlier: null, later: null },
+      ? {
+          earlier: addDaysToIsoDate(match.scheduled_for, -7),
+          later: addDaysToIsoDate(match.scheduled_for, 7),
+          later_two: addDaysToIsoDate(match.scheduled_for, 14),
+        }
+      : { earlier: null, later: null, later_two: null },
     [match?.scheduled_for]
   );
   const earlierRescheduleStillPossible = useMemo(() => {
@@ -748,8 +753,7 @@ export default function MatchPage() {
       !userPendingSubmission &&
       !userApprovedSubmission &&
       !pendingRescheduleForMatch &&
-      !approvedRescheduleForMatch &&
-      !requesterPendingElsewhere
+      !approvedRescheduleForMatch
   );
   const expectedPreview = useMemo<ExpectedResultPreview | null>(() => {
     if (!match || !competition || match.match_mode !== "singles" || competition.competition_format === "league") return null;
@@ -796,11 +800,11 @@ export default function MatchPage() {
       frames.every((frame) => frame.winner_side === 0)
   );
 
-  const requestLeagueReschedule = async (direction: "earlier" | "later") => {
+  const requestLeagueReschedule = async (timing: RescheduleTiming) => {
     const client = supabase;
-    const targetDate = rescheduleTargetDates[direction];
+    const targetDate = rescheduleTargetDates[timing];
     if (!client || !admin.userId || !viewerLinkedPlayerId || !match?.scheduled_for || !targetDate) return;
-    if (direction === "earlier" && !earlierRescheduleStillPossible) {
+    if (timing === "earlier" && !earlierRescheduleStillPossible) {
       setMessage("The earlier fixture week has already closed, so it can no longer be requested.");
       return;
     }
@@ -813,12 +817,13 @@ export default function MatchPage() {
       original_scheduled_for: match.scheduled_for,
       requested_scheduled_for: targetDate,
       status: "pending",
+      note: `${rescheduleReason.trim()} — ${rescheduleDetails.trim()}`,
     });
     setRequestingReschedule(false);
     if (insert.error) {
       const normalized = insert.error.message.toLowerCase();
-      if (normalized.includes("one_pending_per_requester") || normalized.includes("one_pending_per_match") || normalized.includes("duplicate key")) {
-        setMessage("Only one outstanding reschedule request is allowed at a time.");
+      if (normalized.includes("one_pending_per_match") || normalized.includes("duplicate key")) {
+        setMessage("This fixture already has an outstanding reschedule request.");
         return;
       }
       setMessage(insert.error.message);
@@ -832,33 +837,32 @@ export default function MatchPage() {
     if (!refresh.error) {
       setRescheduleRequests(((refresh.data ?? []) as unknown) as LeagueRescheduleRequest[]);
     }
-    const refreshPending = await client
-      .from("league_reschedule_requests")
-      .select("id,match_id,requester_user_id,requester_player_id,original_scheduled_for,requested_scheduled_for,status,reviewed_by_user_id,reviewed_at,note,created_at")
-      .eq("requester_user_id", admin.userId)
-      .eq("status", "pending")
-      .order("created_at", { ascending: false });
-    if (!refreshPending.error) {
-      setRequesterPendingReschedules(((refreshPending.data ?? []) as unknown) as LeagueRescheduleRequest[]);
-    }
     setInfoModal({
-      title: `${direction === "earlier" ? "Early" : "Later"} fixture request sent`,
-      description: `Your request has been sent to the Super User. If approved, this fixture will move one week ${direction} to ${new Date(`${targetDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}, and result entry will open for that approved week.`,
+      title: "Fixture change request sent",
+      description: `Your exceptional request has been sent to the Super User. If approved, this fixture will move ${rescheduleTimingLabel(timing)} to ${new Date(`${targetDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}, and result entry will open for that approved week.`,
     });
     await logAudit("league_reschedule_requested", {
       entityType: "match",
       entityId: match.id,
-      summary: `Player requested fixture one week ${direction}.`,
-      meta: { competitionId: match.competition_id, originalScheduledFor: match.scheduled_for, requestedScheduledFor: targetDate, direction },
+      summary: `Player requested fixture ${rescheduleTimingLabel(timing)}.`,
+      meta: { competitionId: match.competition_id, originalScheduledFor: match.scheduled_for, requestedScheduledFor: targetDate, timing, reason: rescheduleReason.trim() },
     });
   };
 
-  const openRescheduleConfirmation = (direction: "earlier" | "later") => {
+  const openRescheduleConfirmation = (timing: RescheduleTiming) => {
     if (!match?.scheduled_for) return;
-    const targetDate = rescheduleTargetDates[direction];
+    if (!rescheduleReason.trim()) {
+      setMessage("Select the exceptional reason for requesting a different fixture week.");
+      return;
+    }
+    if (rescheduleDetails.trim().length < 5) {
+      setMessage("Briefly explain the reason for the request. Medical details are not required.");
+      return;
+    }
+    const targetDate = rescheduleTargetDates[timing];
     if (!targetDate) return;
     setConfirmModal({
-      title: `Request fixture one week ${direction}?`,
+      title: `Request fixture ${rescheduleTimingLabel(timing)}?`,
       description: `This will ask the Super User to move this fixture from ${new Date(`${match.scheduled_for}T12:00:00`).toLocaleDateString("en-GB", {
         weekday: "long",
         day: "numeric",
@@ -867,11 +871,11 @@ export default function MatchPage() {
         weekday: "long",
         day: "numeric",
         month: "long",
-      })}. Result entry will only open in the approved fixture week.`,
-      confirmLabel: `Request ${direction} week`,
+      })}. Reason: ${rescheduleReason.trim()} — ${rescheduleDetails.trim()}. Result entry will only open in the approved fixture week.`,
+      confirmLabel: "Send request",
       onConfirm: async () => {
         setConfirmModal(null);
-        await requestLeagueReschedule(direction);
+        await requestLeagueReschedule(timing);
       },
     });
   };
@@ -2949,11 +2953,11 @@ export default function MatchPage() {
               !isByeMatch &&
               !isArchived ? (
                 <section className={`${cardClass} space-y-3`}>
-                  <h3 className="text-xl font-semibold text-slate-900">Play a week early or later</h3>
+                  <h3 className="text-xl font-semibold text-slate-900">Request a different fixture week</h3>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                    <p className="font-medium text-slate-900">Holiday or availability clash?</p>
+                    <p className="font-medium text-slate-900">Exceptional circumstances?</p>
                     <p className="mt-1">
-                      Request to play this fixture exactly one week early or one week later. The Super User must approve it before result entry opens for the changed week. One approved change is allowed per fixture.
+                      You may request one week early, one week later, or two weeks later for reasons such as holiday, illness or working away. The Super User must approve the request before result entry opens for the changed week.
                     </p>
                     {pendingRescheduleForMatch ? (
                       <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
@@ -2986,19 +2990,37 @@ export default function MatchPage() {
                         Latest reschedule request was not approved.
                       </p>
                     ) : null}
-                    {requesterPendingElsewhere ? (
-                      <p className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                        You already have another outstanding reschedule request. That must be reviewed before you can request another.
-                      </p>
-                    ) : null}
                     {canRequestReschedule ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-3 space-y-3">
+                        <label className="block">
+                          <span className="font-medium text-slate-900">Reason</span>
+                          <select value={rescheduleReason} onChange={(event) => setRescheduleReason(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+                            <option value="">Select an exceptional reason</option>
+                            {RESCHEDULE_REASONS.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="font-medium text-slate-900">Brief explanation</span>
+                          <textarea
+                            value={rescheduleDetails}
+                            onChange={(event) => setRescheduleDetails(event.target.value)}
+                            rows={2}
+                            maxLength={300}
+                            placeholder="For example: Away from 12–19 October. No medical details are needed."
+                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                          />
+                        </label>
+                        <div className="flex flex-wrap gap-2">
                         <button type="button" disabled={requestingReschedule || !earlierRescheduleStillPossible} onClick={() => openRescheduleConfirmation("earlier")} className={buttonSecondaryClass}>
                           Request one week early
                         </button>
                         <button type="button" disabled={requestingReschedule} onClick={() => openRescheduleConfirmation("later")} className={buttonSecondaryClass}>
                           Request one week later
                         </button>
+                        <button type="button" disabled={requestingReschedule} onClick={() => openRescheduleConfirmation("later_two")} className={buttonSecondaryClass}>
+                          Request two weeks later
+                        </button>
+                        </div>
                         {!earlierRescheduleStillPossible ? <p className="basis-full text-xs text-slate-500">The earlier week has already closed.</p> : null}
                       </div>
                     ) : null}

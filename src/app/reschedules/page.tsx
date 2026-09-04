@@ -35,6 +35,15 @@ type MatchRow = {
 type CompetitionRow = { id: string; name: string };
 type PlayerRow = { id: string; display_name: string; full_name: string | null };
 
+function timingLabel(originalDate: string, requestedDate: string) {
+  const original = new Date(`${originalDate}T12:00:00`);
+  const requested = new Date(`${requestedDate}T12:00:00`);
+  const days = Math.round((requested.getTime() - original.getTime()) / 86_400_000);
+  if (days === -7) return "one week early";
+  if (days === 14) return "two weeks later";
+  return "one week later";
+}
+
 export default function ReschedulesPage() {
   const admin = useAdminStatus();
   const [requests, setRequests] = useState<RescheduleRequest[]>([]);
@@ -137,15 +146,15 @@ export default function ReschedulesPage() {
       setMessage(requestUpdate.error.message);
       return;
     }
-    const direction = request.requested_scheduled_for < request.original_scheduled_for ? "earlier" : "later";
+    const timing = timingLabel(request.original_scheduled_for, request.requested_scheduled_for);
     await logAudit(`league_reschedule_${nextStatus}`, {
       entityType: "match",
       entityId: request.match_id,
-      summary: `Fixture request to play one week ${direction} ${nextStatus}.`,
-      meta: { competitionId: request.competition_id, originalScheduledFor: request.original_scheduled_for, requestedScheduledFor: request.requested_scheduled_for, direction },
+      summary: `Fixture request to play ${timing} ${nextStatus}.`,
+      meta: { competitionId: request.competition_id, originalScheduledFor: request.original_scheduled_for, requestedScheduledFor: request.requested_scheduled_for, timing },
     });
     setMessage(nextStatus === "approved"
-      ? `Fixture approved one week ${direction}. Result entry will follow the updated fixture week.`
+      ? `Fixture approved ${timing}. Result entry will follow the updated fixture week.`
       : "Fixture change request rejected.");
     await load();
   };
@@ -157,7 +166,7 @@ export default function ReschedulesPage() {
           <ScreenHeader
             title="Reschedule Requests"
             eyebrow="League Admin"
-            subtitle="Approve requests to play a weekly league fixture exactly one week early or later."
+            subtitle="Review exceptional requests to play one week early or up to two weeks later."
           />
           <MessageModal message={message} onClose={() => setMessage(null)} />
 
@@ -187,7 +196,7 @@ export default function ReschedulesPage() {
                   const match = matchById.get(request.match_id);
                   const playerOne = match?.player1_id ? playerNameById.get(match.player1_id) ?? match.player1_id : "TBC";
                   const playerTwo = match?.player2_id ? playerNameById.get(match.player2_id) ?? match.player2_id : "TBC";
-                  const direction = request.requested_scheduled_for < request.original_scheduled_for ? "early" : "later";
+                  const timing = timingLabel(request.original_scheduled_for, request.requested_scheduled_for);
                   return (
                     <div key={request.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                       <p className="text-lg font-semibold text-slate-900">{competitionNameById.get(request.competition_id) ?? "League competition"}</p>
@@ -195,8 +204,9 @@ export default function ReschedulesPage() {
                         {playerOne} vs {playerTwo}
                       </p>
                       <p className="mt-2 text-sm text-slate-700">
-                        Requested one week {direction} · Original week: {request.original_scheduled_for} · Requested week: {request.requested_scheduled_for}
+                        Requested {timing} · Original week: {request.original_scheduled_for} · Requested week: {request.requested_scheduled_for}
                       </p>
+                      {request.note ? <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"><span className="font-semibold">Reason:</span> {request.note}</p> : null}
                       <p className="mt-1 text-xs text-slate-500">
                         Requested on {new Date(request.created_at).toLocaleString()}
                       </p>
@@ -210,7 +220,7 @@ export default function ReschedulesPage() {
                           onClick={() => void reviewRequest(request, "approved")}
                           className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
                         >
-                          Approve {direction} week
+                          Approve request
                         </button>
                         <button
                           type="button"

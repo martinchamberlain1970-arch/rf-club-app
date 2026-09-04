@@ -367,11 +367,12 @@ export default function NotificationsPage() {
       if (!rescheduleResult.error) {
         (rescheduleResult.data ?? []).forEach((item) => {
           const row = item as RescheduleNotificationRow;
-          const direction = row.requested_scheduled_for < row.original_scheduled_for ? "early" : "later";
+          const dayDifference = Math.round((new Date(`${row.requested_scheduled_for}T12:00:00`).getTime() - new Date(`${row.original_scheduled_for}T12:00:00`).getTime()) / 86_400_000);
+          const timing = dayDifference === -7 ? "one week early" : dayDifference === 14 ? "two weeks later" : "one week later";
           out.push({
             key: `reschedule:${row.id}:${row.status}`,
-            title: admin.isSuper ? `Fixture ${direction}-week request` : `Fixture week request ${row.status}`,
-            detail: `Requested one week ${direction}: ${row.original_scheduled_for} → ${row.requested_scheduled_for}`,
+            title: admin.isSuper ? "Fixture week request" : `Fixture week request ${row.status}`,
+            detail: `Requested ${timing}: ${row.original_scheduled_for} → ${row.requested_scheduled_for}`,
             created_at: row.created_at,
             href: admin.isSuper ? "/reschedules" : `/matches/${row.match_id}`,
             status: row.status,
