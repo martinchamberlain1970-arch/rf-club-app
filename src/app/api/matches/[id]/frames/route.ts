@@ -118,7 +118,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ ok: true });
   }
 
-  const write = await client.from("frames").upsert(rows, { onConflict: "match_id,frame_number" });
+  const existingFrames = await client
+    .from("frames")
+    .select("frame_number,owner_user_id")
+    .eq("match_id", matchId)
+    .in("frame_number", rows.map((row) => row.frame_number));
+  if (existingFrames.error) {
+    return NextResponse.json({ error: existingFrames.error.message }, { status: 400 });
+  }
+  const existingOwnerByFrame = new Map(
+    (existingFrames.data ?? []).map((frame) => [Number(frame.frame_number), frame.owner_user_id as string | null])
+  );
+  const rowsWithOwner = rows.map((row) => ({
+    ...row,
+    owner_user_id: existingOwnerByFrame.get(row.frame_number) ?? user.id,
+  }));
+
+  const write = await client.from("frames").upsert(rowsWithOwner, { onConflict: "match_id,frame_number" });
   if (write.error) return NextResponse.json({ error: write.error.message }, { status: 400 });
 
   if (cleanupSurplus) {
