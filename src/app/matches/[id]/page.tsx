@@ -743,7 +743,6 @@ export default function MatchPage() {
   const canRequestReschedule = Boolean(
     competition?.competition_format === "league" &&
       competition?.league_schedule_mode !== "one_day" &&
-      !admin.isSuper &&
       viewerCanEditThisMatch &&
       !isByeMatch &&
       !isArchived &&
@@ -2885,13 +2884,12 @@ export default function MatchPage() {
                 </section>
               ) : null}
               {!admin.loading &&
-              !admin.isSuper &&
               viewerCanEditThisMatch &&
               competition?.competition_format === "league" &&
               match?.scheduled_for &&
               !isByeMatch &&
               !isArchived ? (
-                <section className={`${cardClass} space-y-3`}>
+                <section id="reschedule-fixture" className={`${cardClass} scroll-mt-4 space-y-3 border-amber-300 bg-amber-50/40`}>
                   <h3 className="text-xl font-semibold text-slate-900">Request a different fixture week</h3>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
                     <p className="font-medium text-slate-900">Exceptional circumstances?</p>

@@ -271,6 +271,14 @@ export default function MyFixturesPage() {
   const renderFixtureCards = (rows: typeof allFixtureRows, emptyMessage: string) => rows.length ? (
     <section className="space-y-3">
       {rows.map(({ match, competition, myLabel, opponentLabel, scoreLabel, displayScheduledFor, displayWeek, isReschedulePlaceholder, rescheduledFrom, rescheduledTo }) => {
+        const canOfferReschedule = Boolean(
+          !isReschedulePlaceholder &&
+          competition?.competition_format === "league" &&
+          (match.status === "pending" || match.status === "in_progress") &&
+          match.scheduled_for &&
+          match.player1_id &&
+          match.player2_id
+        );
         const card = (
           <div className={`block rounded-2xl border p-4 shadow-sm ${isReschedulePlaceholder ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -287,12 +295,23 @@ export default function MyFixturesPage() {
           {isReschedulePlaceholder ? <p className="mt-2 text-sm font-semibold text-amber-900">Rescheduled to {rescheduledTo ? new Date(`${rescheduledTo}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "the new fixture week"}. Enter the result against the fixture in its new week.</p> : null}
           {!isReschedulePlaceholder && rescheduledFrom ? <p className="mt-2 text-xs font-semibold text-teal-800">Rescheduled from {new Date(`${rescheduledFrom}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}
           {match.opening_break_player_id ? <p className="mt-2 text-xs font-semibold text-emerald-700">Opening break: {playerNameById.get(match.opening_break_player_id) ?? "Assigned player"}</p> : null}
-          {!isReschedulePlaceholder ? <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Open fixture</p> : null}
         </div>
         );
         return isReschedulePlaceholder
           ? <div key={`${match.id}:original`}>{card}</div>
-          : <Link key={`${match.id}:active`} href={`/matches/${match.id}`} className="block transition hover:-translate-y-0.5 hover:shadow-md">{card}</Link>;
+          : <div key={`${match.id}:active`} className="space-y-2">
+              {card}
+              <div className={`grid gap-2 ${canOfferReschedule ? "grid-cols-2" : "grid-cols-1"}`}>
+                <Link href={`/matches/${match.id}`} className="rounded-xl border border-teal-700 bg-teal-700 px-3 py-2 text-center text-sm font-bold text-white shadow-sm">
+                  {match.status === "complete" ? "View result" : "Open fixture"}
+                </Link>
+                {canOfferReschedule ? (
+                  <Link href={`/matches/${match.id}#reschedule-fixture`} className="rounded-xl border border-amber-400 bg-amber-100 px-3 py-2 text-center text-sm font-bold text-amber-950 shadow-sm">
+                    Request a different week
+                  </Link>
+                ) : null}
+              </div>
+            </div>;
       })}
     </section>
   ) : <section className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-600 shadow-sm">{emptyMessage}</section>;
@@ -322,6 +341,10 @@ export default function MyFixturesPage() {
                 ["weekly-results", "Weekly fixtures & results", "Everyone's matches"],
                 ["tables", "League tables", `${leagueCompetitions.length} league${leagueCompetitions.length === 1 ? "" : "s"}`],
               ] as Array<[FixtureView, string, string]>).map(([value, label, detail]) => <button key={value} type="button" onClick={() => { setView(value); if (value === "all" || value === "results") { setFixtureCompetitionFilter("all"); setOpponentFilter("all"); } }} className={`rounded-xl border p-3 text-left transition ${view === value ? "border-teal-700 bg-teal-700 text-white shadow-sm" : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-white"}`}><span className="block text-sm font-bold">{label}</span><span className={`mt-1 block text-xs ${view === value ? "text-teal-50" : "text-slate-500"}`}>{detail}</span></button>)}
+            </div>
+            <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+              <p className="font-bold">Need to play in a different week?</p>
+              <p className="mt-1">Open <strong>All fixtures</strong> and select <strong>Request a different week</strong> beneath any eligible fixture. You can ask for one week earlier, one week later, or two weeks later.</p>
             </div>
           </section>
 
