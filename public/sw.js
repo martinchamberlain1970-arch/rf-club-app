@@ -1,4 +1,4 @@
-const CACHE_NAME = "rack-frame-shell-v3";
+const CACHE_NAME = "rack-frame-shell-v4";
 const APP_ASSETS = ["/pwa/icon-192.png", "/pwa/icon-512.png", "/pwa/notification-badge.svg"];
 
 self.addEventListener("install", (event) => {
@@ -8,9 +8,21 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+    (async () => {
+      const keys = await caches.keys();
+      const replacingOldShell = keys.some((key) => key.startsWith("rack-frame-shell-") && key !== CACHE_NAME);
+      await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+      await self.clients.claim();
+
+      // Earlier installed Android PWAs can remain open on an old Next.js bundle
+      // after a deployment. Reload each open app once when this v4 worker replaces
+      // an older Rack & Frame worker so the current bundle takes control.
+      if (replacingOldShell) {
+        const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        await Promise.all(windows.map((windowClient) => windowClient.navigate(windowClient.url)));
+      }
+    })()
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
