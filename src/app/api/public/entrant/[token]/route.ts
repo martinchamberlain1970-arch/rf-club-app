@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { closePendingRescheduleAfterResult } from "@/lib/reschedule-result-guard";
 import { tryAutoApproveMatchingResult } from "@/lib/result-auto-approval";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -178,6 +179,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }).select("id,submitted_at").single();
   if (insertResult.error) return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
   await client.from("matches").update({ status: "in_progress" }).eq("id", match.id).eq("status", "pending");
+  const closedReschedule = await closePendingRescheduleAfterResult(client, match.id, null);
   const comparison = await tryAutoApproveMatchingResult(client, match.id);
-  return NextResponse.json({ ok: true, submittedAt: insertResult.data.submitted_at, autoApproved: comparison.autoApproved === true });
+  return NextResponse.json({
+    ok: true,
+    submittedAt: insertResult.data.submitted_at,
+    autoApproved: comparison.autoApproved === true,
+    closedReschedule: closedReschedule.closed > 0,
+    warning: closedReschedule.error
+      ? "Your result was saved, but the organiser may still need to close the reschedule request."
+      : undefined,
+  });
 }

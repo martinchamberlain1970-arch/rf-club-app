@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { tryAutoApproveMatchingResult } from "@/lib/result-auto-approval";
+import { closePendingRescheduleAfterResult } from "@/lib/reschedule-result-guard";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -30,11 +31,15 @@ export async function POST(request: NextRequest) {
   if (!['admin', 'owner'].includes(role) && (!linkedPlayerId || !participantIds.includes(linkedPlayerId))) {
     return NextResponse.json({ error: "You can only compare submissions for your own fixture." }, { status: 403 });
   }
+  const closedReschedule = await closePendingRescheduleAfterResult(client, matchId, user.id);
+  if (closedReschedule.error) {
+    return NextResponse.json({ error: `The result was saved, but its reschedule request could not be closed: ${closedReschedule.error}` }, { status: 400 });
+  }
   const result = await tryAutoApproveMatchingResult(client, matchId, {
     actorUserId: user.id,
     actorEmail: appUserResult.data.email ?? user.email ?? null,
     actorRole: role,
   });
   if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
-  return NextResponse.json(result);
+  return NextResponse.json({ ...result, closedReschedule: closedReschedule.closed > 0 });
 }

@@ -8,6 +8,7 @@ import useAdminStatus from "@/components/useAdminStatus";
 import MessageModal from "@/components/MessageModal";
 import { supabase } from "@/lib/supabase";
 import { logAudit } from "@/lib/audit";
+import { resultSubmittedRescheduleNote } from "@/lib/reschedule-result-guard";
 
 type RescheduleRequest = {
   id: string;
@@ -97,6 +98,50 @@ export default function ReschedulesPage() {
     if (!client || !admin.isSuper || !admin.userId) return;
     setBusyId(request.id);
     if (nextStatus === "approved") {
+      const existingSubmission = await client
+        .from("result_submissions")
+        .select("id,status")
+        .eq("match_id", request.match_id)
+        .in("status", ["pending", "approved"])
+        .limit(1)
+        .maybeSingle();
+      if (existingSubmission.error) {
+        setBusyId(null);
+        setMessage(existingSubmission.error.message);
+        return;
+      }
+      const currentMatch = matchById.get(request.match_id);
+      if (existingSubmission.data || currentMatch?.status === "complete") {
+        const reviewedAt = new Date().toISOString();
+        const closeRequest = await client
+          .from("league_reschedule_requests")
+          .update({
+            status: "rejected",
+            reviewed_by_user_id: admin.userId,
+            reviewed_at: reviewedAt,
+            note: resultSubmittedRescheduleNote(request.note),
+          })
+          .eq("id", request.id)
+          .eq("status", "pending");
+        setBusyId(null);
+        if (closeRequest.error) {
+          setMessage(closeRequest.error.message);
+          return;
+        }
+        await logAudit("league_reschedule_closed_result_submitted", {
+          entityType: "match",
+          entityId: request.match_id,
+          summary: "Reschedule request closed because a result had already been submitted.",
+          meta: {
+            competitionId: request.competition_id,
+            originalScheduledFor: request.original_scheduled_for,
+            requestedScheduledFor: request.requested_scheduled_for,
+          },
+        });
+        setMessage("A result has already been submitted for this fixture. The result has been preserved and the reschedule request has been closed.");
+        await load();
+        return;
+      }
       const wipeFrames = await client.from("frames").delete().eq("match_id", request.match_id);
       if (wipeFrames.error) {
         setBusyId(null);
