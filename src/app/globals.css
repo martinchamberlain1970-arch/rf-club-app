@@ -3,6 +3,10 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --rf-navy: #0f1a31;
+  --rf-teal: #0f766e;
+  --rf-cyan: #67e8f9;
+  --rf-canvas: #f3f6f8;
 }
 
 @theme inline {
@@ -20,7 +24,65 @@
 }
 
 body {
-  background: #f1f5f9;
+  background: var(--rf-canvas);
   color: #0f172a;
   font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+}
+
+.rf-app-shell main.min-h-screen {
+  min-height: calc(100dvh - 4rem);
+}
+
+.rf-app-shell main {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(20, 184, 166, 0.1), transparent 24rem),
+    radial-gradient(circle at 96% 4%, rgba(14, 165, 233, 0.08), transparent 22rem),
+    var(--rf-canvas) !important;
+}
+
+.rf-app-shell main :is(section, article, div).rounded-2xl.bg-white {
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.055);
+}
+
+.rf-app-shell main input:not([type="checkbox"]):not([type="radio"]),
+.rf-app-shell main select,
+.rf-app-shell main textarea {
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.rf-app-shell main input:not([type="checkbox"]):not([type="radio"]):focus,
+.rf-app-shell main select:focus,
+.rf-app-shell main textarea:focus {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14);
+  outline: none;
+}
+
+.rf-app-shell main :is(button, a) {
+  transition-duration: 150ms;
+}
+
+.rf-app-shell main table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.rf-app-shell main thead th {
+  background-color: #f8fafc;
+  color: #334155;
+}
+
+.rf-app-shell main tbody tr:hover {
+  background-color: rgba(240, 253, 250, 0.7);
+}
+
+.rf-app-shell main :is(section, article, div)[id] {
+  scroll-margin-top: 5rem;
+}
+
+@media (max-width: 639px) {
+  .rf-app-shell main {
+    padding: 0.75rem !important;
+  }
 }

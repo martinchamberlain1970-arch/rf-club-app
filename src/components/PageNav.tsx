@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import useAdminStatus from "@/components/useAdminStatus";
 import ConfirmModal from "@/components/ConfirmModal";
+import { useAppShell } from "@/components/AppShellContext";
 import { logAudit } from "@/lib/audit";
 
 type PageNavProps = {
@@ -20,6 +21,7 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
   const router = useRouter();
   const pathname = usePathname();
   const admin = useAdminStatus();
+  const appShell = useAppShell();
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingNav, setPendingNav] = useState<"back" | "home" | null>(null);
   const storageKey = useMemo(() => (admin.userId ? `notifications_last_read_${admin.userId}` : "notifications_last_read"), [admin.userId]);
@@ -74,7 +76,13 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
 
   const showBack = !isSuperManagementPage;
 
+  useEffect(
+    () => appShell.registerNavigationGuard(warnOnNavigate, warnMessage),
+    [appShell, warnMessage, warnOnNavigate]
+  );
+
   useEffect(() => {
+    if (appShell.enabled) return;
     const load = async () => {
       const client = supabase;
       if (!client || admin.loading) return;
@@ -166,7 +174,9 @@ export default function PageNav({ warnOnNavigate = false, warnMessage = "You hav
       }
     };
     load();
-  }, [admin.loading, admin.isAdmin, admin.isSuper, admin.userId, storageKey, dismissedKey]);
+  }, [admin.loading, admin.isAdmin, admin.isSuper, admin.userId, appShell.enabled, storageKey, dismissedKey]);
+
+  if (appShell.enabled) return null;
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">

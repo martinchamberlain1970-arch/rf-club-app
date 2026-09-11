@@ -1,7 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import "./globals.css";
 import PwaSetup from "@/components/PwaSetup";
 import AppCopyright from "@/components/AppCopyright";
+import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "Rack & Frame Club",
@@ -22,6 +24,12 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: "#0f1a31",
+  colorScheme: "light",
+  viewportFit: "cover",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -31,8 +39,12 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         <PwaSetup />
-        {children}
-        <AppCopyright />
+        <Suspense fallback={<>{children}<AppCopyright /></>}>
+          <AppShell>
+            {children}
+            <AppCopyright />
+          </AppShell>
+        </Suspense>
       </body>
     </html>
   );
