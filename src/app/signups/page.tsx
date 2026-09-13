@@ -192,17 +192,21 @@ export default function CompetitionSignupPage() {
     if (!activeCompetitionId) return [];
     const activeEntries = canonicalActiveEntries.filter((entry) => entry.competition_id === activeCompetitionId);
     const linkedSignupIds = new Set(activeEntries.map((entry) => entry.public_signup_id).filter(Boolean));
-    const registeredRows = activeEntries.map((entry) => ({
-      key: `entry:${entry.id}`,
-      name: playerNameById.get(entry.player_id) ?? "Unknown player",
-      source: "entry" as const,
-      recordId: entry.id,
-      payment_status: entry.payment_status,
-      payment_method: entry.payment_method,
-      stripe_checkout_session_id: entry.stripe_checkout_session_id,
-      payment_amount_pence: entry.payment_amount_pence,
-      paid_at: entry.paid_at,
-    }));
+    const guestEntryById = new Map(guestEntries.map((entry) => [entry.id, entry]));
+    const registeredRows = activeEntries.map((entry) => {
+      const linkedSignup = entry.public_signup_id ? guestEntryById.get(entry.public_signup_id) : undefined;
+      return {
+        key: `entry:${entry.id}`,
+        name: playerNameById.get(entry.player_id) ?? "Unknown player",
+        source: "entry" as const,
+        recordId: entry.id,
+        payment_status: entry.payment_status === "paid" ? entry.payment_status : linkedSignup?.payment_status ?? entry.payment_status,
+        payment_method: entry.payment_method ?? linkedSignup?.payment_method ?? null,
+        stripe_checkout_session_id: entry.stripe_checkout_session_id ?? linkedSignup?.stripe_checkout_session_id ?? null,
+        payment_amount_pence: entry.payment_amount_pence ?? linkedSignup?.payment_amount_pence ?? null,
+        paid_at: entry.paid_at ?? linkedSignup?.paid_at ?? null,
+      };
+    });
     const unlinkedGuestRows = guestEntries
       .filter((entry) => entry.competition_id === activeCompetitionId && entry.status !== "rejected" && !linkedSignupIds.has(entry.id))
       .map((entry) => ({

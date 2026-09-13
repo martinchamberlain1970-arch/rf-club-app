@@ -52,6 +52,19 @@ export async function POST(request: NextRequest) {
   const entryById = new Map(entries.map((row) => [row.id, row]));
   const signupById = new Map(signups.map((row) => [row.id, row]));
   const entryBySignupId = new Map(entries.filter((row) => row.public_signup_id).map((row) => [row.public_signup_id as string, row]));
+  const targetsByStoredSessionId = new Map<string, string[]>();
+  const registerStoredSession = (sessionId: string | null, target: string) => {
+    if (!sessionId) return;
+    const targets = targetsByStoredSessionId.get(sessionId) ?? [];
+    if (!targets.includes(target)) targets.push(target);
+    targetsByStoredSessionId.set(sessionId, targets);
+  };
+  for (const entry of entries) registerStoredSession(entry.stripe_checkout_session_id, `entry:${entry.id}`);
+  for (const signup of signups) {
+    registerStoredSession(signup.stripe_checkout_session_id, `signup:${signup.id}`);
+    const linkedEntry = entryBySignupId.get(signup.id);
+    if (linkedEntry) registerStoredSession(signup.stripe_checkout_session_id, `entry:${linkedEntry.id}`);
+  }
   const stripe = getStripe();
   const matchedSessions = new Map<string, { id: string; amount: number | null; paidAt: string }>();
   const createdAfter = Math.max(0, Math.floor(new Date(competition.created_at).getTime() / 1000) - 86400);
@@ -60,9 +73,16 @@ export async function POST(request: NextRequest) {
   for await (const session of stripe.checkout.sessions.list({ limit: 100, created: { gte: createdAfter } })) {
     scanned += 1;
     if (scanned > 1000) break;
-    if (session.payment_status !== "paid" || session.metadata?.competitionId !== competitionId) continue;
+    if (session.payment_status !== "paid") continue;
+    const storedTargets = targetsByStoredSessionId.get(session.id) ?? [];
+    const hasCompetitionMetadata = session.metadata?.competitionId === competitionId;
+    // Older checkout sessions did not always carry competitionId metadata.
+    // A checkout session ID already stored against this competition is a
+    // stronger, exact link and must still be reconciled.
+    if (!hasCompetitionMetadata && storedTargets.length === 0) continue;
     const paidAt = new Date(session.created * 1000).toISOString();
     const payment = { id: session.id, amount: session.amount_total ?? null, paidAt };
+    for (const target of storedTargets) matchedSessions.set(target, payment);
     const signupId = session.metadata?.publicCompetitionSignupId || (session.client_reference_id && signupById.has(session.client_reference_id) ? session.client_reference_id : null);
     const entryId = session.metadata?.competitionEntryId || (session.client_reference_id && entryById.has(session.client_reference_id) ? session.client_reference_id : null);
     if (signupId && signupById.has(signupId)) {

@@ -1740,8 +1740,19 @@ export default function CompetitionPage() {
   }, [competition, totalBracketRounds, round1MatchCount, matchesByKey, shortMap]);
   const activeCompetitionEntries = [...approvedEntries, ...pendingEntries];
   const linkedGuestEntryIds = new Set(activeCompetitionEntries.map((entry) => entry.public_signup_id).filter(Boolean));
+  const guestEntryById = new Map(guestEntries.map((entry) => [entry.id, entry]));
   const paymentRows = [
-    ...activeCompetitionEntries,
+    ...activeCompetitionEntries.map((entry) => {
+      const linkedSignup = entry.public_signup_id ? guestEntryById.get(entry.public_signup_id) : undefined;
+      return {
+        ...entry,
+        payment_status: entry.payment_status === "paid" ? entry.payment_status : linkedSignup?.payment_status ?? entry.payment_status,
+        payment_method: entry.payment_method ?? linkedSignup?.payment_method ?? null,
+        stripe_checkout_session_id: entry.stripe_checkout_session_id ?? linkedSignup?.stripe_checkout_session_id ?? null,
+        payment_amount_pence: entry.payment_amount_pence ?? linkedSignup?.payment_amount_pence ?? null,
+        paid_at: entry.paid_at ?? linkedSignup?.paid_at ?? null,
+      };
+    }),
     ...guestEntries.filter((entry) => entry.status !== "rejected" && !linkedGuestEntryIds.has(entry.id)),
   ];
   const paymentOutstandingCount = competition?.entry_fee_pence
