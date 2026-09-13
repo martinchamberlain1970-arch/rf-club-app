@@ -594,10 +594,12 @@ export default function MatchPage() {
       const isFixedRackLeague = loadedCompetition.competition_format === "league" && loadedCompetition.sport_type !== "snooker";
       setCompetition(loadedCompetition);
       setFrames(
-        existing.length > 0
-          ? existing
-          : isFixedRackLeague
-            ? Array.from({ length: effectiveMatch.best_of }, (_, index) => createEmptyFrame(index + 1))
+        isFixedRackLeague
+          ? Array.from({ length: effectiveMatch.best_of }, (_, index) =>
+              existing.find((frame) => frame.frame_number === index + 1) ?? createEmptyFrame(index + 1)
+            )
+          : existing.length > 0
+            ? existing
             : [createEmptyFrame(1)]
       );
       setSubmissions(effectiveSubmissionRows);
@@ -901,6 +903,12 @@ export default function MatchPage() {
     const next = [...frames];
     next[idx] = { ...next[idx], winner_side: side };
     if (match && side !== 0 && idx === next.length - 1) {
+      if (isFixedRackLeague) {
+        if (next.length < match.best_of) next.push(createEmptyFrame(next.length + 1));
+        setFrames(next);
+        scheduleLivePoolSave(next);
+        return;
+      }
       const t1 = next.filter((f) => f.winner_side === 1).length;
       const t2 = next.filter((f) => f.winner_side === 2).length;
       const target = firstToWin(match.best_of);
@@ -1537,8 +1545,12 @@ export default function MatchPage() {
       window.clearTimeout(livePoolSaveTimerRef.current);
       livePoolSaveTimerRef.current = null;
     }
+    const showSaveError = (description: string) => {
+      setMessage(description);
+      setInfoModal({ title: "Result not saved", description });
+    };
     if (isArchived) {
-      setMessage("This match is archived. Restore it to edit.");
+      showSaveError("This match is archived. Restore it to edit.");
       return;
     }
     if (isByeMatch) return;
@@ -1551,7 +1563,7 @@ export default function MatchPage() {
         : 0
       : wins.team1 >= target ? 1 : wins.team2 >= target ? 2 : 0;
     if (winnerSide === 0) {
-      setMessage(
+      showSaveError(
         isFixedRackLeague
           ? `All ${match.best_of} racks must have a winner because every rack counts as one league point.`
           : `Best of ${match.best_of}: first to ${target} wins.`
@@ -1612,7 +1624,7 @@ export default function MatchPage() {
       }
       const save = await persistFrames(rows);
       if (!save.ok) {
-        setMessage(save.error);
+        showSaveError(save.error);
         return;
       }
 
@@ -1624,37 +1636,33 @@ export default function MatchPage() {
         "Confirming the match result"
       );
       if (update.error) {
-        setMessage(update.error.message);
+        showSaveError(update.error.message);
         return;
       }
 
       setMatch((prev) => (prev ? { ...prev, status: "complete", winner_player_id: winnerId } : prev));
-      setSavingStage("Finalising ratings and league table…");
-      try {
-        await withOperationTimeout(
-          (async () => {
-            await applyRatingsIfNeeded(winnerSide);
-            if (winnerId) await advanceKnockoutWinner(winnerId);
-            await refreshCompetitionCompletion();
-            await logAudit("match_completed", {
-              entityType: "match",
-              entityId: match.id,
-              summary: `Match completed. Winner: ${winnerName}.`,
-              meta: { competitionId: match.competition_id, score: `${wins.team1}-${wins.team2}` },
-            });
-          })(),
-          "Finalising ratings and the league table",
-          25_000
-        );
-      } catch {
-        // The result itself has already been committed. Do not invite a second
-        // submission if a non-critical follow-up is slow; all follow-ups are
-        // idempotent and can safely complete or be refreshed afterwards.
-        setMessage("Result saved. Ratings and the league table may take a moment to refresh.");
-      }
+      setSavingStage("Result saved. Returning to the competition…");
+      // The score and winner are already committed at this point. Do not keep
+      // the player trapped on the result screen while idempotent follow-up work
+      // (ratings, bracket progression and audit) completes.
+      void withOperationTimeout(
+        (async () => {
+          await applyRatingsIfNeeded(winnerSide);
+          if (winnerId) await advanceKnockoutWinner(winnerId);
+          await refreshCompetitionCompletion();
+          await logAudit("match_completed", {
+            entityType: "match",
+            entityId: match.id,
+            summary: `Match completed. Winner: ${winnerName}.`,
+            meta: { competitionId: match.competition_id, score: `${wins.team1}-${wins.team2}` },
+          });
+        })(),
+        "Finalising ratings and the league table",
+        25_000
+      ).catch(() => undefined);
       router.replace(`/competitions/${match.competition_id}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to complete match.");
+      showSaveError(error instanceof Error ? error.message : "Failed to complete match.");
     } finally {
       completionInFlightRef.current = false;
       setSaving(false);
@@ -1770,7 +1778,11 @@ export default function MatchPage() {
       summary: "Fixture voided by Super User override.",
       meta: { competitionId: match.competition_id },
     });
-    setFrames([createEmptyFrame(1)]);
+    setFrames(
+      isFixedRackLeague
+        ? Array.from({ length: match.best_of }, (_, index) => createEmptyFrame(index + 1))
+        : [createEmptyFrame(1)]
+    );
     setSubmissions((prev) =>
       prev.map((submission) =>
         submission.status === "rejected"
@@ -1827,7 +1839,11 @@ export default function MatchPage() {
       summary: "Fixture reopened by Super User override.",
       meta: { competitionId: match.competition_id },
     });
-    setFrames([createEmptyFrame(1)]);
+    setFrames(
+      isFixedRackLeague
+        ? Array.from({ length: match.best_of }, (_, index) => createEmptyFrame(index + 1))
+        : [createEmptyFrame(1)]
+    );
     setSubmissions((prev) =>
       prev.map((submission) =>
         submission.status === "rejected"
