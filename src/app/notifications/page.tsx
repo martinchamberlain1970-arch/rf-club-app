@@ -43,6 +43,8 @@ type BookingNotificationRow = {
   purpose: string;
   participant_one: string | null;
   participant_two: string | null;
+  participant_one_player_id: string | null;
+  participant_two_player_id: string | null;
   team_name: string | null;
   notes: string | null;
   rejection_reason: string | null;
@@ -305,6 +307,8 @@ export default function NotificationsPage() {
       if (!client || admin.loading || !admin.userId) return;
 
       const out: NotificationItem[] = [];
+      const appUserResult = await client.from("app_users").select("linked_player_id").eq("id", admin.userId).maybeSingle();
+      const userPlayerId = (appUserResult.data?.linked_player_id as string | null | undefined) ?? null;
       const openCompsRes = await client
         .from("competitions")
         .select("id,name,created_at,signup_deadline")
@@ -329,15 +333,24 @@ export default function NotificationsPage() {
       }
       let bookingQuery = client
         .from("table_reservations")
-        .select("id,booked_by_user_id,starts_at,created_at,status,purpose,participant_one,participant_two,team_name,notes,rejection_reason,cue_tables(name)")
+        .select("id,booked_by_user_id,starts_at,created_at,status,purpose,participant_one,participant_two,participant_one_player_id,participant_two_player_id,team_name,notes,rejection_reason,cue_tables(name)")
         .order("created_at", { ascending: false })
         .limit(100);
       bookingQuery = admin.isAdmin
-        ? bookingQuery.eq("status", "pending")
-        : bookingQuery.eq("booked_by_user_id", admin.userId).in("status", ["pending", "booked", "rejected"]);
+        ? bookingQuery.in("status", ["pending", "booked", "rejected"])
+        : bookingQuery
+          .or([
+            `booked_by_user_id.eq.${admin.userId}`,
+            ...(userPlayerId ? [`participant_one_player_id.eq.${userPlayerId}`, `participant_two_player_id.eq.${userPlayerId}`] : []),
+          ].join(","))
+          .in("status", ["pending", "booked", "rejected"]);
       const bookingResult = await bookingQuery;
       if (!bookingResult.error) {
-        (bookingResult.data ?? []).forEach((booking) => {
+        (bookingResult.data ?? []).filter((booking) => !admin.isAdmin
+          || booking.status === "pending"
+          || booking.booked_by_user_id === admin.userId
+          || (userPlayerId && [booking.participant_one_player_id, booking.participant_two_player_id].includes(userPlayerId))
+        ).forEach((booking) => {
           const row = booking as unknown as BookingNotificationRow;
           const bookingName = row.purpose === "league_match"
             ? row.team_name || "League team booking"

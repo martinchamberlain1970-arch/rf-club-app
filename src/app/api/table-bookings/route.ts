@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
   const from = now.toISOString();
   const bookingViewDays = auth.isSuper ? 400 : 60;
   const to = new Date(now.getTime() + bookingViewDays * 24 * 60 * 60 * 1000).toISOString();
-  let reservationsQuery = auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,booked_for_player_id,starts_at,ends_at,purpose,notes,status,created_at,participant_one,participant_two,team_name,requester_email,rejection_reason,reviewed_at").gt("ends_at", from).lte("starts_at", to).order("starts_at");
+  let reservationsQuery = auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,booked_for_player_id,starts_at,ends_at,purpose,notes,status,created_at,participant_one,participant_two,team_name,requester_email,rejection_reason,reviewed_at,competition_id,participant_one_player_id,participant_two_player_id").gt("ends_at", from).lte("starts_at", to).order("starts_at");
   if (!auth.isSuper) reservationsQuery = reservationsQuery.or(`status.eq.booked,booked_by_user_id.eq.${auth.user.id}`);
   const [tablesResult, reservationsResult, hoursResult, blocksResult] = await Promise.all([
     auth.client.from("cue_tables").select("id,name,sport_type,location_id,display_order").eq("is_active", true).order("display_order"),
@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
   ]);
   const error = tablesResult.error || reservationsResult.error || hoursResult.error || blocksResult.error;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  const playerIds = [...new Set((reservationsResult.data ?? []).map((reservation) => reservation.booked_for_player_id))];
+  const playerIds = [...new Set((reservationsResult.data ?? []).flatMap((reservation) => [reservation.booked_for_player_id, reservation.participant_one_player_id, reservation.participant_two_player_id]).filter(Boolean))];
   const namesResult = playerIds.length ? await auth.client.from("players").select("id,display_name,full_name").in("id", playerIds) : { data: [], error: null };
   if (namesResult.error) return NextResponse.json({ error: namesResult.error.message }, { status: 400 });
   const names = new Map((namesResult.data ?? []).map((player) => [player.id, player.full_name?.trim() || player.display_name]));
@@ -127,6 +127,43 @@ export async function GET(request: NextRequest) {
     access = (accessResult.data ?? []).map((grant) => ({ ...grant, playerName: playerNameMap.get(grant.player_id) || "Player" }));
   }
 
+  const competitionsResult = await auth.client
+    .from("competitions")
+    .select("id,name,sport_type")
+    .eq("is_archived", false)
+    .eq("is_completed", false)
+    .order("created_at", { ascending: false });
+  if (competitionsResult.error) return NextResponse.json({ error: competitionsResult.error.message }, { status: 400 });
+  const eligibleCompetitions = (competitionsResult.data ?? []).filter((competition) =>
+    eligibleSports.includes(competition.sport_type === "snooker" ? "snooker" : "pool")
+  );
+  const competitionIds = eligibleCompetitions.map((competition) => competition.id);
+  const entrantResult = competitionIds.length
+    ? await auth.client
+      .from("competition_entries")
+      .select("competition_id,player_id,players(id,display_name,full_name)")
+      .in("competition_id", competitionIds)
+      .eq("status", "approved")
+    : { data: [], error: null };
+  if (entrantResult.error) return NextResponse.json({ error: entrantResult.error.message }, { status: 400 });
+  const entrantRows = entrantResult.data ?? [];
+  const visibleCompetitionIds = auth.isSuper
+    ? new Set(competitionIds)
+    : new Set(entrantRows.filter((entry) => entry.player_id === auth.playerId).map((entry) => entry.competition_id));
+  const bookingCompetitions = eligibleCompetitions
+    .filter((competition) => visibleCompetitionIds.has(competition.id))
+    .map((competition) => ({
+      ...competition,
+      players: entrantRows
+        .filter((entry) => entry.competition_id === competition.id)
+        .map((entry) => {
+          const player = entry.players as unknown as { id: string; display_name: string; full_name: string | null } | null;
+          return player ? { id: player.id, name: player.full_name?.trim() || player.display_name } : null;
+        })
+        .filter((player): player is { id: string; name: string } => Boolean(player))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    }));
+
   return NextResponse.json({
     isSuper: auth.isSuper,
     userId: auth.user.id,
@@ -134,11 +171,18 @@ export async function GET(request: NextRequest) {
     eligibleSports,
     canBookOther,
     tables: tablesResult.data ?? [],
-    reservations: (reservationsResult.data ?? []).map((reservation) => ({ ...reservation, requester_email: auth.isSuper || reservation.booked_by_user_id === auth.user.id ? reservation.requester_email : null, playerName: names.get(reservation.booked_for_player_id) || "Player" })),
+    reservations: (reservationsResult.data ?? []).map((reservation) => ({
+      ...reservation,
+      requester_email: auth.isSuper || reservation.booked_by_user_id === auth.user.id ? reservation.requester_email : null,
+      playerName: names.get(reservation.booked_for_player_id) || "Player",
+      participant_one: reservation.participant_one || names.get(reservation.participant_one_player_id) || null,
+      participant_two: reservation.participant_two || names.get(reservation.participant_two_player_id) || null,
+    })),
     availability: hoursResult.data ?? [],
     blocks: blocksResult.data ?? [],
     access,
     players,
+    competitions: bookingCompetitions,
   });
 }
 
@@ -320,11 +364,15 @@ export async function POST(request: NextRequest) {
   const endsAt = new Date(String(body?.endsAt ?? ""));
   const requestedPurpose = String(body?.purpose ?? "fixture");
   const purpose = ["fixture", "league_match", "other"].includes(requestedPurpose) ? requestedPurpose : "fixture";
-  const participantOne = String(body?.participantOne ?? "").trim().slice(0, 80) || null;
-  const participantTwo = String(body?.participantTwo ?? "").trim().slice(0, 80) || null;
+  const competitionId = purpose === "fixture" ? String(body?.competitionId ?? "") || null : null;
+  const participantOnePlayerId = purpose === "fixture" ? String(body?.participantOnePlayerId ?? "") || null : null;
+  const participantTwoPlayerId = purpose === "fixture" ? String(body?.participantTwoPlayerId ?? "") || null : null;
+  let participantOne = String(body?.participantOne ?? "").trim().slice(0, 80) || null;
+  let participantTwo = String(body?.participantTwo ?? "").trim().slice(0, 80) || null;
   const teamName = String(body?.teamName ?? "").trim().slice(0, 120) || null;
   const otherReason = String(body?.otherReason ?? "").trim().slice(0, 240) || null;
-  if (purpose === "fixture" && !participantOne) return NextResponse.json({ error: "Enter at least one player name for the competition booking." }, { status: 400 });
+  if (purpose === "fixture" && (!competitionId || !participantOnePlayerId || !participantTwoPlayerId)) return NextResponse.json({ error: "Choose the competition and both players." }, { status: 400 });
+  if (purpose === "fixture" && participantOnePlayerId === participantTwoPlayerId) return NextResponse.json({ error: "Choose two different players." }, { status: 400 });
   if (purpose === "league_match" && !teamName) return NextResponse.json({ error: "Enter the pool or snooker team name." }, { status: 400 });
   if (purpose === "other" && !otherReason) return NextResponse.json({ error: "Enter a reason for the other booking, such as team practice night." }, { status: 400 });
   if (!tableId || Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return NextResponse.json({ error: "Choose a valid table, date and time." }, { status: 400 });
@@ -340,6 +388,31 @@ export async function POST(request: NextRequest) {
   const { eligibleSports, canBookOther } = await eligibility(auth);
   if (!eligibleSports.includes(tableResult.data.sport_type)) return NextResponse.json({ error: `You do not currently have ${tableResult.data.sport_type} table booking access.` }, { status: 403 });
   if (purpose === "other" && !canBookOther) return NextResponse.json({ error: "Other bookings are limited to team captains, vice-captains and the Super User." }, { status: 403 });
+  if (purpose === "fixture") {
+    const competitionResult = await auth.client.from("competitions").select("id,name,sport_type,is_archived,is_completed").eq("id", competitionId).maybeSingle();
+    if (competitionResult.error) return NextResponse.json({ error: competitionResult.error.message }, { status: 400 });
+    const competition = competitionResult.data;
+    if (!competition || competition.is_archived || competition.is_completed) return NextResponse.json({ error: "That competition is no longer available for table bookings." }, { status: 409 });
+    const competitionSport = competition.sport_type === "snooker" ? "snooker" : "pool";
+    if (competitionSport !== tableResult.data.sport_type) return NextResponse.json({ error: `Choose the ${competitionSport} table for this competition.` }, { status: 400 });
+    const entrantsResult = await auth.client
+      .from("competition_entries")
+      .select("player_id,players(id,display_name,full_name)")
+      .eq("competition_id", competitionId)
+      .eq("status", "approved")
+      .in("player_id", [participantOnePlayerId, participantTwoPlayerId]);
+    if (entrantsResult.error) return NextResponse.json({ error: entrantsResult.error.message }, { status: 400 });
+    if ((entrantsResult.data ?? []).length !== 2) return NextResponse.json({ error: "Both selected players must be approved entrants in that competition." }, { status: 400 });
+    if (!auth.isSuper && ![participantOnePlayerId, participantTwoPlayerId].includes(auth.playerId ?? "")) {
+      return NextResponse.json({ error: "One of the selected players must be your linked player profile." }, { status: 403 });
+    }
+    const entrantNames = new Map((entrantsResult.data ?? []).map((entry) => {
+      const player = entry.players as unknown as { display_name: string; full_name: string | null } | null;
+      return [entry.player_id, player?.full_name?.trim() || player?.display_name || "Player"];
+    }));
+    participantOne = entrantNames.get(participantOnePlayerId) ?? null;
+    participantTwo = entrantNames.get(participantTwoPlayerId) ?? null;
+  }
   const endInLondon = londonDateParts(endsAt);
   const hoursResult = await auth.client.from("table_booking_hours").select("opens_at,closes_at").eq("table_id", tableId).eq("weekday", startInLondon.weekday).maybeSingle();
   if (hoursResult.error) return NextResponse.json({ error: hoursResult.error.message }, { status: 400 });
@@ -356,23 +429,35 @@ export async function POST(request: NextRequest) {
   const bookedConflict = await bookedConflictQuery;
   if (bookedConflict.error) return NextResponse.json({ error: bookedConflict.error.message }, { status: 400 });
   if ((bookedConflict.count ?? 0) > 0) return NextResponse.json({ error: "That table is already booked during this time." }, { status: 409 });
-  const status = auth.isSuper ? "booked" : "pending";
+  const autoApproved = purpose === "fixture";
+  const status = auth.isSuper || autoApproved ? "booked" : "pending";
+  const reviewedAt = status === "booked" ? new Date().toISOString() : null;
+  const reviewedByUserId = auth.isSuper ? auth.user.id : null;
+  const bookedForPlayerId = purpose === "fixture" ? participantOnePlayerId : auth.playerId;
   if (editingReservationId) {
-    const updateResult = await auth.client.from("table_reservations").update({ table_id: tableId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, status, rejection_reason: null, reviewed_at: auth.isSuper ? new Date().toISOString() : null, reviewed_by_user_id: auth.isSuper ? auth.user.id : null, cancelled_at: null, cancelled_by_user_id: null }).eq("id", editingReservationId);
+    const updateResult = await auth.client.from("table_reservations").update({ table_id: tableId, booked_for_player_id: bookedForPlayerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, competition_id: competitionId, participant_one_player_id: participantOnePlayerId, participant_two_player_id: participantTwoPlayerId, status, rejection_reason: null, reviewed_at: reviewedAt, reviewed_by_user_id: reviewedByUserId, cancelled_at: null, cancelled_by_user_id: null }).eq("id", editingReservationId);
     if (updateResult.error) {
       if (updateResult.error.code === "23P01") return NextResponse.json({ error: "That table is already reserved during this time." }, { status: 409 });
       return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
     }
     await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: auth.isSuper ? "table_reservation_edited" : "table_booking_edit_requested", entity_type: "table_reservation", entity_id: editingReservationId, summary: `${auth.isSuper ? "Cue table reservation edited" : "Cue table booking edit submitted for approval"}: ${startsAt.toISOString()} to ${endsAt.toISOString()}.`, meta: { table_id: tableId, player_id: auth.playerId, purpose } });
-    return NextResponse.json({ ok: true, id: editingReservationId, status });
+    return NextResponse.json({ ok: true, id: editingReservationId, status, autoApproved });
   }
-  const insertResult = await auth.client.from("table_reservations").insert({ table_id: tableId, booked_by_user_id: auth.user.id, booked_for_player_id: auth.playerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, requester_email: auth.user.email ?? null, status, reviewed_at: auth.isSuper ? new Date().toISOString() : null, reviewed_by_user_id: auth.isSuper ? auth.user.id : null }).select("id").single();
+  const insertResult = await auth.client.from("table_reservations").insert({ table_id: tableId, booked_by_user_id: auth.user.id, booked_for_player_id: bookedForPlayerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, competition_id: competitionId, participant_one_player_id: participantOnePlayerId, participant_two_player_id: participantTwoPlayerId, requester_email: auth.user.email ?? null, status, reviewed_at: reviewedAt, reviewed_by_user_id: reviewedByUserId }).select("id").single();
   if (insertResult.error) {
     if (insertResult.error.code === "23P01") return NextResponse.json({ error: "That table is already reserved during this time." }, { status: 409 });
     return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
   }
-  await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: auth.isSuper ? "table_reserved" : "table_booking_requested", entity_type: "table_reservation", entity_id: insertResult.data.id, summary: `${auth.isSuper ? "Cue table reserved" : "Cue table booking requested"} from ${startsAt.toISOString()} to ${endsAt.toISOString()}.`, meta: { table_id: tableId, player_id: auth.playerId, purpose } });
-  if (!auth.isSuper) {
+  await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: status === "booked" ? "table_reserved" : "table_booking_requested", entity_type: "table_reservation", entity_id: insertResult.data.id, summary: `${status === "booked" ? "Cue table reserved" : "Cue table booking requested"} from ${startsAt.toISOString()} to ${endsAt.toISOString()}.`, meta: { table_id: tableId, player_id: auth.playerId, competition_id: competitionId, participant_player_ids: [participantOnePlayerId, participantTwoPlayerId].filter(Boolean), purpose, auto_approved: autoApproved } });
+  if (autoApproved && participantOnePlayerId && participantTwoPlayerId) {
+    const participantUsers = await auth.client.from("app_users").select("id").in("linked_player_id", [participantOnePlayerId, participantTwoPlayerId]);
+    await sendPushToUserIds(auth.client, (participantUsers.data ?? []).map((user) => user.id), {
+      title: "Competition table booked",
+      body: `${bookingTitle({ purpose, participant_one: participantOne, participant_two: participantTwo })} · ${londonBookingTime(startsAt.toISOString(), endsAt.toISOString())}`,
+      url: "/table-bookings#confirmed-bookings",
+      tag: `table-booking-confirmed-${insertResult.data.id}`,
+    });
+  } else if (!auth.isSuper) {
     const managersResult = await auth.client.from("app_users").select("id").in("role", ["owner", "super"]);
     await sendPushToUserIds(auth.client, (managersResult.data ?? []).map((manager) => manager.id), {
       title: "New table-booking request",
@@ -381,5 +466,5 @@ export async function POST(request: NextRequest) {
       tag: `table-booking-request-${insertResult.data.id}`,
     });
   }
-  return NextResponse.json({ ok: true, id: insertResult.data.id, status });
+  return NextResponse.json({ ok: true, id: insertResult.data.id, status, autoApproved });
 }

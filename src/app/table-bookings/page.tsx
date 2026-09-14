@@ -9,12 +9,13 @@ import useExperienceMode from "@/components/useExperienceMode";
 import { supabase } from "@/lib/supabase";
 
 type CueTable = { id: string; name: string; sport_type: "pool" | "snooker"; location_id: string };
-type Reservation = { id: string; table_id: string; booked_by_user_id: string; booked_for_player_id: string; starts_at: string; ends_at: string; purpose: "fixture" | "league_match" | "other"; notes: string | null; status: "pending" | "booked" | "rejected" | "cancelled"; participant_one: string | null; participant_two: string | null; team_name: string | null; requester_email: string | null; rejection_reason: string | null; playerName: string };
+type Reservation = { id: string; table_id: string; booked_by_user_id: string; booked_for_player_id: string; starts_at: string; ends_at: string; purpose: "fixture" | "league_match" | "other"; notes: string | null; status: "pending" | "booked" | "rejected" | "cancelled"; participant_one: string | null; participant_two: string | null; participant_one_player_id: string | null; participant_two_player_id: string | null; competition_id: string | null; team_name: string | null; requester_email: string | null; rejection_reason: string | null; playerName: string };
 type AccessGrant = { id: string; player_id: string; sport_type: "pool" | "snooker"; access_role: "captain" | "vice_captain"; playerName: string };
 type Player = { id: string; display_name: string; full_name: string | null };
 type AvailabilityWindow = { id: string; table_id: string; weekday: number; opens_at: string; closes_at: string };
 type BookingBlock = { id: string; table_id: string | null; starts_at: string; ends_at: string; category: string; title: string; notes: string | null };
-type BookingData = { isSuper: boolean; userId: string; playerId: string | null; eligibleSports: string[]; canBookOther: boolean; tables: CueTable[]; reservations: Reservation[]; availability: AvailabilityWindow[]; blocks: BookingBlock[]; access: AccessGrant[]; players: Player[] };
+type BookingCompetition = { id: string; name: string; sport_type: "snooker" | "pool_8_ball" | "pool_9_ball"; players: Array<{ id: string; name: string }> };
+type BookingData = { isSuper: boolean; userId: string; playerId: string | null; eligibleSports: string[]; canBookOther: boolean; tables: CueTable[]; reservations: Reservation[]; availability: AvailabilityWindow[]; blocks: BookingBlock[]; access: AccessGrant[]; players: Player[]; competitions: BookingCompetition[] };
 
 const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const londonDateTime = (value: string) => new Date(value).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
@@ -40,6 +41,9 @@ export default function TableBookingsPage() {
   const [startsAt, setStartsAt] = useState(() => { const date = new Date(); date.setHours(date.getHours() + 1, 0, 0, 0); return localInputValue(date); });
   const [duration, setDuration] = useState("30");
   const [purpose, setPurpose] = useState("fixture");
+  const [competitionId, setCompetitionId] = useState("");
+  const [participantOnePlayerId, setParticipantOnePlayerId] = useState("");
+  const [participantTwoPlayerId, setParticipantTwoPlayerId] = useState("");
   const [participantOne, setParticipantOne] = useState("");
   const [participantTwo, setParticipantTwo] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -109,10 +113,22 @@ export default function TableBookingsPage() {
   const isManageView = Boolean(data?.isSuper && bookingView === "manage");
   const isPlayerView = !data?.isSuper || bookingView === "player";
   const selectedTable = eligibleTables.find((table) => table.id === tableId);
+  const bookingCompetitions = useMemo(() => (data?.competitions ?? []).filter((competition) =>
+    selectedTable?.sport_type === "snooker" ? competition.sport_type === "snooker" : competition.sport_type !== "snooker"
+  ), [data?.competitions, selectedTable?.sport_type]);
+  const selectedCompetition = bookingCompetitions.find((competition) => competition.id === competitionId);
   const durationOptions = isManageView ? [30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360] : selectedTable?.sport_type === "snooker" ? [60] : [30];
   useEffect(() => {
     if (!isManageView && selectedTable) setDuration(selectedTable.sport_type === "snooker" ? "60" : "30");
   }, [isManageView, selectedTable]);
+  useEffect(() => {
+    if (purpose !== "fixture") return;
+    if (!bookingCompetitions.some((competition) => competition.id === competitionId)) {
+      setCompetitionId(bookingCompetitions[0]?.id ?? "");
+      setParticipantOnePlayerId(!data?.isSuper ? data?.playerId ?? "" : "");
+      setParticipantTwoPlayerId("");
+    }
+  }, [bookingCompetitions, competitionId, data?.isSuper, data?.playerId, purpose]);
   const tableNames = useMemo(() => new Map((data?.tables ?? []).map((table) => [table.id, table.name])), [data]);
   const upcoming = useMemo(() => (data?.reservations ?? []).filter((reservation) => new Date(reservation.ends_at).getTime() > currentTimeMs), [currentTimeMs, data]);
   const visibleRequests = useMemo(() => isManageView ? upcoming : upcoming.filter((reservation) => reservation.booked_by_user_id === data?.userId), [data?.userId, isManageView, upcoming]);
@@ -126,9 +142,9 @@ export default function TableBookingsPage() {
     const end = new Date(start.getTime() + Number(duration) * 60000);
     setSaving(true);
     try {
-      const result = await request({ action: editingReservationId ? "edit" : "book", reservationId: editingReservationId, tableId, startsAt: start.toISOString(), endsAt: end.toISOString(), purpose, participantOne, participantTwo, teamName, otherReason });
+      const result = await request({ action: editingReservationId ? "edit" : "book", reservationId: editingReservationId, tableId, startsAt: start.toISOString(), endsAt: end.toISOString(), purpose, competitionId, participantOnePlayerId, participantTwoPlayerId, participantOne, participantTwo, teamName, otherReason });
       const wasEditing = Boolean(editingReservationId);
-      setEditingReservationId(null); setParticipantTwo(""); setTeamName(""); setOtherReason(""); setMessage(result.status === "pending" ? wasEditing ? "Your updated booking has been sent to the Super User for approval." : "Booking request sent to the Super User for approval." : wasEditing ? "Booking updated successfully." : "Table reserved successfully."); await load();
+      setEditingReservationId(null); setParticipantTwoPlayerId(""); setParticipantTwo(""); setTeamName(""); setOtherReason(""); setMessage(result.status === "pending" ? wasEditing ? "Your updated booking has been sent to the Super User for approval." : "Booking request sent to the Super User for approval." : result.autoApproved ? "The table was free, so this competition booking is confirmed for both players." : wasEditing ? "Booking updated successfully." : "Table reserved successfully."); await load();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Reservation failed."); }
     finally { setSaving(false); }
   };
@@ -138,6 +154,9 @@ export default function TableBookingsPage() {
     setStartsAt(localInputValue(new Date(reservation.starts_at)));
     setDuration(String((new Date(reservation.ends_at).getTime() - new Date(reservation.starts_at).getTime()) / 60000));
     setPurpose(reservation.purpose);
+    setCompetitionId(reservation.competition_id ?? "");
+    setParticipantOnePlayerId(reservation.participant_one_player_id ?? "");
+    setParticipantTwoPlayerId(reservation.participant_two_player_id ?? "");
     setParticipantOne(reservation.participant_one ?? "");
     setParticipantTwo(reservation.participant_two ?? "");
     setTeamName(reservation.team_name ?? "");
@@ -214,7 +233,7 @@ export default function TableBookingsPage() {
     {loading ? <section className="rounded-2xl bg-white p-5 shadow">Loading reservations…</section> : null}
     {data ? <>
       {isPlayerView && eligibleTables.length ? <TableBookingCalendar tables={eligibleTables} reservations={upcoming} availability={data.availability} blocks={upcomingBlocks} onChooseSlot={(chosenTableId, chosenStartsAt, chosenDuration) => { setTableId(chosenTableId); setStartsAt(localInputValue(new Date(chosenStartsAt))); setDuration(String(chosenDuration)); }} /> : null}
-      <section id="request-table" ref={bookingFormRef} className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-black text-slate-950">{editingReservationId ? "Edit booking" : "Request a table"}</h2><p className="mt-1 text-sm text-slate-600">Choose a competition fixture, home league match or—where authorised—another reason. Player requests are sent to the Super User for approval; Super User bookings are confirmed immediately.</p></div>{editingReservationId ? <button type="button" onClick={() => setEditingReservationId(null)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700">Cancel editing</button> : null}</div>
+      <section id="request-table" ref={bookingFormRef} className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-black text-slate-950">{editingReservationId ? "Edit booking" : "Request a table"}</h2><p className="mt-1 text-sm text-slate-600">Competition bookings confirm automatically when the table is free and all details are valid. Home league matches and other bookings still follow the approval rules below.</p></div>{editingReservationId ? <button type="button" onClick={() => setEditingReservationId(null)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700">Cancel editing</button> : null}</div>
         {!data.playerId ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-amber-900">Link your app account to a player profile before booking.</p> : null}
         {data.playerId && !eligibleTables.length ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-amber-900">Your account does not currently have table-booking access. Ask the Super User if you are a captain or vice-captain.</p> : null}
         {eligibleTables.length ? <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -222,8 +241,12 @@ export default function TableBookingsPage() {
           <label className="text-sm font-medium text-slate-700">Booking type<select value={purpose} onChange={(event) => setPurpose(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="fixture">Competition fixture</option><option value="league_match">Home league match</option>{data.canBookOther ? <option value="other">Other</option> : null}</select></label>
           <label className="text-sm font-medium text-slate-700">Starts<input type="datetime-local" step={1800} min={localInputValue(new Date())} value={startsAt} onChange={(event) => setStartsAt(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs text-slate-500">Start times are available every 30 minutes.</span></label>
           <label className="text-sm font-medium text-slate-700">Length<select value={duration} onChange={(event) => setDuration(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">{durationOptions.map((minutes) => <option key={minutes} value={minutes}>{minutes < 60 ? `${minutes} mins` : `${minutes / 60} hour${minutes === 60 ? "" : "s"}`}</option>)}</select><span className="mt-1 block text-xs text-slate-500">Maximum: {isManageView ? "6 hours (Super User)" : selectedTable?.sport_type === "snooker" ? "1 hour" : "30 minutes"}</span></label>
-          {purpose === "fixture" ? <><label className="text-sm font-medium text-slate-700 sm:col-span-1 lg:col-span-2">Player one<input value={participantOne} maxLength={80} onChange={(event) => setParticipantOne(event.target.value)} placeholder="e.g. Jo Bloggs" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label><label className="text-sm font-medium text-slate-700 sm:col-span-1 lg:col-span-2">Player two (optional)<input value={participantTwo} maxLength={80} onChange={(event) => setParticipantTwo(event.target.value)} placeholder="e.g. Jim Smith" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label></> : purpose === "league_match" ? <label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">Home team name<input value={teamName} maxLength={120} onChange={(event) => setTeamName(event.target.value)} placeholder="e.g. Greenhithe Legion A" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label> : <label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">Reason<input value={otherReason} maxLength={240} required onChange={(event) => setOtherReason(event.target.value)} placeholder="e.g. Team practice night" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs text-slate-500">Other bookings are limited to team captains, vice-captains and the Super User.</span></label>}
-          <button type="button" disabled={saving || !tableId || !startsAt || (purpose === "fixture" ? !participantOne.trim() : purpose === "league_match" ? !teamName.trim() : !otherReason.trim())} onClick={() => void book()} className="rounded-lg bg-emerald-800 px-4 py-2.5 font-bold text-white disabled:opacity-50 sm:col-span-2 lg:col-span-4">{saving ? "Saving…" : editingReservationId ? data.isSuper ? "Save changes" : "Submit changes for approval" : data.isSuper ? isManageView ? "Confirm booking" : "Book table" : "Send booking request"}</button>
+          {purpose === "fixture" ? <>
+            <label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">Competition<select value={competitionId} onChange={(event) => { setCompetitionId(event.target.value); setParticipantOnePlayerId(!data.isSuper ? data.playerId ?? "" : ""); setParticipantTwoPlayerId(""); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="">Choose competition</option>{bookingCompetitions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name}</option>)}</select></label>
+            <label className="text-sm font-medium text-slate-700 sm:col-span-1 lg:col-span-2">Player one<select value={participantOnePlayerId} onChange={(event) => setParticipantOnePlayerId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="">Choose player one</option>{(selectedCompetition?.players ?? []).map((player) => <option key={player.id} value={player.id} disabled={player.id === participantTwoPlayerId}>{player.name}</option>)}</select></label>
+            <label className="text-sm font-medium text-slate-700 sm:col-span-1 lg:col-span-2">Player two<select value={participantTwoPlayerId} onChange={(event) => setParticipantTwoPlayerId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="">Choose player two</option>{(selectedCompetition?.players ?? []).map((player) => <option key={player.id} value={player.id} disabled={player.id === participantOnePlayerId}>{player.name}</option>)}</select></label>
+          </> : purpose === "league_match" ? <label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">Home team name<input value={teamName} maxLength={120} onChange={(event) => setTeamName(event.target.value)} placeholder="e.g. Greenhithe Legion A" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label> : <label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">Reason<input value={otherReason} maxLength={240} required onChange={(event) => setOtherReason(event.target.value)} placeholder="e.g. Team practice night" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs text-slate-500">Other bookings are limited to team captains, vice-captains and the Super User.</span></label>}
+          <button type="button" disabled={saving || !tableId || !startsAt || (purpose === "fixture" ? !competitionId || !participantOnePlayerId || !participantTwoPlayerId || participantOnePlayerId === participantTwoPlayerId : purpose === "league_match" ? !teamName.trim() : !otherReason.trim())} onClick={() => void book()} className="rounded-lg bg-emerald-800 px-4 py-2.5 font-bold text-white disabled:opacity-50 sm:col-span-2 lg:col-span-4">{saving ? "Saving…" : editingReservationId ? data.isSuper ? "Save changes" : purpose === "fixture" ? "Save confirmed booking" : "Submit changes for approval" : purpose === "fixture" ? "Book and confirm" : data.isSuper ? isManageView ? "Confirm booking" : "Book table" : "Send booking request"}</button>
         </div> : null}
       </section>
 
