@@ -350,7 +350,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  if (!auth.playerId) return NextResponse.json({ error: "Link your app account to a player profile before booking." }, { status: 409 });
+  if (!auth.playerId && !auth.isSuper) return NextResponse.json({ error: "Link your app account to a player profile before booking." }, { status: 409 });
   const editingReservationId = action === "edit" ? String(body?.reservationId ?? "") : null;
   if (action !== "book" && action !== "edit") return NextResponse.json({ error: "Unknown table-booking action." }, { status: 400 });
   if (editingReservationId) {
@@ -434,6 +434,7 @@ export async function POST(request: NextRequest) {
   const reviewedAt = status === "booked" ? new Date().toISOString() : null;
   const reviewedByUserId = auth.isSuper ? auth.user.id : null;
   const bookedForPlayerId = purpose === "fixture" ? participantOnePlayerId : auth.playerId;
+  if (!bookedForPlayerId) return NextResponse.json({ error: "Choose a competition fixture with two players, or link the Super User account to a player profile first." }, { status: 409 });
   if (editingReservationId) {
     const updateResult = await auth.client.from("table_reservations").update({ table_id: tableId, booked_for_player_id: bookedForPlayerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, competition_id: competitionId, participant_one_player_id: participantOnePlayerId, participant_two_player_id: participantTwoPlayerId, status, rejection_reason: null, reviewed_at: reviewedAt, reviewed_by_user_id: reviewedByUserId, cancelled_at: null, cancelled_by_user_id: null }).eq("id", editingReservationId);
     if (updateResult.error) {
