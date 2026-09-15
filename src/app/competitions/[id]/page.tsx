@@ -63,6 +63,27 @@ type Player = { id: string; display_name: string; full_name: string | null; snoo
 type AppUserLink = { id: string; linked_player_id: string | null };
 type CompetitionContact = { entryId: string; playerId: string; name: string; email: string | null; phone: string | null; fixtureAccessToken: string | null };
 type WelcomeAudit = { totals: { approved: number; sent: number; missing: number; failed: number; noEmail: number; delivered: number }; rows: Array<{ entryId: string; playerName: string; email: string | null; status: "sent" | "missing" | "failed" | "no_email"; sentAt: string | null; delivery?: { status?: string } | null }> };
+type WithdrawalPreview = {
+  previewToken: string;
+  competitionName: string;
+  sportType: Competition["sport_type"];
+  playerName: string;
+  remainingPlayerCount: number;
+  paidAmountPence: number | null;
+  paymentStatus: string;
+  completedResultsAnnulled: number;
+  withdrawnFixturesArchived: number;
+  existingFixturesPreserved: number;
+  futureFixturesReplaced: number;
+  newFixtures: number;
+  playingWeeks: number;
+  partialWeeks: number;
+  firstDate: string | null;
+  finalDate: string | null;
+  protectedReschedules: number;
+  pendingReschedulesClosed: number;
+  affectedBookings: Array<{ id: string; starts_at: string; ends_at: string; participant_one: string | null; participant_two: string | null }>;
+};
 type AdminCompetitionTab = "overview" | "entrants" | "fixtures" | "table" | "settings";
 type Entry = {
   id: string;
@@ -457,6 +478,10 @@ export default function CompetitionPage() {
   const [welcomeAudit, setWelcomeAudit] = useState<WelcomeAudit | null>(null);
   const [welcomeAuditBusy, setWelcomeAuditBusy] = useState(false);
   const [confirmWelcomeSendOpen, setConfirmWelcomeSendOpen] = useState(false);
+  const [withdrawalPreview, setWithdrawalPreview] = useState<WithdrawalPreview | null>(null);
+  const [withdrawalPlayerId, setWithdrawalPlayerId] = useState<string | null>(null);
+  const [withdrawalBusyPlayerId, setWithdrawalBusyPlayerId] = useState<string | null>(null);
+  const [applyingWithdrawal, setApplyingWithdrawal] = useState(false);
   const [adminCompetitionTab, setAdminCompetitionTab] = useState<AdminCompetitionTab>(() => {
     if (typeof window === "undefined") return "overview";
     const saved = window.localStorage.getItem(`competition-admin-tab:${id}`);
@@ -657,6 +682,70 @@ export default function CompetitionPage() {
       }
     }
     setEntries((prev) => prev.map((e) => (e.id === entryId ? { ...e, status } : e)));
+  };
+
+  const previewWithdrawalAndRebalance = async (entry: Entry) => {
+    const client = supabase;
+    if (!client || !competition || !admin.isAdmin) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setMessage("Please sign in again.");
+      return;
+    }
+    setWithdrawalBusyPlayerId(entry.player_id);
+    const response = await fetch(`/api/admin/competition-withdrawal-rebalance?competitionId=${encodeURIComponent(competition.id)}&playerId=${encodeURIComponent(entry.player_id)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const data = await response.json().catch(() => ({}));
+    setWithdrawalBusyPlayerId(null);
+    if (!response.ok) {
+      setMessage(data.error ?? "A safe withdrawal preview could not be created.");
+      return;
+    }
+    setWithdrawalPlayerId(entry.player_id);
+    setWithdrawalPreview(data as WithdrawalPreview);
+  };
+
+  const applyWithdrawalAndRebalance = async () => {
+    const client = supabase;
+    if (!client || !competition || !withdrawalPreview || !withdrawalPlayerId || !admin.isAdmin) return;
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setMessage("Please sign in again.");
+      return;
+    }
+    setApplyingWithdrawal(true);
+    const response = await fetch("/api/admin/competition-withdrawal-rebalance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ competitionId: competition.id, playerId: withdrawalPlayerId, previewToken: withdrawalPreview.previewToken }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setApplyingWithdrawal(false);
+      if (response.status === 409) {
+        setWithdrawalPreview(null);
+        setWithdrawalPlayerId(null);
+      }
+      setMessage(data.error ?? "The entrant could not be withdrawn safely.");
+      return;
+    }
+    if (competition.sport_type === "snooker") {
+      const ratingResponse = await fetch("/api/admin/rebuild-club-snooker-elo", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!ratingResponse.ok) {
+        setApplyingWithdrawal(false);
+        setWithdrawalPreview(null);
+        setWithdrawalPlayerId(null);
+        setMessage("The withdrawal was applied, but club snooker ELO needs to be rebuilt from Handicap Exceptions.");
+        return;
+      }
+    }
+    window.location.reload();
   };
 
   const updateCashPayment = async (entry: Entry, reset: boolean) => {
@@ -2083,6 +2172,16 @@ export default function CompetitionPage() {
                                   </button>
                                 </>
                               ) : null}
+                              {admin.isAdmin && entry.status === "approved" && competition.competition_format === "league" && competition.league_schedule_mode !== "one_day" && matches.length > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void previewWithdrawalAndRebalance(entry)}
+                                  disabled={withdrawalBusyPlayerId === entry.player_id}
+                                  className="rounded-lg border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 disabled:opacity-50"
+                                >
+                                  {withdrawalBusyPlayerId === entry.player_id ? "Checking…" : "Withdraw & rebalance"}
+                                </button>
+                              ) : null}
                               {admin.isAdmin && competition.entry_fee_pence && entry.payment_status !== "paid" ? (
                                 <button
                                   type="button"
@@ -2729,6 +2828,36 @@ export default function CompetitionPage() {
             await sendMissingWelcomeEmails();
           }}
         />
+        {withdrawalPreview ? (
+          <div className="fixed inset-0 z-[95] flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4">
+            <div className="my-auto w-full max-w-2xl rounded-2xl border border-rose-200 bg-white p-5 shadow-xl">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-rose-700">Withdrawal preview</p>
+              <h2 className="mt-1 text-xl font-bold text-slate-950">Withdraw {withdrawalPreview.playerName} and rebalance?</h2>
+              <p className="mt-2 text-sm text-slate-700">
+                Nothing has changed yet. Confirming will preserve existing matches between the remaining {withdrawalPreview.remainingPlayerCount} players and build a new schedule without generated BYE fixtures.
+              </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-xl bg-rose-50 p-3 text-sm text-rose-950"><strong>{withdrawalPreview.completedResultsAnnulled}</strong> completed result{withdrawalPreview.completedResultsAnnulled === 1 ? "" : "s"} involving {withdrawalPreview.playerName} annulled</div>
+                <div className="rounded-xl bg-slate-100 p-3 text-sm text-slate-800"><strong>{withdrawalPreview.existingFixturesPreserved}</strong> existing fixture{withdrawalPreview.existingFixturesPreserved === 1 ? "" : "s"} safely preserved</div>
+                <div className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950"><strong>{withdrawalPreview.newFixtures}</strong> remaining fixture{withdrawalPreview.newFixtures === 1 ? "" : "s"} scheduled across {withdrawalPreview.playingWeeks} week{withdrawalPreview.playingWeeks === 1 ? "" : "s"}</div>
+                <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950"><strong>{withdrawalPreview.futureFixturesReplaced}</strong> unplayed fixture record{withdrawalPreview.futureFixturesReplaced === 1 ? "" : "s"} archived and replaced</div>
+              </div>
+              <div className="mt-4 space-y-1 rounded-xl border border-slate-200 p-3 text-sm text-slate-700">
+                <p>New calendar: {withdrawalPreview.firstDate ? new Date(`${withdrawalPreview.firstDate}T12:00:00`).toLocaleDateString("en-GB", { dateStyle: "medium" }) : "No new fixtures needed"}{withdrawalPreview.finalDate ? ` to ${new Date(`${withdrawalPreview.finalDate}T12:00:00`).toLocaleDateString("en-GB", { dateStyle: "medium" })}` : ""}.</p>
+                <p>{withdrawalPreview.partialWeeks ? `${withdrawalPreview.partialWeeks} week${withdrawalPreview.partialWeeks === 1 ? " has" : "s have"} an unavoidable free player because earlier matches are locked.` : "Every regenerated week is fully paired, with no BYEs."}</p>
+                {withdrawalPreview.protectedReschedules ? <p>{withdrawalPreview.protectedReschedules} approved reschedule{withdrawalPreview.protectedReschedules === 1 ? " is" : "s are"} protected.</p> : null}
+                {withdrawalPreview.pendingReschedulesClosed ? <p>{withdrawalPreview.pendingReschedulesClosed} pending reschedule request{withdrawalPreview.pendingReschedulesClosed === 1 ? " will" : "s will"} be closed if its fixture is replaced.</p> : null}
+                {withdrawalPreview.affectedBookings.length ? <p className="font-semibold text-amber-800">{withdrawalPreview.affectedBookings.length} table booking{withdrawalPreview.affectedBookings.length === 1 ? " involving this player needs" : "s involving this player need"} separate review; the system will not cancel bookings automatically.</p> : null}
+                {withdrawalPreview.paymentStatus === "paid" ? <p className="font-semibold">The recorded £{((withdrawalPreview.paidAmountPence ?? 0) / 100).toFixed(2)} payment is retained. No Stripe refund is issued automatically.</p> : null}
+              </div>
+              <p className="mt-4 text-sm font-semibold text-rose-800">This changes the live competition schedule. The original fixtures remain archived in the audit history.</p>
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button type="button" disabled={applyingWithdrawal} onClick={() => { setWithdrawalPreview(null); setWithdrawalPlayerId(null); }} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancel</button>
+                <button type="button" disabled={applyingWithdrawal} onClick={() => void applyWithdrawalAndRebalance()} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{applyingWithdrawal ? "Applying safely…" : "Confirm withdrawal & rebalance"}</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <ConfirmModal
           open={cashPaymentTarget !== null}
           title={cashPaymentTarget?.reset ? "Undo cash payment?" : "Confirm cash received"}

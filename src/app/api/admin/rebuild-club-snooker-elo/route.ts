@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
       .from("matches")
       .select("id,player1_id,player2_id,winner_player_id,updated_at")
       .in("competition_id", competitionIds)
+      .eq("is_archived", false)
       .eq("status", "complete")
       .eq("match_mode", "singles")
       .not("player1_id", "is", null)
