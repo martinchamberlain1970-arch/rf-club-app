@@ -480,7 +480,7 @@ export default function MatchPage() {
       setMatch(loadedMatch);
       setConfirmEditComplete(loadedMatch.status !== "complete");
 
-      const authRes = await client.auth.getUser();
+      const authRes = await withOperationTimeout(client.auth.getUser(), "Checking your account", 12_000);
       const signedInUserId = authRes.data.user?.id ?? null;
       let linkedPlayerId: string | null = null;
       if (signedInUserId) {
@@ -541,7 +541,7 @@ export default function MatchPage() {
       const effectiveFrameRows = ((framesRes.data ?? []) as unknown) as FrameRow[];
       const effectiveSubmissionRows = ((submissionsRes.data ?? []) as unknown) as ResultSubmission[];
       let effectiveRescheduleRows: LeagueRescheduleRequest[] = [];
-      const sessionRes = await client.auth.getSession();
+      const sessionRes = await withOperationTimeout(client.auth.getSession(), "Checking your session", 12_000);
       const accessToken = sessionRes.data.session?.access_token ?? null;
       if (accessToken) {
         const contactResponse = await fetch(`/api/matches/${matchId}/contacts`, {
@@ -922,33 +922,37 @@ export default function MatchPage() {
     const client = supabase;
     if (!client || !match || !adminRescheduleDate || !admin.isSuper) return;
     setAdminRescheduling(true);
-    const sessionResult = await client.auth.getSession();
-    const accessToken = sessionResult.data.session?.access_token;
-    if (!accessToken) {
+    try {
+      const sessionResult = await withOperationTimeout(client.auth.getSession(), "Checking your session", 12_000);
+      const accessToken = sessionResult.data.session?.access_token;
+      if (!accessToken) {
+        setMessage("Your session has expired. Please sign in again.");
+        return;
+      }
+      const response = await withOperationTimeout(fetch("/api/admin/league-deadline-review", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId: match.id, requestedScheduledFor: adminRescheduleDate }),
+      }), "Rescheduling the fixture", 30_000).catch(() => null);
+      const payload = await response?.json().catch(() => ({}));
+      if (!response?.ok) {
+        setMessage(payload?.error || "The fixture could not be rescheduled. Please try again.");
+        return;
+      }
+      setConfirmModal(null);
+      setInfoModal({
+        title: "Fixture Rescheduled",
+        description: `The players have another opportunity to play in the game week beginning ${new Date(`${adminRescheduleDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}. The fixture remains marked as rescheduled in its original week and is now open in the new week.`,
+      });
+      setMatch((current) => current ? { ...current, scheduled_for: adminRescheduleDate, status: "pending", winner_player_id: null } : current);
+      setFrames(isFixedRackLeague ? Array.from({ length: match.best_of }, (_, index) => createEmptyFrame(index + 1)) : [createEmptyFrame(1)]);
+      setSubmissions((current) => current.map((submission) => submission.status === "pending" ? { ...submission, status: "rejected" } : submission));
+      setAdminRescheduleDate("");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The fixture could not be rescheduled. Please try again.");
+    } finally {
       setAdminRescheduling(false);
-      setMessage("Your session has expired. Please sign in again.");
-      return;
     }
-    const response = await fetch("/api/admin/league-deadline-review", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ matchId: match.id, requestedScheduledFor: adminRescheduleDate }),
-    }).catch(() => null);
-    const payload = await response?.json().catch(() => ({}));
-    setAdminRescheduling(false);
-    if (!response?.ok) {
-      setMessage(payload?.error || "The fixture could not be rescheduled. Please try again.");
-      return;
-    }
-    setConfirmModal(null);
-    setInfoModal({
-      title: "Fixture Rescheduled",
-      description: `The players have another opportunity to play in the game week beginning ${new Date(`${adminRescheduleDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}. The fixture remains marked as rescheduled in its original week and is now open in the new week.`,
-    });
-    setMatch((current) => current ? { ...current, scheduled_for: adminRescheduleDate, status: "pending", winner_player_id: null } : current);
-    setFrames(isFixedRackLeague ? Array.from({ length: match.best_of }, (_, index) => createEmptyFrame(index + 1)) : [createEmptyFrame(1)]);
-    setSubmissions((current) => current.map((submission) => submission.status === "pending" ? { ...submission, status: "rejected" } : submission));
-    setAdminRescheduleDate("");
   };
 
   const assignOpeningBreaker = async (playerId: string) => {
@@ -1192,7 +1196,7 @@ export default function MatchPage() {
       .catch(() => undefined)
       .then(async () => {
         try {
-          const sessionResult = await client.auth.getSession();
+          const sessionResult = await withOperationTimeout(client.auth.getSession(), "Checking your session", 12_000);
           const token = sessionResult.data.session?.access_token;
           if (!token) return { ok: false as const, error: "Sign in again before saving this result." };
           const scoreLabel = isSnooker ? "frame" : "rack";
@@ -2113,7 +2117,7 @@ export default function MatchPage() {
       }
       setSubmissions((prev) => [res.data as ResultSubmission, ...prev]);
       setSavingStage("Comparing both players’ submissions…");
-      const session = await client.auth.getSession();
+      const session = await withOperationTimeout(client.auth.getSession(), "Checking your session", 12_000);
       const accessToken = session.data.session?.access_token;
       let autoApproved = false;
       let autoApprovedWinnerSide: 1 | 2 | null = null;

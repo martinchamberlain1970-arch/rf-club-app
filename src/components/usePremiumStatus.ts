@@ -90,8 +90,14 @@ export default function usePremiumStatus(): PremiumState {
     };
 
     refresh();
-    const { data: sub } = client.auth.onAuthStateChange(async () => {
-      await refresh();
+    const { data: sub } = client.auth.onAuthStateChange(() => {
+      // Supabase holds its session lock while auth callbacks run. Starting
+      // another authenticated request inside the callback can deadlock the
+      // browser session, especially in an installed PWA. Defer the refresh so
+      // the callback returns and releases the lock first.
+      window.setTimeout(() => {
+        if (active) void refresh();
+      }, 0);
     });
 
     return () => {

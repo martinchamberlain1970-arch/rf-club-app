@@ -14,6 +14,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
   const pathname = usePathname();
   const [ready, setReady] = useState(() => !supabase);
   const [allowed, setAllowed] = useState(() => !supabase);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
   useEffect(() => {
     const client = supabase;
@@ -21,39 +22,61 @@ export default function RequireAuth({ children }: RequireAuthProps) {
 
     let active = true;
 
-    const check = async () => {
-      const { data } = await client.auth.getSession();
-      if (!active) return;
-
-      if (data.session) {
-        const userId = data.session.user?.id;
-        if (userId) {
-          const { data: appUser, error } = await client
-            .from("app_users")
-            .select("id")
-            .eq("id", userId)
-            .maybeSingle();
-          if (!active) return;
-          if (error || !appUser) {
-            await client.auth.signOut();
-            const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
-            const next = `${pathname}${query ? `?${query}` : ""}`;
-            router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
-            setAllowed(false);
-            setReady(true);
-            return;
-          }
-        }
-        setAllowed(true);
-        setReady(true);
-        return;
+    const withTimeout = async <T,>(operation: PromiseLike<T>, timeoutMs = 12_000): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      try {
+        return await Promise.race([
+          Promise.resolve(operation),
+          new Promise<T>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("Session check timed out.")), timeoutMs);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
       }
+    };
 
-      const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
-      const next = `${pathname}${query ? `?${query}` : ""}`;
-      router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
-      setAllowed(false);
-      setReady(true);
+    const check = async () => {
+      try {
+        setSessionError(null);
+        const { data } = await withTimeout(client.auth.getSession());
+        if (!active) return;
+
+        if (data.session) {
+          const userId = data.session.user?.id;
+          if (userId) {
+            const { data: appUser, error } = await withTimeout(client
+              .from("app_users")
+              .select("id")
+              .eq("id", userId)
+              .maybeSingle());
+            if (!active) return;
+            if (error || !appUser) {
+              await withTimeout(client.auth.signOut());
+              const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
+              const next = `${pathname}${query ? `?${query}` : ""}`;
+              router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
+              setAllowed(false);
+              setReady(true);
+              return;
+            }
+          }
+          setAllowed(true);
+          setReady(true);
+          return;
+        }
+
+        const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
+        const next = `${pathname}${query ? `?${query}` : ""}`;
+        router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
+        setAllowed(false);
+        setReady(true);
+      } catch {
+        if (!active) return;
+        setAllowed(false);
+        setReady(true);
+        setSessionError("The app could not confirm your session. Reload to reconnect; your saved results will not be duplicated.");
+      }
     };
 
     check();
@@ -80,7 +103,8 @@ export default function RequireAuth({ children }: RequireAuthProps) {
     logUsagePageView(pathname || "/");
   }, [ready, allowed, pathname]);
 
-  if (!ready) return <p className="rounded-xl border border-slate-200 bg-white p-4">Checking session...</p>;
+  if (!ready) return <p className="rounded-xl border border-slate-200 bg-white p-4">Checking session…</p>;
+  if (sessionError) return <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950"><p className="font-semibold">{sessionError}</p><button type="button" onClick={() => window.location.reload()} className="mt-3 rounded-lg bg-amber-900 px-4 py-2 font-bold text-white">Reload app</button></div>;
   if (!allowed) return <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">Redirecting to sign in...</p>;
 
   return <>{children}</>;
