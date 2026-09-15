@@ -34,6 +34,7 @@ type MatchRow = {
 
 type PlannedFixture = {
   competition_id: string;
+  owner_user_id: string;
   round_no: number;
   match_no: number;
   best_of: number;
@@ -140,7 +141,7 @@ function maximumRound(playerIds: string[], pairCounts: Map<string, number>, bloc
   return best;
 }
 
-async function buildPlan(client: SupabaseClient, competitionId: string, playerId: string): Promise<Plan> {
+async function buildPlan(client: SupabaseClient, competitionId: string, playerId: string, ownerUserId: string): Promise<Plan> {
   const [competitionResult, entryResult, entriesResult, playersResult, matchesResult] = await Promise.all([
     client.from("competitions").select("id,name,competition_format,league_schedule_mode,league_meetings,league_start_date,league_break_weeks,best_of,sport_type,handicap_enabled,app_assign_opening_break").eq("id", competitionId).maybeSingle(),
     client.from("competition_entries").select("id,player_id,status,payment_status,payment_amount_pence").eq("competition_id", competitionId).eq("player_id", playerId).eq("status", "approved").maybeSingle(),
@@ -274,6 +275,7 @@ async function buildPlan(client: SupabaseClient, competitionId: string, playerId
         : { team1: 0, team2: 0 };
       fixtures.push({
         competition_id: competitionId,
+        owner_user_id: ownerUserId,
         round_no: historicalRoundMax + weekIndex + 1,
         match_no: existingThatWeek + matchIndex + 1,
         best_of: competition.best_of,
@@ -353,7 +355,7 @@ export async function GET(request: NextRequest) {
   if (!competitionId || !playerId) return NextResponse.json({ error: "Competition and player are required." }, { status: 400 });
   if (!(await canManage(auth.client, competitionId, auth))) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   try {
-    return NextResponse.json(publicPlan(await buildPlan(auth.client, competitionId, playerId)));
+    return NextResponse.json(publicPlan(await buildPlan(auth.client, competitionId, playerId, auth.user.id)));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "A safe withdrawal plan could not be created." }, { status: 400 });
   }
@@ -371,7 +373,7 @@ export async function POST(request: NextRequest) {
 
   let plan: Plan;
   try {
-    plan = await buildPlan(auth.client, competitionId, playerId);
+    plan = await buildPlan(auth.client, competitionId, playerId, auth.user.id);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The withdrawal plan could not be refreshed." }, { status: 400 });
   }
