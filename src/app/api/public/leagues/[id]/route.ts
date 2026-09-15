@@ -46,9 +46,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     matchIds.length
       ? client
           .from("league_reschedule_requests")
-          .select("match_id,original_scheduled_for,requested_scheduled_for")
+          .select("match_id,original_scheduled_for,requested_scheduled_for,created_at")
           .in("match_id", matchIds)
           .eq("status", "approved")
+          .order("created_at", { ascending: true })
       : Promise.resolve({ data: [], error: null }),
   ]);
   if (playersResult.error || framesResult.error || reschedulesResult.error) {

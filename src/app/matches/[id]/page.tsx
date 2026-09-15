@@ -142,6 +142,11 @@ type LeagueRescheduleRequest = {
   created_at: string;
 };
 
+type CompetitionGameWeek = {
+  roundNo: number;
+  scheduledFor: string;
+};
+
 const RESCHEDULE_REASONS = [
   "Holiday",
   "Illness or injury",
@@ -393,6 +398,9 @@ export default function MatchPage() {
   const [rescheduleRequests, setRescheduleRequests] = useState<LeagueRescheduleRequest[]>([]);
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [rescheduleDetails, setRescheduleDetails] = useState("");
+  const [competitionGameWeeks, setCompetitionGameWeeks] = useState<CompetitionGameWeek[]>([]);
+  const [adminRescheduleDate, setAdminRescheduleDate] = useState("");
+  const [adminRescheduling, setAdminRescheduling] = useState(false);
   const [adminLocationId, setAdminLocationId] = useState<string | null>(null);
   const [viewerLinkedPlayerId, setViewerLinkedPlayerId] = useState<string | null>(null);
   const [assigningBreaker, setAssigningBreaker] = useState(false);
@@ -558,6 +566,26 @@ export default function MatchPage() {
           return;
         }
         effectiveRescheduleRows = ((matchRescheduleRes.data ?? []) as unknown) as LeagueRescheduleRequest[];
+
+        const gameWeeksResult = await client
+          .from("matches")
+          .select("round_no,scheduled_for")
+          .eq("competition_id", loadedMatch.competition_id)
+          .eq("is_archived", false)
+          .not("scheduled_for", "is", null)
+          .order("scheduled_for", { ascending: true });
+        if (gameWeeksResult.error) {
+          finishLoading();
+          setLoadError(gameWeeksResult.error.message || "Failed to load competition game weeks.");
+          return;
+        }
+        const uniqueWeeks = new Map<string, number>();
+        for (const row of gameWeeksResult.data ?? []) {
+          if (row.scheduled_for && !uniqueWeeks.has(row.scheduled_for)) uniqueWeeks.set(row.scheduled_for, row.round_no ?? 1);
+        }
+        setCompetitionGameWeeks([...uniqueWeeks.entries()].map(([scheduledFor, roundNo]) => ({ scheduledFor, roundNo })));
+      } else {
+        setCompetitionGameWeeks([]);
       }
 
       const loadedPlayers = (playersRes.data as unknown) as Player[];
@@ -756,6 +784,15 @@ export default function MatchPage() {
       !pendingRescheduleForMatch &&
       !approvedRescheduleForMatch
   );
+  const availableAdminGameWeeks = useMemo(() => {
+    if (!competition || !match?.scheduled_for) return [];
+    const now = new Date();
+    return competitionGameWeeks.filter((week) => {
+      if (week.scheduledFor === match.scheduled_for) return false;
+      const deadline = getLeagueFixtureDeadline(week.scheduledFor, competition.name);
+      return Boolean(deadline && deadline > now);
+    });
+  }, [competition, competitionGameWeeks, match?.scheduled_for]);
   const expectedPreview = useMemo<ExpectedResultPreview | null>(() => {
     if (!match || !competition || match.match_mode !== "singles" || competition.competition_format === "league") return null;
     if (match.status === "complete" || match.status === "bye") return null;
@@ -879,6 +916,39 @@ export default function MatchPage() {
         await requestLeagueReschedule(timing);
       },
     });
+  };
+
+  const rescheduleAsDeadlineDecision = async () => {
+    const client = supabase;
+    if (!client || !match || !adminRescheduleDate || !admin.isSuper) return;
+    setAdminRescheduling(true);
+    const sessionResult = await client.auth.getSession();
+    const accessToken = sessionResult.data.session?.access_token;
+    if (!accessToken) {
+      setAdminRescheduling(false);
+      setMessage("Your session has expired. Please sign in again.");
+      return;
+    }
+    const response = await fetch("/api/admin/league-deadline-review", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ matchId: match.id, requestedScheduledFor: adminRescheduleDate }),
+    }).catch(() => null);
+    const payload = await response?.json().catch(() => ({}));
+    setAdminRescheduling(false);
+    if (!response?.ok) {
+      setMessage(payload?.error || "The fixture could not be rescheduled. Please try again.");
+      return;
+    }
+    setConfirmModal(null);
+    setInfoModal({
+      title: "Fixture Rescheduled",
+      description: `The players have another opportunity to play in the game week beginning ${new Date(`${adminRescheduleDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}. The fixture remains marked as rescheduled in its original week and is now open in the new week.`,
+    });
+    setMatch((current) => current ? { ...current, scheduled_for: adminRescheduleDate, status: "pending", winner_player_id: null } : current);
+    setFrames(isFixedRackLeague ? Array.from({ length: match.best_of }, (_, index) => createEmptyFrame(index + 1)) : [createEmptyFrame(1)]);
+    setSubmissions((current) => current.map((submission) => submission.status === "pending" ? { ...submission, status: "rejected" } : submission));
+    setAdminRescheduleDate("");
   };
 
   const assignOpeningBreaker = async (playerId: string) => {
@@ -2843,6 +2913,51 @@ export default function MatchPage() {
                           Void fixture
                         </button>
                       </div>
+                      {competition.competition_format === "league" && competition.league_schedule_mode !== "one_day" && match.scheduled_for && match.status !== "complete" ? (
+                        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
+                          <p className="text-sm font-semibold text-amber-950">Give the players another chance to play</p>
+                          <p className="mt-1 text-xs text-amber-900">
+                            Move this fixture directly into another future competition game week. Any unapproved score is closed, and the original week will show that the fixture was rescheduled.
+                          </p>
+                          {availableAdminGameWeeks.length ? (
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+                              <label className="min-w-0 flex-1 text-sm font-medium text-slate-900">
+                                New game week
+                                <select
+                                  value={adminRescheduleDate}
+                                  onChange={(event) => setAdminRescheduleDate(event.target.value)}
+                                  className="mt-1 w-full rounded-xl border border-amber-300 bg-white px-3 py-2"
+                                >
+                                  <option value="">Choose a future game week</option>
+                                  {availableAdminGameWeeks.map((week) => (
+                                    <option key={week.scheduledFor} value={week.scheduledFor}>
+                                      Week {week.roundNo} · {new Date(`${week.scheduledFor}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <button
+                                type="button"
+                                disabled={!adminRescheduleDate || adminRescheduling}
+                                onClick={() => {
+                                  if (!adminRescheduleDate) return;
+                                  setConfirmModal({
+                                    title: "Reschedule this fixture?",
+                                    description: `Give ${teams.team1Label} and ${teams.team2Label} another opportunity to play in the game week beginning ${new Date(`${adminRescheduleDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}? Any unapproved score will be closed.`,
+                                    confirmLabel: "Reschedule fixture",
+                                    onConfirm: rescheduleAsDeadlineDecision,
+                                  });
+                                }}
+                                className="rounded-xl border border-amber-800 bg-amber-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                              >
+                                {adminRescheduling ? "Rescheduling…" : "Reschedule fixture"}
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-amber-900">There are no future game weeks available in this competition.</p>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 
