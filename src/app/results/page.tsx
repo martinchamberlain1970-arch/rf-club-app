@@ -317,16 +317,16 @@ export default function ResultsQueuePage() {
         <RequireAuth>
           <ScreenHeader title="Results" eyebrow="Results" subtitle="Review submitted scores and track approval status." />
           <section className={`rounded-3xl border border-slate-200 bg-gradient-to-r ${roleSummary.accent} p-5 shadow-sm`}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-5">
               <div className="space-y-2">
                 <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${roleSummary.badgeClass}`}>
                   {roleSummary.label}
                 </span>
                 <p className="max-w-2xl text-sm text-slate-700">{roleSummary.description}</p>
               </div>
-              <div className={`grid min-w-[220px] flex-1 gap-3 ${admin.isAdmin ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
-                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <div className={`grid grid-cols-2 gap-3 ${admin.isAdmin ? "lg:grid-cols-4" : "sm:grid-cols-3"}`}>
+                <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-xs">
                     {!admin.loading && !admin.isAdmin ? "Submitted" : "Awaiting review"}
                   </p>
                   <p className="mt-1 text-2xl font-semibold text-slate-900">
@@ -334,21 +334,21 @@ export default function ResultsQueuePage() {
                   </p>
                 </div>
                 {admin.isAdmin ? (
-                  <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-700">Disputes</p>
+                  <div className="min-w-0 rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 shadow-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-red-700 sm:text-xs">Disputes</p>
                     <p className="mt-1 text-2xl font-semibold text-red-900">{disputedMatchIds.size}</p>
                   </div>
                 ) : null}
-                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-xs">
                     {!admin.loading && !admin.isAdmin ? "Pending" : "Escalated"}
                   </p>
                   <p className="mt-1 text-2xl font-semibold text-slate-900">
                     {!admin.loading && !admin.isAdmin ? pending.length : escalatedPending.length}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Approved</p>
+                <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-xs">Approved</p>
                   <p className="mt-1 text-2xl font-semibold text-slate-900">{approvedResults.length}</p>
                 </div>
               </div>
