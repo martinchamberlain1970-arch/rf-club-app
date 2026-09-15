@@ -14,6 +14,7 @@ type Submission = {
   submitted_by_user_id: string | null;
   competition_entry_id: string | null;
   submitted_at: string;
+  reviewed_at?: string | null;
   team1_score: number;
   team2_score: number;
   break_and_run: boolean;
@@ -47,6 +48,7 @@ type Player = { id: string; display_name: string; full_name?: string | null };
 type EntryLink = { id: string; player_id: string };
 type DeadlineFixture = {
   id: string;
+  competitionId: string;
   competitionName: string;
   week: number;
   scheduledFor: string | null;
@@ -115,6 +117,9 @@ export default function ResultsQueuePage() {
   const [deadlineFixtures, setDeadlineFixtures] = useState<DeadlineFixture[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(0);
+  const [adminResultsTab, setAdminResultsTab] = useState<"outstanding" | "approved">("outstanding");
+  const [competitionFilter, setCompetitionFilter] = useState("all");
+  const [approvedVisibleCount, setApprovedVisibleCount] = useState(10);
 
   const load = async () => {
     const client = supabase;
@@ -136,7 +141,7 @@ export default function ResultsQueuePage() {
 
     const submissionsQuery = client
       .from("result_submissions")
-      .select("id,match_id,submitted_by_user_id,competition_entry_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status")
+      .select("id,match_id,submitted_by_user_id,competition_entry_id,submitted_at,reviewed_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status")
       .order("submitted_at", { ascending: false });
     if (!admin.isAdmin && admin.userId) {
       submissionsQuery.eq("submitted_by_user_id", admin.userId);
@@ -268,7 +273,18 @@ export default function ResultsQueuePage() {
   const entryPlayerMap = useMemo(() => new Map(entryLinks.map((entry) => [entry.id, entry.player_id])), [entryLinks]);
 
   const isEscalated = (submittedAt: string) => nowMs - Date.parse(submittedAt) > 72 * 60 * 60 * 1000;
-  const pending = submissions.filter((s) => s.status === "pending");
+  const competitionOptions = useMemo(() => {
+    const options = new Map(competitions.map((competition) => [competition.id, competition.name]));
+    deadlineFixtures.forEach((fixture) => options.set(fixture.competitionId, fixture.competitionName));
+    return [...options.entries()].sort((left, right) => left[1].localeCompare(right[1]));
+  }, [competitions, deadlineFixtures]);
+  const filteredSubmissions = competitionFilter === "all"
+    ? submissions
+    : submissions.filter((submission) => matchMap.get(submission.match_id)?.competition_id === competitionFilter);
+  const filteredDeadlineFixtures = competitionFilter === "all"
+    ? deadlineFixtures
+    : deadlineFixtures.filter((fixture) => fixture.competitionId === competitionFilter);
+  const pending = filteredSubmissions.filter((s) => s.status === "pending");
   const pendingByMatch = new Map<string, Submission[]>();
   pending.forEach((submission) => pendingByMatch.set(submission.match_id, [...(pendingByMatch.get(submission.match_id) ?? []), submission]));
   const disputedMatchIds = new Set([...pendingByMatch.entries()].filter(([, rows]) => {
@@ -279,7 +295,18 @@ export default function ResultsQueuePage() {
   const normalPending = pending.filter((submission) => !disputedMatchIds.has(submission.match_id));
   const actionablePending = admin.isSuper ? normalPending : normalPending.filter((s) => !isEscalated(s.submitted_at));
   const escalatedPending = normalPending.filter((s) => isEscalated(s.submitted_at));
-  const reviewed = submissions.filter((s) => s.status !== "pending");
+  const approvedByMatch = new Map<string, Submission>();
+  filteredSubmissions
+    .filter((submission) => submission.status === "approved")
+    .sort((left, right) => Date.parse(right.reviewed_at ?? right.submitted_at) - Date.parse(left.reviewed_at ?? left.submitted_at))
+    .forEach((submission) => {
+      if (!approvedByMatch.has(submission.match_id)) approvedByMatch.set(submission.match_id, submission);
+    });
+  const approvedResults = [...approvedByMatch.values()];
+  const outstandingMatchIds = new Set([
+    ...filteredDeadlineFixtures.map((fixture) => fixture.id),
+    ...pending.map((submission) => submission.match_id),
+  ]);
   const roleSummary = getRoleSummary(admin.isSuper, admin.isAdmin);
   const cardClass = "rounded-3xl border border-slate-200 bg-white p-5 shadow-sm";
   const itemClass = "rounded-2xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm";
@@ -321,8 +348,8 @@ export default function ResultsQueuePage() {
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Reviewed</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-900">{reviewed.length}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Approved</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900">{approvedResults.length}</p>
                 </div>
               </div>
             </div>
@@ -375,12 +402,48 @@ export default function ResultsQueuePage() {
           ) : (
             <>
               <MessageModal message={message} onClose={() => setMessage(null)} />
-              {admin.isSuper && deadlineFixtures.length ? (
+              <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="inline-flex w-full rounded-2xl border border-slate-200 bg-slate-100 p-1 sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => setAdminResultsTab("outstanding")}
+                      className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition sm:flex-none ${adminResultsTab === "outstanding" ? "bg-amber-700 text-white shadow-sm" : "text-slate-700 hover:bg-white"}`}
+                    >
+                      Outstanding ({outstandingMatchIds.size})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminResultsTab("approved")}
+                      className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition sm:flex-none ${adminResultsTab === "approved" ? "bg-emerald-700 text-white shadow-sm" : "text-slate-700 hover:bg-white"}`}
+                    >
+                      Approved ({approvedResults.length})
+                    </button>
+                  </div>
+                  <label className="text-sm font-medium text-slate-700">
+                    Competition
+                    <select
+                      value={competitionFilter}
+                      onChange={(event) => {
+                        setCompetitionFilter(event.target.value);
+                        setApprovedVisibleCount(10);
+                      }}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 sm:ml-2 sm:mt-0 sm:w-auto"
+                    >
+                      <option value="all">All competitions</option>
+                      {competitionOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </section>
+              {adminResultsTab === "outstanding" ? (
+                <>
+              {admin.isSuper && filteredDeadlineFixtures.length ? (
                 <section className="rounded-3xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">
-                  <h2 className="text-xl font-semibold text-amber-950">Monday deadline decisions ({deadlineFixtures.length})</h2>
+                  <h2 className="text-xl font-semibold text-amber-950">Monday deadline decisions ({filteredDeadlineFixtures.length})</h2>
                   <p className="mt-1 text-sm text-amber-900">These fixtures passed their competition&apos;s Sunday deadline without an approved result. You can give the players another game week, accept a sole submission, enter the result yourself, award a genuine no-show result or walkover, or void the fixture.</p>
                   <div className="mt-4 space-y-3">
-                    {deadlineFixtures.map((fixture) => {
+                    {filteredDeadlineFixtures.map((fixture) => {
                       const label = fixture.decision === "single_submission"
                         ? "One player submitted — accept or override"
                         : fixture.decision === "no_submission"
@@ -504,13 +567,20 @@ export default function ResultsQueuePage() {
                   })}
                 </div>
               </section>
-
+                </>
+              ) : (
               <section className={cardClass}>
-                <h2 className="text-xl font-semibold text-slate-900">Review history</h2>
-                <div className="mt-4 space-y-3">
-                  {reviewed.length === 0 ? <p className="text-sm text-slate-600">No reviewed score submissions yet.</p> : null}
-                  {reviewed.map((s) => {
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900">Approved results ({approvedResults.length})</h2>
+                    <p className="mt-1 text-sm text-slate-600">Each completed match is shown once, even when both players submitted the same score.</p>
+                  </div>
+                </div>
+                <div className="mt-4 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                  {approvedResults.length === 0 ? <p className="p-4 text-sm text-slate-600">No approved results match this competition filter.</p> : null}
+                  {approvedResults.slice(0, approvedVisibleCount).map((s) => {
                     const m = matchMap.get(s.match_id);
+                    const title = m ? compMap.get(m.competition_id) ?? "Competition" : "Competition";
                     const p1 =
                       m?.match_mode === "doubles"
                         ? `${nameMap.get(m.team1_player1_id ?? "") ?? "TBC"} & ${nameMap.get(m.team1_player2_id ?? "") ?? "TBC"}`
@@ -520,32 +590,41 @@ export default function ResultsQueuePage() {
                         ? `${nameMap.get(m.team2_player1_id ?? "") ?? "TBC"} & ${nameMap.get(m.team2_player2_id ?? "") ?? "TBC"}`
                         : `${nameMap.get(m?.player2_id ?? "") ?? "TBC"}`;
                     return (
-                      <div key={s.id} className={`${itemClass} text-sm text-slate-700`}>
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span
-                                className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${getStatusMeta(
-                                  s.status
-                                ).pillClass}`}
-                              >
-                                {getStatusMeta(s.status).label}
-                              </span>
-                              <span className="text-sm text-slate-600">{p1} vs {p2}</span>
-                            </div>
-                            <p className="text-sm font-medium text-slate-900">
-                              Score {s.team1_score}-{s.team2_score}
-                            </p>
-                          </div>
-                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                            {new Date(s.submitted_at).toLocaleString()}
+                      <div key={s.match_id} className="grid gap-2 px-4 py-3 text-sm text-slate-700 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-4">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</p>
+                          <p className="mt-1 font-semibold text-slate-900">{p1} vs {p2}</p>
+                        </div>
+                        <span className="w-fit rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-semibold text-emerald-800">
+                          {s.team1_score}–{s.team2_score}
+                        </span>
+                        <div className="flex items-center gap-3 sm:justify-end">
+                          <p className="text-xs text-slate-500">
+                            {new Date(s.reviewed_at ?? s.submitted_at).toLocaleString()}
                           </p>
+                          <Link href={`/matches/${s.match_id}`} className="text-sm font-semibold text-teal-700 hover:underline">View</Link>
                         </div>
                       </div>
                     );
                   })}
                 </div>
+                {approvedResults.length > 10 ? (
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    {approvedVisibleCount < approvedResults.length ? (
+                      <button type="button" onClick={() => setApprovedVisibleCount((count) => count + 10)} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        Show 10 more
+                      </button>
+                    ) : null}
+                    {approvedVisibleCount > 10 ? (
+                      <button type="button" onClick={() => setApprovedVisibleCount(10)} className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">
+                        Show fewer
+                      </button>
+                    ) : null}
+                    <span className="text-sm text-slate-500">Showing {Math.min(approvedVisibleCount, approvedResults.length)} of {approvedResults.length}</span>
+                  </div>
+                ) : null}
               </section>
+              )}
             </>
           )}
         </RequireAuth>

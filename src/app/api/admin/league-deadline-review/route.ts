@@ -79,6 +79,7 @@ export async function GET(request: NextRequest) {
     const scores = new Set(submissions.map((submission) => `${submission.team1_score}-${submission.team2_score}`));
     return {
       id: match.id,
+      competitionId: match.competition_id,
       competitionName: competitionNames.get(match.competition_id) || "League",
       week: match.round_no ?? 1,
       scheduledFor: match.scheduled_for,
