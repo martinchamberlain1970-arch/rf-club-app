@@ -60,6 +60,7 @@ type Plan = {
   preservedMatchIds: string[];
   pendingRescheduleIds: string[];
   protectedRescheduleCount: number;
+  currentWeekFixturesPreserved: number;
   affectedBookings: Array<{ id: string; starts_at: string; ends_at: string; participant_one: string | null; participant_two: string | null }>;
   fixtures: PlannedFixture[];
   weeks: Array<{ date: string; fixtureCount: number; idlePlayerCount: number }>;
@@ -171,7 +172,8 @@ async function buildPlan(client: SupabaseClient, competitionId: string, playerId
   if (relatedError) throw new Error(relatedError.message);
 
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  const currentWeekEnd = addDays(mondayOfWeek(today), 6);
+  const currentWeekStart = mondayOfWeek(today);
+  const currentWeekEnd = addDays(currentWeekStart, 6);
   const submittedMatchIds = new Set((submissionsResult.data ?? []).map((row) => String(row.match_id)));
   const approvedRescheduledMatchIds = new Set((reschedulesResult.data ?? []).filter((row) => row.status === "approved").map((row) => String(row.match_id)));
   const bookings = (bookingsResult.data ?? []) as Array<{ id: string; starts_at: string; ends_at: string; participant_one: string | null; participant_two: string | null; participant_one_player_id: string | null; participant_two_player_id: string | null }>;
@@ -190,6 +192,15 @@ async function buildPlan(client: SupabaseClient, competitionId: string, playerId
       || bookedPairs.has(pairKey(match.player1_id, match.player2_id));
   });
   const lockedIds = new Set(locked.map((match) => match.id));
+  const currentWeekFixtures = matches.filter((match) => {
+    if (!match.scheduled_for || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id || match.status === "bye") return false;
+    if (!remainingSet.has(match.player1_id) || !remainingSet.has(match.player2_id)) return false;
+    const scheduledDate = match.scheduled_for.slice(0, 10);
+    return scheduledDate >= currentWeekStart && scheduledDate <= currentWeekEnd;
+  });
+  if (currentWeekFixtures.some((match) => !lockedIds.has(match.id))) {
+    throw new Error("The current week's arranged fixtures could not all be locked safely. No withdrawal changes were made.");
+  }
   const archiveIds = matches.filter((match) => !lockedIds.has(match.id)).map((match) => match.id);
   const archiveIdSet = new Set(archiveIds);
   const pendingRescheduleIds = (reschedulesResult.data ?? [])
@@ -299,6 +310,7 @@ async function buildPlan(client: SupabaseClient, competitionId: string, playerId
     preservedMatchIds: locked.map((match) => match.id),
     pendingRescheduleIds,
     protectedRescheduleCount: [...approvedRescheduledMatchIds].filter((matchId) => lockedIds.has(matchId)).length,
+    currentWeekFixturesPreserved: currentWeekFixtures.length,
     affectedBookings: bookings.filter((booking) => booking.participant_one_player_id === playerId || booking.participant_two_player_id === playerId).map(({ id, starts_at, ends_at, participant_one, participant_two }) => ({ id, starts_at, ends_at, participant_one, participant_two })),
     fixtures,
     weeks: rawWeeks.map((week) => ({ date: week.date, fixtureCount: week.pairs.length, idlePlayerCount: Math.max(0, remainingIds.length - (week.pairs.length * 2) - (lockedByWeek.get(week.date)?.size ?? 0)) })),
@@ -327,6 +339,7 @@ function publicPlan(plan: Plan) {
     firstDate: plan.firstDate,
     finalDate: plan.finalDate,
     protectedReschedules: plan.protectedRescheduleCount,
+    currentWeekFixturesPreserved: plan.currentWeekFixturesPreserved,
     pendingReschedulesClosed: plan.pendingRescheduleIds.length,
     affectedBookings: plan.affectedBookings,
   };

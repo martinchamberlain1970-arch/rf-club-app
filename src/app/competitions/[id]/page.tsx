@@ -81,6 +81,7 @@ type WithdrawalPreview = {
   firstDate: string | null;
   finalDate: string | null;
   protectedReschedules: number;
+  currentWeekFixturesPreserved: number;
   pendingReschedulesClosed: number;
   affectedBookings: Array<{ id: string; starts_at: string; ends_at: string; participant_one: string | null; participant_two: string | null }>;
 };
@@ -2844,6 +2845,7 @@ export default function CompetitionPage() {
               </div>
               <div className="mt-4 space-y-1 rounded-xl border border-slate-200 p-3 text-sm text-slate-700">
                 <p>New calendar: {withdrawalPreview.firstDate ? new Date(`${withdrawalPreview.firstDate}T12:00:00`).toLocaleDateString("en-GB", { dateStyle: "medium" }) : "No new fixtures needed"}{withdrawalPreview.finalDate ? ` to ${new Date(`${withdrawalPreview.finalDate}T12:00:00`).toLocaleDateString("en-GB", { dateStyle: "medium" })}` : ""}.</p>
+                <p className="font-semibold text-emerald-800">All {withdrawalPreview.currentWeekFixturesPreserved} current-week fixture{withdrawalPreview.currentWeekFixturesPreserved === 1 ? "" : "s"} between the remaining players are locked and will not move.</p>
                 <p>{withdrawalPreview.partialWeeks ? `${withdrawalPreview.partialWeeks} week${withdrawalPreview.partialWeeks === 1 ? " has" : "s have"} an unavoidable free player because earlier matches are locked.` : "Every regenerated week is fully paired, with no BYEs."}</p>
                 {withdrawalPreview.protectedReschedules ? <p>{withdrawalPreview.protectedReschedules} approved reschedule{withdrawalPreview.protectedReschedules === 1 ? " is" : "s are"} protected.</p> : null}
                 {withdrawalPreview.pendingReschedulesClosed ? <p>{withdrawalPreview.pendingReschedulesClosed} pending reschedule request{withdrawalPreview.pendingReschedulesClosed === 1 ? " will" : "s will"} be closed if its fixture is replaced.</p> : null}
