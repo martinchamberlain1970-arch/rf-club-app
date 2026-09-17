@@ -13,6 +13,7 @@ import { getLeagueFixtureDeadline, getLeagueFixtureDeadlineTime } from "@/lib/le
 import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
+import { assignFixtureBookings, fixtureBookingLabel, type FixtureBooking } from "@/lib/fixture-bookings";
 
 type Match = {
   id: string;
@@ -426,6 +427,7 @@ export default function MatchPage() {
   } | null>(null);
   const [expectedPreviewDismissed, setExpectedPreviewDismissed] = useState(false);
   const [fixtureContacts, setFixtureContacts] = useState<FixtureContact[]>([]);
+  const [fixtureBooking, setFixtureBooking] = useState<FixtureBooking | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
 
@@ -488,7 +490,7 @@ export default function MatchPage() {
         linkedPlayerId = (linkRes.data?.linked_player_id as string | null) ?? null;
       }
 
-      const [adminLocRes, playersRes, competitionRes, framesRes, submissionsRes] = await Promise.all([
+      const [adminLocRes, playersRes, competitionRes, framesRes, submissionsRes, bookingsRes] = await Promise.all([
         (async () => {
           if (!signedInUserId || admin.isSuper || !admin.isAdmin) return null;
           const linked = linkedPlayerId;
@@ -516,6 +518,15 @@ export default function MatchPage() {
           .select("id,match_id,submitted_by_user_id,competition_entry_id,submitted_at,team1_score,team2_score,break_and_run,run_out_against_break,break_and_run_team1,break_and_run_team2,run_out_against_break_team1,run_out_against_break_team2,status,reviewed_by_user_id,reviewed_at,note")
           .eq("match_id", matchId)
           .order("submitted_at", { ascending: false }),
+        loadedMatch.player1_id && loadedMatch.player2_id && loadedMatch.player1_id !== loadedMatch.player2_id
+          ? client
+              .from("table_reservations")
+              .select("id,competition_id,participant_one_player_id,participant_two_player_id,starts_at,ends_at,purpose,status")
+              .eq("competition_id", loadedMatch.competition_id)
+              .eq("purpose", "fixture")
+              .eq("status", "booked")
+              .or(`participant_one_player_id.eq.${loadedMatch.player1_id},participant_two_player_id.eq.${loadedMatch.player1_id}`)
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (!active) return;
@@ -621,6 +632,8 @@ export default function MatchPage() {
       const loadedCompetition = (competitionRes.data as unknown) as CompetitionSettings;
       const isFixedRackLeague = loadedCompetition.competition_format === "league" && loadedCompetition.sport_type !== "snooker";
       setCompetition(loadedCompetition);
+      const loadedBookings = bookingsRes.error ? [] : (((bookingsRes.data ?? []) as unknown) as FixtureBooking[]);
+      setFixtureBooking(assignFixtureBookings([loadedMatch], loadedBookings).get(loadedMatch.id) ?? null);
       setFrames(
         isFixedRackLeague
           ? Array.from({ length: effectiveMatch.best_of }, (_, index) =>
@@ -2627,6 +2640,11 @@ export default function MatchPage() {
                     </div>
                   </div>
                 )}
+                {fixtureBooking ? (
+                  <p className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950">
+                    Table booked: {fixtureBookingLabel(fixtureBooking)}
+                  </p>
+                ) : null}
                 {isByeMatch ? (
                   <p className="mt-2 text-sm text-slate-700">This match is a BYE. The Winner auto-advanced.</p>
                 ) : (

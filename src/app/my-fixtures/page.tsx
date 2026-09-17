@@ -6,6 +6,7 @@ import RequireAuth from "@/components/RequireAuth";
 import PageNav from "@/components/PageNav";
 import { supabase } from "@/lib/supabase";
 import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
+import { assignFixtureBookings, fixtureBookingLabel, type FixtureBooking } from "@/lib/fixture-bookings";
 
 type WeekFilter = "last" | "this" | "next";
 type FixtureView = "weekly" | "all" | "results" | "weekly-results" | "tables";
@@ -82,6 +83,7 @@ export default function MyFixturesPage() {
   const [competitions, setCompetitions] = useState<CompetitionRow[]>([]);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [frames, setFrames] = useState<FrameRow[]>([]);
+  const [fixtureBookings, setFixtureBookings] = useState<FixtureBooking[]>([]);
   const [leagueData, setLeagueData] = useState<Record<string, LeagueData>>({});
   const [filter, setFilter] = useState<WeekFilter>("this");
   const [view, setView] = useState<FixtureView>("weekly");
@@ -144,7 +146,7 @@ export default function MyFixturesPage() {
         )
       )];
 
-      const [competitionRes, playerRes, framesRes] = await Promise.all([
+      const [competitionRes, playerRes, framesRes, bookingsRes] = await Promise.all([
         competitionIds.length
           ? client.from("competitions").select("id,name,sport_type,competition_format").in("id", competitionIds)
           : Promise.resolve({ data: [], error: null }),
@@ -153,6 +155,15 @@ export default function MyFixturesPage() {
           : Promise.resolve({ data: [], error: null }),
         loadedMatches.length
           ? client.from("frames").select("match_id,winner_player_id").in("match_id", loadedMatches.map((match) => match.id))
+          : Promise.resolve({ data: [], error: null }),
+        competitionIds.length
+          ? client
+              .from("table_reservations")
+              .select("id,competition_id,participant_one_player_id,participant_two_player_id,starts_at,ends_at,purpose,status")
+              .in("competition_id", competitionIds)
+              .eq("purpose", "fixture")
+              .eq("status", "booked")
+              .or(`participant_one_player_id.eq.${playerId},participant_two_player_id.eq.${playerId}`)
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (competitionRes.error || playerRes.error || framesRes.error) {
@@ -163,6 +174,7 @@ export default function MyFixturesPage() {
       setCompetitions(loadedCompetitions);
       setPlayers(((playerRes.data ?? []) as unknown) as PlayerRow[]);
       setFrames(((framesRes.data ?? []) as unknown) as FrameRow[]);
+      setFixtureBookings(bookingsRes.error ? [] : (((bookingsRes.data ?? []) as unknown) as FixtureBooking[]));
       const leagueResponses = await Promise.all(loadedCompetitions.filter((competition) => competition.competition_format === "league").map(async (competition) => {
         const response = await fetch(`/api/public/leagues/${encodeURIComponent(competition.id)}`, { cache: "no-store" });
         if (!response.ok) return null;
@@ -200,6 +212,7 @@ export default function MyFixturesPage() {
         if (!fixture.isReschedulePlaceholder) publishedFixtureByMatch.set(fixture.sourceMatchId ?? fixture.id, fixture);
       }
     }
+    const bookingByMatch = assignFixtureBookings(matches, fixtureBookings);
     return matches.flatMap((match) => {
         const isDoubles = Boolean(match.team1_player1_id || match.team2_player1_id);
         const isBye = match.status === "bye" || Boolean(match.player1_id && match.player1_id === match.player2_id);
@@ -235,6 +248,7 @@ export default function MyFixturesPage() {
           isReschedulePlaceholder: false,
           rescheduledFrom: publishedFixture?.rescheduledFrom ?? null,
           rescheduledTo: publishedFixture?.rescheduledTo ?? null,
+          booking: bookingByMatch.get(match.id) ?? null,
         };
         if (!activeRow.rescheduledFrom || !activeRow.rescheduledTo) return [activeRow];
         return [
@@ -245,10 +259,11 @@ export default function MyFixturesPage() {
             displayWeek: publishedFixture?.originalWeek ?? match.round_no ?? 1,
             isReschedulePlaceholder: true,
             scoreLabel: null,
+            booking: null,
           },
         ];
       }).sort((a, b) => String(a.displayScheduledFor ?? "").localeCompare(String(b.displayScheduledFor ?? "")) || a.displayWeek - b.displayWeek);
-  }, [competitionById, frames, leagueData, linkedPlayerId, matches, playerNameById]);
+  }, [competitionById, fixtureBookings, frames, leagueData, linkedPlayerId, matches, playerNameById]);
 
   const fixtureRows = useMemo(() => allFixtureRows.filter(({ displayScheduledFor }) => displayScheduledFor && displayScheduledFor >= range.from && displayScheduledFor <= range.to), [allFixtureRows, range]);
   const resultRows = useMemo(() => allFixtureRows.filter(({ match, isReschedulePlaceholder }) => match.status === "complete" && !isReschedulePlaceholder), [allFixtureRows]);
@@ -280,7 +295,7 @@ export default function MyFixturesPage() {
 
   const renderFixtureCards = (rows: typeof allFixtureRows, emptyMessage: string) => rows.length ? (
     <section className="space-y-3">
-      {rows.map(({ match, competition, myLabel, opponentLabel, scoreLabel, displayScheduledFor, displayWeek, isBye, isReschedulePlaceholder, rescheduledFrom, rescheduledTo }) => {
+      {rows.map(({ match, competition, myLabel, opponentLabel, scoreLabel, displayScheduledFor, displayWeek, isBye, isReschedulePlaceholder, rescheduledFrom, rescheduledTo, booking }) => {
         const canOfferReschedule = Boolean(
           !isReschedulePlaceholder &&
           !isBye &&
@@ -306,6 +321,7 @@ export default function MyFixturesPage() {
           {isReschedulePlaceholder ? <p className="mt-2 text-sm font-semibold text-amber-900">Rescheduled to {rescheduledTo ? new Date(`${rescheduledTo}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "the new fixture week"}. Enter the result against the fixture in its new week.</p> : null}
           {!isReschedulePlaceholder && rescheduledFrom ? <p className="mt-2 text-xs font-semibold text-teal-800">Rescheduled from {new Date(`${rescheduledFrom}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}
           {!isBye && match.opening_break_player_id ? <p className="mt-2 text-xs font-semibold text-emerald-700">Opening break: {playerNameById.get(match.opening_break_player_id) ?? "Assigned player"}</p> : null}
+          {booking ? <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950">Table booked: {fixtureBookingLabel(booking)}</p> : null}
         </div>
         );
         return isReschedulePlaceholder
