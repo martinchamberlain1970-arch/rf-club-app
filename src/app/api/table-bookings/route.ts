@@ -281,6 +281,54 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "set_weekly_availability") {
+    if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
+    const tableId = String(body?.tableId ?? "");
+    const hours: unknown[] = Array.isArray(body?.hours) ? body.hours : [];
+    const normalizedHours: Array<{ weekday: number; isClosed: boolean; opensAt: string | null; closesAt: string | null }> = hours.map((entry: unknown) => {
+      const row = (entry ?? {}) as Record<string, unknown>;
+      const weekday = Number(row.weekday);
+      const isClosed = Boolean(row.isClosed);
+      const opensAt = isClosed ? null : String(row.opensAt ?? "").slice(0, 5);
+      const closesAt = isClosed ? null : String(row.closesAt ?? "").slice(0, 5);
+      return { weekday, isClosed, opensAt, closesAt };
+    });
+    if (!tableId || normalizedHours.length !== 7 || new Set(normalizedHours.map((entry) => entry.weekday)).size !== 7 || normalizedHours.some((entry) => entry.weekday < 0 || entry.weekday > 6 || (!entry.isClosed && (!validTime(entry.opensAt ?? "") || !validTime(entry.closesAt ?? "") || timeMinutes(entry.closesAt ?? "") <= timeMinutes(entry.opensAt ?? ""))))) {
+      return NextResponse.json({ error: "Enter valid opening hours for every day from Monday to Sunday." }, { status: 400 });
+    }
+    const tableResult = await auth.client.from("cue_tables").select("id,name").eq("id", tableId).eq("is_active", true).maybeSingle();
+    if (!tableResult.data) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
+    const now = new Date();
+    const today = now.toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+    const bookingHorizon = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+    const horizonDate = bookingHorizon.toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+    const [reservationsResult, overridesResult] = await Promise.all([
+      auth.client.from("table_reservations").select("starts_at,ends_at").eq("table_id", tableId).eq("status", "booked").gte("ends_at", now.toISOString()).lte("starts_at", bookingHorizon.toISOString()),
+      auth.client.from("table_booking_hour_overrides").select("starts_on,ends_on").eq("table_id", tableId).gte("ends_on", today).lte("starts_on", horizonDate),
+    ]);
+    if (reservationsResult.error) return NextResponse.json({ error: reservationsResult.error.message }, { status: 400 });
+    if (overridesResult.error && !missingTemporaryHoursTable(overridesResult.error)) return NextResponse.json({ error: overridesResult.error.message }, { status: 400 });
+    const datedPeriods = missingTemporaryHoursTable(overridesResult.error) ? [] : overridesResult.data ?? [];
+    const affected = (reservationsResult.data ?? []).filter((reservation) => {
+      const start = londonDateParts(new Date(reservation.starts_at));
+      if (datedPeriods.some((period) => period.starts_on <= start.date && period.ends_on >= start.date)) return false;
+      const end = londonDateParts(new Date(reservation.ends_at));
+      const rule = normalizedHours.find((entry) => entry.weekday === start.weekday);
+      return !rule || rule.isClosed || start.date !== end.date || start.minutes < timeMinutes(rule.opensAt ?? "00:00") || end.minutes > timeMinutes(rule.closesAt ?? "00:00");
+    });
+    if (affected.length) return NextResponse.json({ error: `These standard hours would put ${affected.length} existing reservation${affected.length === 1 ? "" : "s"} outside opening hours. Move or cancel them first.` }, { status: 409 });
+
+    const deleteResult = await auth.client.from("table_booking_hours").delete().eq("table_id", tableId);
+    if (deleteResult.error) return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+    const openHours = normalizedHours.filter((entry) => !entry.isClosed).map((entry) => ({ table_id: tableId, weekday: entry.weekday, opens_at: entry.opensAt, closes_at: entry.closesAt, updated_at: new Date().toISOString() }));
+    if (openHours.length) {
+      const insertResult = await auth.client.from("table_booking_hours").insert(openHours);
+      if (insertResult.error) return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
+    }
+    await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: "standard_table_availability_updated", entity_type: "cue_table", entity_id: tableId, summary: `Standard Monday-to-Sunday opening hours updated for ${tableResult.data.name}.`, meta: { hours: normalizedHours } });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "set_temporary_availability") {
     if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
     const tableId = String(body?.tableId ?? "");
