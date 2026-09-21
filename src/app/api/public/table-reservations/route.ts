@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const tablesResult = await tablesQuery;
   if (tablesResult.error) return NextResponse.json({ error: tablesResult.error.message }, { status: 400 });
   const tableIds = (tablesResult.data ?? []).map((table) => table.id);
-  const [reservationsResult, blocksResult, hoursResult] = await Promise.all([
+  const [reservationsResult, blocksResult, hoursResult, temporaryHoursResult] = await Promise.all([
     tableIds.length
       ? client.from("table_reservations").select("id,table_id,booked_for_player_id,starts_at,ends_at,purpose,notes,participant_one,participant_two,team_name").in("table_id", tableIds).eq("status", "booked").gt("ends_at", approximateFrom).lte("starts_at", approximateTo).order("starts_at")
       : Promise.resolve({ data: [], error: null }),
@@ -36,8 +36,12 @@ export async function GET(request: NextRequest) {
     tableIds.length
       ? client.from("table_booking_hours").select("id,table_id,weekday,opens_at,closes_at").in("table_id", tableIds).order("weekday")
       : Promise.resolve({ data: [], error: null }),
+    tableIds.length
+      ? client.from("table_booking_hour_overrides").select("id,table_id,starts_on,ends_on,weekday,is_closed,opens_at,closes_at").in("table_id", tableIds).gte("ends_on", weekStart).lte("starts_on", rangeEnd).order("starts_on")
+      : Promise.resolve({ data: [], error: null }),
   ]);
-  const error = reservationsResult.error || blocksResult.error || hoursResult.error;
+  const missingTemporaryHoursTable = temporaryHoursResult.error?.code === "PGRST205" || temporaryHoursResult.error?.message?.includes("table_booking_hour_overrides");
+  const error = reservationsResult.error || blocksResult.error || hoursResult.error || (missingTemporaryHoursTable ? null : temporaryHoursResult.error);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   const reservations = (reservationsResult.data ?? []).filter((entry) => new Date(entry.ends_at).getTime() > now.getTime() && londonDateKey(entry.starts_at) < rangeEnd && londonDateKey(entry.ends_at) >= weekStart);
   const blocks = (blocksResult.data ?? []).filter((entry) => new Date(entry.ends_at).getTime() > now.getTime() && (!entry.table_id || tableIds.includes(entry.table_id)) && londonDateKey(entry.starts_at) < rangeEnd && londonDateKey(entry.ends_at) >= weekStart);
@@ -61,6 +65,7 @@ export async function GET(request: NextRequest) {
     })),
     blocks,
     availability: hoursResult.data ?? [],
+    temporaryAvailability: missingTemporaryHoursTable ? [] : temporaryHoursResult.data ?? [],
     updatedAt: new Date().toISOString(),
   }, { headers: { "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30" } });
 }

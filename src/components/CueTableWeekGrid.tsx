@@ -1,5 +1,7 @@
 "use client";
 
+import { effectiveHoursForDate, type TemporaryBookingHours } from "@/lib/table-booking-hours";
+
 export type GridTable = { id: string; name: string; sport_type: "pool" | "snooker" };
 export type GridReservation = { id: string; table_id: string; starts_at: string; ends_at: string; playerName: string; purpose?: string; notes?: string | null };
 export type GridAvailability = { table_id: string; weekday: number; opens_at: string; closes_at: string };
@@ -48,7 +50,7 @@ function freeSlots(opens: number, closes: number, periods: Period[]) {
   return slots;
 }
 
-export default function CueTableWeekGrid({ table, weekStart, reservations, blocks, availability, canBook = false, onChooseSlot, tv = false }: { table: GridTable; weekStart: string; reservations: GridReservation[]; blocks: GridBlock[]; availability: GridAvailability[]; canBook?: boolean; onChooseSlot?: (startsAt: string, duration: number) => void; tv?: boolean }) {
+export default function CueTableWeekGrid({ table, weekStart, reservations, blocks, availability, temporaryAvailability = [], canBook = false, onChooseSlot, tv = false }: { table: GridTable; weekStart: string; reservations: GridReservation[]; blocks: GridBlock[]; availability: GridAvailability[]; temporaryAvailability?: TemporaryBookingHours[]; canBook?: boolean; onChooseSlot?: (startsAt: string, duration: number) => void; tv?: boolean }) {
   const rules = availability.filter((rule) => rule.table_id === table.id);
   const axisStart = Math.min(11, ...rules.map((rule) => Math.floor(timeMinutes(rule.opens_at) / 60)));
   const axisEnd = Math.max(23, ...rules.map((rule) => Math.ceil(timeMinutes(rule.closes_at) / 60)));
@@ -60,7 +62,7 @@ export default function CueTableWeekGrid({ table, weekStart, reservations, block
   return <div className={`overflow-hidden rounded-2xl border ${tv ? "border-white/20 bg-black/25" : "border-slate-200 bg-white"}`}><div className="overflow-x-auto"><div className={tv ? "min-w-[1180px]" : "min-w-[1000px]"}>
     <div className={`grid grid-cols-[120px_1fr] border-b ${tv ? "border-white/20 bg-black/35" : "border-slate-200 bg-slate-50"}`}><div className={`p-3 font-black ${tv ? "text-lg text-lime-300" : "text-sm text-slate-950"}`}>{table.name}</div><div className="relative h-12">{hours.map((hour) => <div key={hour} className={`absolute inset-y-0 border-l ${tv ? "border-white/15" : "border-slate-300"}`} style={{ left: left(hour * 60) }}><span className={`absolute left-1 top-3 text-xs font-bold ${tv ? "text-white/70" : "text-slate-600"}`}>{pad(hour)}:00</span></div>)}</div></div>
     {datesFrom(weekStart).map((date) => {
-      const rule = rules.find((entry) => entry.weekday === weekday(date));
+      const rule = effectiveHoursForDate(table.id, date, weekday(date), rules, temporaryAvailability);
       const opens = rule ? timeMinutes(rule.opens_at) : 0;
       const closes = rule ? timeMinutes(rule.closes_at) : 0;
       const periods = periodsForDate(date, table, reservations, blocks);

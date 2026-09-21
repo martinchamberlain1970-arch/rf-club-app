@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { effectiveHoursForDate, type TemporaryBookingHours } from "@/lib/table-booking-hours";
 
 type CalendarTable = { id: string; name: string; sport_type: "pool" | "snooker" };
 type CalendarReservation = { table_id: string; starts_at: string; ends_at: string; status: string };
@@ -18,10 +19,11 @@ const minutes = (value: string) => { const [hour, minute] = value.slice(0, 5).sp
 const timeValue = (total: number) => `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 const overlaps = (start: Date, end: Date, item: { starts_at: string; ends_at: string }) => start < new Date(item.ends_at) && end > new Date(item.starts_at);
 
-export default function TableBookingCalendar({ tables, reservations, availability, blocks, onChooseSlot }: {
+export default function TableBookingCalendar({ tables, reservations, availability, temporaryAvailability = [], blocks, onChooseSlot }: {
   tables: CalendarTable[];
   reservations: CalendarReservation[];
   availability: CalendarAvailability[];
+  temporaryAvailability?: TemporaryBookingHours[];
   blocks: CalendarBlock[];
   onChooseSlot: (tableId: string, startsAt: string, duration: number) => void;
 }) {
@@ -34,7 +36,7 @@ export default function TableBookingCalendar({ tables, reservations, availabilit
 
   const slotData = (day: Date) => {
     if (!table || day < today || day > latest) return { total: 0, free: [] as { start: Date; label: string; duration: number }[] };
-    const rule = availability.find((entry) => entry.table_id === table.id && entry.weekday === day.getDay());
+    const rule = effectiveHoursForDate(table.id, dateKey(day), day.getDay(), availability, temporaryAvailability);
     if (!rule) return { total: 0, free: [] as { start: Date; label: string; duration: number }[] };
     const duration = table.sport_type === "pool" ? 30 : 60;
     const startInterval = 30;

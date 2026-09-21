@@ -80,6 +80,35 @@ function validTime(value: string) {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
+function missingTemporaryHoursTable(error: { code?: string; message?: string } | null | undefined) {
+  return error?.code === "PGRST205" || Boolean(error?.message?.includes("table_booking_hour_overrides"));
+}
+
+async function effectiveBookingHours(
+  client: NonNullable<Awaited<ReturnType<typeof authorize>>>["client"],
+  tableId: string,
+  date: string,
+  weekday: number
+) {
+  const overrideResult = await client
+    .from("table_booking_hour_overrides")
+    .select("is_closed,opens_at,closes_at")
+    .eq("table_id", tableId)
+    .eq("weekday", weekday)
+    .lte("starts_on", date)
+    .gte("ends_on", date)
+    .order("starts_on", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (overrideResult.error && !missingTemporaryHoursTable(overrideResult.error)) throw overrideResult.error;
+  if (overrideResult.data) {
+    return overrideResult.data.is_closed ? null : overrideResult.data;
+  }
+  const normalResult = await client.from("table_booking_hours").select("opens_at,closes_at").eq("table_id", tableId).eq("weekday", weekday).maybeSingle();
+  if (normalResult.error) throw normalResult.error;
+  return normalResult.data;
+}
+
 const bookingTitle = (reservation: { purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null; notes?: string | null }) => reservation.purpose === "league_match"
   ? reservation.team_name || "League team booking"
   : reservation.purpose === "other"
@@ -97,13 +126,15 @@ export async function GET(request: NextRequest) {
   const to = new Date(now.getTime() + bookingViewDays * 24 * 60 * 60 * 1000).toISOString();
   let reservationsQuery = auth.client.from("table_reservations").select("id,table_id,booked_by_user_id,booked_for_player_id,starts_at,ends_at,purpose,notes,status,created_at,participant_one,participant_two,team_name,requester_email,rejection_reason,reviewed_at,competition_id,participant_one_player_id,participant_two_player_id").gt("ends_at", from).lte("starts_at", to).order("starts_at");
   if (!auth.isSuper) reservationsQuery = reservationsQuery.or(`status.eq.booked,booked_by_user_id.eq.${auth.user.id}`);
-  const [tablesResult, reservationsResult, hoursResult, blocksResult] = await Promise.all([
+  const [tablesResult, reservationsResult, hoursResult, blocksResult, temporaryHoursResult] = await Promise.all([
     auth.client.from("cue_tables").select("id,name,sport_type,location_id,display_order").eq("is_active", true).order("display_order"),
     reservationsQuery,
     auth.client.from("table_booking_hours").select("id,table_id,weekday,opens_at,closes_at").order("weekday"),
     auth.client.from("table_booking_blocks").select("id,table_id,starts_at,ends_at,category,title,notes,created_at").gt("ends_at", from).lte("starts_at", to).order("starts_at"),
+    auth.client.from("table_booking_hour_overrides").select("id,table_id,starts_on,ends_on,weekday,is_closed,opens_at,closes_at").gte("ends_on", now.toLocaleDateString("en-CA", { timeZone: "Europe/London" })).order("starts_on"),
   ]);
-  const error = tablesResult.error || reservationsResult.error || hoursResult.error || blocksResult.error;
+  const temporaryHoursError = missingTemporaryHoursTable(temporaryHoursResult.error) ? null : temporaryHoursResult.error;
+  const error = tablesResult.error || reservationsResult.error || hoursResult.error || blocksResult.error || temporaryHoursError;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   const playerIds = [...new Set((reservationsResult.data ?? []).flatMap((reservation) => [reservation.booked_for_player_id, reservation.participant_one_player_id, reservation.participant_two_player_id]).filter(Boolean))];
   const namesResult = playerIds.length ? await auth.client.from("players").select("id,display_name,full_name").in("id", playerIds) : { data: [], error: null };
@@ -179,6 +210,7 @@ export async function GET(request: NextRequest) {
       participant_two: reservation.participant_two || names.get(reservation.participant_two_player_id) || null,
     })),
     availability: hoursResult.data ?? [],
+    temporaryAvailability: temporaryHoursError ? [] : temporaryHoursResult.data ?? [],
     blocks: blocksResult.data ?? [],
     access,
     players,
@@ -249,6 +281,81 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "set_temporary_availability") {
+    if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
+    const tableId = String(body?.tableId ?? "");
+    const startsOn = String(body?.startsOn ?? "");
+    const endsOn = String(body?.endsOn ?? "");
+    const hours: unknown[] = Array.isArray(body?.hours) ? body.hours : [];
+    const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00Z`));
+    if (!tableId || !validDate(startsOn) || !validDate(endsOn) || endsOn < startsOn) return NextResponse.json({ error: "Choose a valid start and end date." }, { status: 400 });
+    const rangeDays = Math.round((Date.parse(`${endsOn}T12:00:00Z`) - Date.parse(`${startsOn}T12:00:00Z`)) / 86_400_000) + 1;
+    if (rangeDays > 366) return NextResponse.json({ error: "Temporary hours can cover a maximum of one year." }, { status: 400 });
+    if (hours.length !== 7) return NextResponse.json({ error: "Enter opening hours for every day from Monday to Sunday." }, { status: 400 });
+    const normalizedHours: Array<{ weekday: number; isClosed: boolean; opensAt: string | null; closesAt: string | null }> = hours.map((entry: unknown) => {
+      const row = (entry ?? {}) as Record<string, unknown>;
+      const weekday = Number(row.weekday);
+      const isClosed = Boolean(row.isClosed);
+      const opensAt = isClosed ? null : String(row.opensAt ?? "").slice(0, 5);
+      const closesAt = isClosed ? null : String(row.closesAt ?? "").slice(0, 5);
+      return { weekday, isClosed, opensAt, closesAt };
+    });
+    if (new Set(normalizedHours.map((entry) => entry.weekday)).size !== 7 || normalizedHours.some((entry) => entry.weekday < 0 || entry.weekday > 6 || (!entry.isClosed && (!validTime(entry.opensAt ?? "") || !validTime(entry.closesAt ?? "") || timeMinutes(entry.closesAt ?? "") <= timeMinutes(entry.opensAt ?? ""))))) {
+      return NextResponse.json({ error: "Check the Monday-to-Sunday opening and closing times." }, { status: 400 });
+    }
+    const tableResult = await auth.client.from("cue_tables").select("id,name").eq("id", tableId).eq("is_active", true).maybeSingle();
+    if (!tableResult.data) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
+    const overlapResult = await auth.client.from("table_booking_hour_overrides").select("id,starts_on,ends_on").eq("table_id", tableId).lte("starts_on", endsOn).gte("ends_on", startsOn);
+    if (overlapResult.error) return NextResponse.json({ error: missingTemporaryHoursTable(overlapResult.error) ? "Run the temporary opening-hours database migration first." : overlapResult.error.message }, { status: 400 });
+    const conflictingPeriod = (overlapResult.data ?? []).find((entry) => entry.starts_on !== startsOn || entry.ends_on !== endsOn);
+    if (conflictingPeriod) return NextResponse.json({ error: `These dates overlap another temporary schedule (${conflictingPeriod.starts_on} to ${conflictingPeriod.ends_on}). Edit or remove that schedule first.` }, { status: 409 });
+
+    const reservationsResult = await auth.client
+      .from("table_reservations")
+      .select("starts_at,ends_at")
+      .eq("table_id", tableId)
+      .eq("status", "booked")
+      .gte("ends_at", `${startsOn}T00:00:00Z`)
+      .lte("starts_at", `${endsOn}T23:59:59Z`);
+    if (reservationsResult.error) return NextResponse.json({ error: reservationsResult.error.message }, { status: 400 });
+    const affected = (reservationsResult.data ?? []).filter((reservation) => {
+      const start = londonDateParts(new Date(reservation.starts_at));
+      const end = londonDateParts(new Date(reservation.ends_at));
+      if (start.date < startsOn || start.date > endsOn) return false;
+      const rule = normalizedHours.find((entry) => entry.weekday === start.weekday);
+      return !rule || rule.isClosed || start.date !== end.date || start.minutes < timeMinutes(rule.opensAt ?? "00:00") || end.minutes > timeMinutes(rule.closesAt ?? "00:00");
+    });
+    if (affected.length) return NextResponse.json({ error: `This schedule would put ${affected.length} existing reservation${affected.length === 1 ? "" : "s"} outside the opening hours. Move or cancel them first.` }, { status: 409 });
+
+    const deleteResult = await auth.client.from("table_booking_hour_overrides").delete().eq("table_id", tableId).eq("starts_on", startsOn).eq("ends_on", endsOn);
+    if (deleteResult.error) return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+    const insertResult = await auth.client.from("table_booking_hour_overrides").insert(normalizedHours.map((entry) => ({
+      table_id: tableId,
+      starts_on: startsOn,
+      ends_on: endsOn,
+      weekday: entry.weekday,
+      is_closed: entry.isClosed,
+      opens_at: entry.opensAt,
+      closes_at: entry.closesAt,
+      created_by_user_id: auth.user.id,
+      updated_at: new Date().toISOString(),
+    })));
+    if (insertResult.error) return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
+    await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: "temporary_table_availability_updated", entity_type: "cue_table", entity_id: tableId, summary: `Temporary opening hours set for ${tableResult.data.name}, ${startsOn} to ${endsOn}.`, meta: { starts_on: startsOn, ends_on: endsOn, hours: normalizedHours } });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "delete_temporary_availability") {
+    if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
+    const tableId = String(body?.tableId ?? "");
+    const startsOn = String(body?.startsOn ?? "");
+    const endsOn = String(body?.endsOn ?? "");
+    const deleteResult = await auth.client.from("table_booking_hour_overrides").delete().eq("table_id", tableId).eq("starts_on", startsOn).eq("ends_on", endsOn);
+    if (deleteResult.error) return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+    await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: "temporary_table_availability_removed", entity_type: "cue_table", entity_id: tableId, summary: `Temporary opening hours removed for ${startsOn} to ${endsOn}.` });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "add_block") {
     if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
     const tableId = body?.tableId ? String(body.tableId) : null;
@@ -296,13 +403,13 @@ export async function POST(request: NextRequest) {
     if (action === "approve") {
       const startInLondon = londonDateParts(new Date(reservation.starts_at));
       const endInLondon = londonDateParts(new Date(reservation.ends_at));
-      const [hoursResult, blockResult] = await Promise.all([
-        auth.client.from("table_booking_hours").select("opens_at,closes_at").eq("table_id", reservation.table_id).eq("weekday", startInLondon.weekday).maybeSingle(),
+      const [effectiveHours, blockResult] = await Promise.all([
+        effectiveBookingHours(auth.client, reservation.table_id, startInLondon.date, startInLondon.weekday),
         auth.client.from("table_booking_blocks").select("title").or(`table_id.is.null,table_id.eq.${reservation.table_id}`).lt("starts_at", reservation.ends_at).gt("ends_at", reservation.starts_at).limit(1).maybeSingle(),
       ]);
-      const approvalError = hoursResult.error || blockResult.error;
+      const approvalError = blockResult.error;
       if (approvalError) return NextResponse.json({ error: approvalError.message }, { status: 400 });
-      const withinHours = hoursResult.data && startInLondon.date === endInLondon.date && startInLondon.minutes >= timeMinutes(hoursResult.data.opens_at) && endInLondon.minutes <= timeMinutes(hoursResult.data.closes_at);
+      const withinHours = effectiveHours && startInLondon.date === endInLondon.date && startInLondon.minutes >= timeMinutes(effectiveHours.opens_at) && endInLondon.minutes <= timeMinutes(effectiveHours.closes_at);
       if (!withinHours) return NextResponse.json({ error: "This request is now outside the table's published booking hours." }, { status: 409 });
       if (blockResult.data) return NextResponse.json({ error: `This request overlaps an unavailable period: ${blockResult.data.title}.` }, { status: 409 });
       const updateResult = await auth.client.from("table_reservations").update({ status: "booked", reviewed_at: new Date().toISOString(), reviewed_by_user_id: auth.user.id, rejection_reason: null }).eq("id", reservationId);
@@ -414,11 +521,11 @@ export async function POST(request: NextRequest) {
     participantTwo = entrantNames.get(participantTwoPlayerId) ?? null;
   }
   const endInLondon = londonDateParts(endsAt);
-  const hoursResult = await auth.client.from("table_booking_hours").select("opens_at,closes_at").eq("table_id", tableId).eq("weekday", startInLondon.weekday).maybeSingle();
-  if (hoursResult.error) return NextResponse.json({ error: hoursResult.error.message }, { status: 400 });
-  const withinHours = hoursResult.data && startInLondon.date === endInLondon.date && startInLondon.minutes >= timeMinutes(hoursResult.data.opens_at) && endInLondon.minutes <= timeMinutes(hoursResult.data.closes_at);
+  const effectiveHours = await effectiveBookingHours(auth.client, tableId, startInLondon.date, startInLondon.weekday).catch((error: Error) => ({ error }));
+  if (effectiveHours && "error" in effectiveHours) return NextResponse.json({ error: effectiveHours.error.message }, { status: 400 });
+  const withinHours = effectiveHours && startInLondon.date === endInLondon.date && startInLondon.minutes >= timeMinutes(effectiveHours.opens_at) && endInLondon.minutes <= timeMinutes(effectiveHours.closes_at);
   if (!withinHours) {
-    const hours = hoursResult.data ? `${hoursResult.data.opens_at.slice(0, 5)}–${hoursResult.data.closes_at.slice(0, 5)}` : "closed";
+    const hours = effectiveHours ? `${effectiveHours.opens_at.slice(0, 5)}–${effectiveHours.closes_at.slice(0, 5)}` : "closed";
     return NextResponse.json({ error: `This table is not available for that whole period. Its booking hours on ${startInLondon.date} are ${hours}.` }, { status: 409 });
   }
   const blockResult = await auth.client.from("table_booking_blocks").select("title").or(`table_id.is.null,table_id.eq.${tableId}`).lt("starts_at", endsAt.toISOString()).gt("ends_at", startsAt.toISOString()).limit(1).maybeSingle();
