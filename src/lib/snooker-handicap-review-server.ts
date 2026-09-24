@@ -20,11 +20,15 @@ export function targetHandicapFromElo(rating: number) {
   return Math.round(raw / 4) * 4;
 }
 
-export function nextMondayDate(from = new Date()) {
-  const date = new Date(from);
-  const daysUntilMonday = ((8 - date.getDay()) % 7) || 7;
-  date.setDate(date.getDate() + daysUntilMonday);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+export function currentLondonDate(from = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(from);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
 }
 
 export async function runSnookerHandicapReview(client: SupabaseClient, options: ReviewOptions) {

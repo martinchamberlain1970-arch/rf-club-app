@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { nextMondayDate, runSnookerHandicapReview } from "@/lib/snooker-handicap-review-server";
+import { currentLondonDate, runSnookerHandicapReview } from "@/lib/snooker-handicap-review-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   const playerId = payload.playerId?.trim() || null;
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
   let result: Awaited<ReturnType<typeof runSnookerHandicapReview>>;
-  const effectiveFrom = nextMondayDate();
+  const effectiveFrom = currentLondonDate();
   try {
     result = await runSnookerHandicapReview(adminClient, {
       playerId,

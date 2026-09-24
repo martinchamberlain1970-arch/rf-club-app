@@ -8,8 +8,19 @@ import { supabase } from "@/lib/supabase";
 type Competition = { id: string; name: string };
 type Entry = { competition_id: string; player_id: string };
 type Player = { id: string; display_name: string; full_name: string | null; snooker_handicap: number | null };
+type ReviewStatus = { lastReviewedAt: string | null; nextReviewAt: string | null; intervalDays: number; movementLimit: null };
 function playerName(player: Player) {
   return player.full_name?.trim() || player.display_name;
+}
+
+function reviewDate(value: string | null) {
+  if (!value) return "Not yet recorded";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
 export default function HandicapsPage() {
@@ -18,6 +29,7 @@ export default function HandicapsPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [linkedPlayerId, setLinkedPlayerId] = useState<string | null>(null);
+  const [reviewStatus, setReviewStatus] = useState<ReviewStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -29,7 +41,7 @@ export default function HandicapsPage() {
       setLoading(true);
       const auth = await client.auth.getUser();
       const userId = auth.data.user?.id;
-      const [competitionResult, userResult] = await Promise.all([
+      const [competitionResult, userResult, reviewResult] = await Promise.all([
         client
           .from("competitions")
           .select("id,name")
@@ -39,6 +51,9 @@ export default function HandicapsPage() {
           .eq("is_completed", false)
           .order("created_at", { ascending: false }),
         userId ? client.from("app_users").select("linked_player_id").eq("id", userId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+        fetch("/api/snooker-handicaps/review-status", { cache: "no-store" })
+          .then(async (response) => response.ok ? await response.json() as ReviewStatus : null)
+          .catch(() => null),
       ]);
       if (!active) return;
       if (competitionResult.error) {
@@ -49,6 +64,7 @@ export default function HandicapsPage() {
       const loadedCompetitions = (competitionResult.data ?? []) as Competition[];
       setCompetitions(loadedCompetitions);
       setLinkedPlayerId(userResult.data?.linked_player_id ?? null);
+      setReviewStatus(reviewResult);
       const competitionIds = loadedCompetitions.map((competition) => competition.id);
       if (!competitionIds.length) {
         setLoading(false);
@@ -111,6 +127,20 @@ export default function HandicapsPage() {
                 <h2 className="mt-2 text-xl font-black text-slate-950">{ownRow ? `Your handicap: ${ownRow.handicap > 0 ? "+" : ""}${ownRow.handicap}` : "Competition handicaps"}</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-700">This is the player’s current Elo-aligned handicap. The exact <strong>match handicap start</strong> is calculated from the difference between both players and is shown on every fixture and match screen.</p>
                 <p className="mt-1 text-xs text-slate-600">A lower handicap represents the stronger player. Only the difference is applied as the match start.</p>
+              </section>
+              <section className="rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-violet-700">How handicaps are reviewed</p>
+                <h2 className="mt-2 text-lg font-black text-slate-950">Automatic Elo review every four weeks</h2>
+                <div className="mt-3 grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
+                  <div className="rounded-xl bg-white p-3"><span className="block text-xs font-bold uppercase tracking-wide text-slate-500">Last review</span><strong>{reviewDate(reviewStatus?.lastReviewedAt ?? null)}</strong></div>
+                  <div className="rounded-xl bg-white p-3"><span className="block text-xs font-bold uppercase tracking-wide text-slate-500">Next review due</span><strong>{reviewDate(reviewStatus?.nextReviewAt ?? null)}</strong></div>
+                </div>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-700">
+                  <li>The calculation starts at Elo 1000: every five Elo points changes the handicap by one point, rounded to the nearest four.</li>
+                  <li>There is no maximum movement at a review—the handicap moves directly to its Elo-aligned figure.</li>
+                  <li>Any change applies immediately to every unplayed fixture. Completed results are never changed.</li>
+                  <li>The Super User can also recalculate a new player manually between scheduled reviews.</li>
+                </ul>
               </section>
               <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="border-b border-slate-200 px-4 py-3"><h2 className="font-bold text-slate-950">All player handicaps</h2><p className="mt-1 text-xs text-slate-500">Listed alphabetically. Match starts are capped at 40 points.</p></div>

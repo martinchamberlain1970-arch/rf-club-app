@@ -1061,7 +1061,7 @@ export default function StatsPage() {
                         <div>
                           <p className="text-sm font-semibold text-slate-900">Snooker handicap review</p>
                           <p className="text-xs text-slate-600">
-                            Handicaps are recalculated directly from club Elo every four weeks, with no limit on upward or downward movement. Updated starts apply to pending fixtures from the following Monday.
+                            Handicaps are recalculated directly from club Elo every four weeks, with no limit on upward or downward movement. Updated starts apply immediately to every unplayed fixture.
                           </p>
                         </div>
                         <div className="mt-3 flex flex-wrap items-end gap-2">
