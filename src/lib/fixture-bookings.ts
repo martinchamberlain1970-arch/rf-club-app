@@ -31,13 +31,17 @@ function scheduledTime(value: string | null | undefined) {
 
 /**
  * Assigns each confirmed competition-table booking to the nearest matching
- * fixture. The one-to-one assignment matters when the same pair play twice.
+ * fixture. Open fixtures ignore expired reservations so a replacement booking
+ * becomes the visible booking. The one-to-one assignment matters when the same
+ * pair play twice.
  */
 export function assignFixtureBookings(
   matches: FixtureBookingMatch[],
-  bookings: FixtureBooking[]
+  bookings: FixtureBooking[],
+  now = new Date()
 ) {
   const edges: Array<{ matchId: string; booking: FixtureBooking; distance: number }> = [];
+  const nowTime = now.getTime();
 
   for (const match of matches) {
     if (match.status === "bye") continue;
@@ -46,11 +50,14 @@ export function assignFixtureBookings(
     const matchTime = scheduledTime(match.scheduled_for);
 
     for (const booking of bookings) {
+      const bookingEndTime = Date.parse(booking.ends_at);
+      const matchIsOpen = match.status === "pending" || match.status === "in_progress";
       if (
         booking.status !== "booked" ||
         booking.purpose !== "fixture" ||
         booking.competition_id !== match.competition_id ||
-        pairKey(booking.participant_one_player_id, booking.participant_two_player_id) !== matchPair
+        pairKey(booking.participant_one_player_id, booking.participant_two_player_id) !== matchPair ||
+        (matchIsOpen && Number.isFinite(bookingEndTime) && bookingEndTime < nowTime)
       ) continue;
       const bookingTime = Date.parse(booking.starts_at);
       edges.push({
