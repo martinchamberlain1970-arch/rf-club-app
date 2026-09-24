@@ -43,7 +43,7 @@ const faqs: { question: string; answer: string }[] = [
   {
     question: "How do snooker Elo and handicap work together?",
     answer:
-      "Valid approved snooker singles results update Elo. Handicap is then reviewed from Elo rather than changing after every result. The Super User can also apply or override handicaps where needed.",
+      "Valid approved snooker singles results update Elo. Every four weeks the app recalculates each handicap directly from current club Elo, with no limit on movement up or down. The Super User can also recalculate one new player or everyone manually.",
   },
   {
     question: "Why is there a maximum 40-point start in handicapped snooker?",
@@ -102,7 +102,7 @@ const guideSections: Record<GuideRole, Record<GuideFilter, { title: string; bull
         "Each completed approved match updates player ratings using an Elo-style calculation.",
         "Expected result is calculated from both players' current rating; larger upsets produce larger gains/losses.",
         "K-factor scales by experience (fewer rated matches = faster movement, more matches = steadier movement).",
-        "Snooker handicap is reviewed from Elo rather than changed after every result, with current and baseline handicap shown on the player profile.",
+        "Snooker handicap is recalculated directly from Elo every four weeks, with no movement limit. The Super User can also recalculate a selected new player or everyone manually.",
         "The live start in handicapped snooker is capped at 40, even if the reviewed handicap gap is larger, so fixtures stay competitive while Elo still reflects the full rating spread.",
         "BYE, walkover, void, and doubles outcomes are excluded from rating and handicap review.",
         "Player Profile shows current rating, peak rating, rated-match count, current handicap, baseline handicap, and rank for Pool and Snooker.",

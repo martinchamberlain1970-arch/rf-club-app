@@ -127,6 +127,7 @@ export default function StatsPage() {
   const [frames, setFrames] = useState<Frame[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [reviewingHandicaps, setReviewingHandicaps] = useState(false);
+  const [selectedHandicapPlayerId, setSelectedHandicapPlayerId] = useState("");
   const [viewerPlayerId, setViewerPlayerId] = useState<string | null>(null);
   const [viewerIsMinor, setViewerIsMinor] = useState(false);
 
@@ -227,7 +228,7 @@ export default function StatsPage() {
     };
   }, [admin.loading, admin.isAdmin]);
 
-  const recalculateSnookerHandicaps = async () => {
+  const recalculateSnookerHandicaps = async (playerId?: string) => {
     const client = supabase;
     if (!client || !admin.isSuper) return;
     setReviewingHandicaps(true);
@@ -245,18 +246,16 @@ export default function StatsPage() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify({ playerId: playerId || null }),
     });
-    const body = (await res.json().catch(() => ({}))) as { error?: string; changedPlayers?: number; updatedPlayers?: number };
+    const body = (await res.json().catch(() => ({}))) as { error?: string; changedPlayers?: number; reviewedPlayers?: number; refreshedFixtures?: number; effectiveFrom?: string };
     setReviewingHandicaps(false);
     if (!res.ok) {
       setMessage(body.error ?? "Unable to recalculate handicaps from Elo.");
       return;
     }
-    setMessage(
-      `Snooker handicap review complete. ${body.changedPlayers ?? 0} player${body.changedPlayers === 1 ? "" : "s"} changed out of ${
-        body.updatedPlayers ?? 0
-      } checked.`
-    );
+    const selectedPlayer = players.find((player) => player.id === playerId);
+    setMessage(`${selectedPlayer ? `${selectedPlayer.full_name?.trim() || selectedPlayer.display_name}'s handicap` : "Snooker handicap review"} recalculated directly from Elo. ${body.changedPlayers ?? 0} changed; ${body.refreshedFixtures ?? 0} future fixture start${body.refreshedFixtures === 1 ? "" : "s"} refreshed from ${body.effectiveFrom ?? "next week"}.`);
   };
 
   const minorIds = useMemo(() => new Set(players.filter((p) => p.age_band && p.age_band !== "18_plus").map((p) => p.id)), [players]);
@@ -1058,21 +1057,25 @@ export default function StatsPage() {
                       ))}
                     </div>
                     {admin.isSuper && sport === "snooker" ? (
-                      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-white/90 px-4 py-3 shadow-sm">
+                      <div className="mb-4 rounded-2xl border border-amber-200 bg-white/90 px-4 py-3 shadow-sm">
                         <div>
                           <p className="text-sm font-semibold text-slate-900">Snooker handicap review</p>
                           <p className="text-xs text-slate-600">
-                            Recalculate current handicaps from Elo. This is a manual review step and does not run after every result.
+                            Handicaps are recalculated directly from club Elo every four weeks, with no limit on upward or downward movement. Updated starts apply to pending fixtures from the following Monday.
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => void recalculateSnookerHandicaps()}
-                          disabled={reviewingHandicaps}
-                          className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 disabled:opacity-60"
-                        >
-                          {reviewingHandicaps ? "Recalculating..." : "Recalculate from Elo"}
-                        </button>
+                        <div className="mt-3 flex flex-wrap items-end gap-2">
+                          <button type="button" onClick={() => void recalculateSnookerHandicaps()} disabled={reviewingHandicaps} className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 disabled:opacity-60">
+                            {reviewingHandicaps ? "Recalculating..." : "Recalculate everyone now"}
+                          </button>
+                          <label className="min-w-64 flex-1 text-xs font-semibold text-slate-700">New or selected player
+                            <select value={selectedHandicapPlayerId} onChange={(event) => setSelectedHandicapPlayerId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm">
+                              <option value="">Select a player</option>
+                              {[...players].sort((first, second) => (first.full_name?.trim() || first.display_name).localeCompare(second.full_name?.trim() || second.display_name)).map((player) => <option key={player.id} value={player.id}>{player.full_name?.trim() || player.display_name} · Elo {Math.round(player.rating_snooker ?? 1000)}</option>)}
+                            </select>
+                          </label>
+                          <button type="button" onClick={() => selectedHandicapPlayerId && void recalculateSnookerHandicaps(selectedHandicapPlayerId)} disabled={reviewingHandicaps || !selectedHandicapPlayerId} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 disabled:opacity-50">Recalculate selected player</button>
+                        </div>
                       </div>
                     ) : null}
                     <div className="flex flex-wrap items-end gap-3">

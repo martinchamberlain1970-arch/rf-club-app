@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/weekly-reviews",
       "schedule": "15 23 * * *"
+    },
+    {
+      "path": "/api/cron/snooker-handicap-reviews",
+      "schedule": "30 1 * * *"
     }
   ]
 }
