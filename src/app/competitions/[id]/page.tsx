@@ -12,6 +12,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 import { calculateSnookerHandicapStarts, MAX_SNOOKER_START } from "@/lib/snooker-handicap";
 import { isLegionMastersLeague } from "@/lib/legion-masters";
 import { getLeagueFixtureDeadline, getLeagueFixtureDeadlineTime } from "@/lib/league-deadline";
+import { formatMatchHandicapStart } from "@/lib/match-handicap";
 
 type Competition = {
   id: string;
@@ -1568,13 +1569,12 @@ export default function CompetitionPage() {
             if (competition.handicap_enabled && competition.sport_type === "snooker" && (competition.match_mode ?? "singles") !== "doubles") {
               const team1Start = match.team1_handicap_start ?? 0;
               const team2Start = match.team2_handicap_start ?? 0;
-              if (team1Start > team2Start) {
-                handicapLabel = `${fullMap.get(match.player1_id ?? "") ?? shortMap.get(match.player1_id ?? "") ?? "Player 1"} receives ${team1Start} start`;
-              } else if (team2Start > team1Start) {
-                handicapLabel = `${fullMap.get(match.player2_id ?? "") ?? shortMap.get(match.player2_id ?? "") ?? "Player 2"} receives ${team2Start} start`;
-              } else {
-                handicapLabel = "Level start";
-              }
+              handicapLabel = formatMatchHandicapStart(
+                fullMap.get(match.player1_id ?? "") ?? shortMap.get(match.player1_id ?? "") ?? "Player 1",
+                fullMap.get(match.player2_id ?? "") ?? shortMap.get(match.player2_id ?? "") ?? "Player 2",
+                team1Start,
+                team2Start
+              );
             }
             }
             const openingBreakerLabel = match.status === "bye" || !match.opening_break_player_id

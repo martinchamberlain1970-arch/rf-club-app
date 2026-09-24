@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { isLegionMastersLeague } from "@/lib/legion-masters";
+import { formatMatchHandicapStart } from "@/lib/match-handicap";
 
-type Fixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
+type Fixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
 type TableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
-type LeagueData = { competition: { id: string; name: string; venue: string | null; sport_type: string; league_schedule_mode: string | null; league_finals_size: number | null }; fixtures: Fixture[]; table: TableRow[]; updatedAt: string };
+type LeagueData = { competition: { id: string; name: string; venue: string | null; sport_type: string; league_schedule_mode: string | null; league_finals_size: number | null; handicap_enabled: boolean }; fixtures: Fixture[]; table: TableRow[]; updatedAt: string };
 
 const displayDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : null;
 
@@ -75,6 +76,7 @@ export default function PublicLeaguePage() {
                   <div className="min-w-20 rounded-xl bg-slate-900 px-3 py-2 font-black text-white">{fixture.score ? (fixture.score.void ? "VOID" : `${fixture.score.player1} – ${fixture.score.player2}`) : "v"}</div>
                   <p className="font-bold">{fixture.player2}</p>
                 </div>
+                {!fixture.isReschedulePlaceholder && fixture.player2 !== "BYE" && data.competition.sport_type === "snooker" && data.competition.handicap_enabled ? <p className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-center text-sm font-bold text-sky-950">{formatMatchHandicapStart(fixture.player1, fixture.player2, fixture.team1HandicapStart, fixture.team2HandicapStart)}</p> : null}
                 {fixture.isReschedulePlaceholder ? (
                   <p className="mt-3 text-center text-sm font-bold text-amber-900">Rescheduled to {displayDate(fixture.rescheduledTo)} — results are entered against the fixture in its new week.</p>
                 ) : (

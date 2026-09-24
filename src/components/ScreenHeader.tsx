@@ -28,10 +28,11 @@ function linksForPath(pathname: string): RelatedLink[] {
       { href: "/live", label: "Live", adminOnly: true },
     ];
   }
-  if (pathname.startsWith("/players") || ["/rankings", "/high-breaks", "/stats"].includes(pathname)) {
+  if (pathname.startsWith("/players") || ["/rankings", "/handicaps", "/high-breaks", "/stats"].includes(pathname)) {
     return [
       { href: "/players", label: "Players", adminOnly: true },
       { href: "/rankings", label: "Rankings" },
+      { href: "/handicaps", label: "Handicaps" },
       { href: "/high-breaks", label: "High breaks" },
       { href: "/stats", label: "Statistics", adminOnly: true },
     ];

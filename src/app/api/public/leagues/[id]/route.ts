@@ -13,7 +13,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const client = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const competitionResult = await client
     .from("competitions")
-    .select("id,name,venue,sport_type,competition_format,best_of,league_schedule_mode,league_meetings,league_finals_size")
+    .select("id,name,venue,sport_type,competition_format,best_of,league_schedule_mode,league_meetings,league_finals_size,handicap_enabled")
     .eq("id", id)
     .maybeSingle();
   const competition = competitionResult.data;
@@ -25,7 +25,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     client.from("competition_entries").select("player_id").eq("competition_id", id).eq("status", "approved"),
     client
       .from("matches")
-      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
       .eq("competition_id", id)
       .eq("is_archived", false)
       .order("round_no")
@@ -149,6 +149,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       player1: nameById.get(match.player1_id ?? "") || "TBC",
       player2: isBye ? "BYE" : nameById.get(match.player2_id ?? "") || "TBC",
       openingBreaker: isBye ? null : nameById.get(match.opening_break_player_id ?? "") || null,
+      team1HandicapStart: Number(match.team1_handicap_start ?? 0),
+      team2HandicapStart: Number(match.team2_handicap_start ?? 0),
       score: match.status === "complete" && !isBye ? { player1: player1Score, player2: player2Score, void: !match.winner_player_id } : null,
       isReschedulePlaceholder: false,
       rescheduledFrom: reschedule?.original_scheduled_for ?? null,

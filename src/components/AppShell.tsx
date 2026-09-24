@@ -36,6 +36,7 @@ const playerNavigation: NavigationGroup[] = [
     label: "Results & performance",
     items: [
       { href: "/rankings", label: "Rankings" },
+      { href: "/handicaps", label: "Handicaps" },
       { href: "/high-breaks", label: "High breaks" },
       { href: "/stats", label: "Club statistics", adminOnly: true },
     ],
@@ -71,6 +72,7 @@ const manageNavigation: NavigationGroup[] = [
       { href: "/table-bookings", label: "Table bookings", adminOnly: true },
       { href: "/players", label: "Players", adminOnly: true },
       { href: "/rankings", label: "Rankings" },
+      { href: "/handicaps", label: "Handicaps" },
       { href: "/high-breaks", label: "High breaks" },
       { href: "/stats", label: "Club statistics", adminOnly: true },
       { href: "/notifications", label: "Notifications" },

@@ -7,6 +7,7 @@ import PageNav from "@/components/PageNav";
 import { supabase } from "@/lib/supabase";
 import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
 import { assignFixtureBookings, fixtureBookingLabel, type FixtureBooking } from "@/lib/fixture-bookings";
+import { formatMatchHandicapStart } from "@/lib/match-handicap";
 
 type WeekFilter = "last" | "this" | "next";
 type FixtureView = "weekly" | "all" | "results" | "weekly-results" | "tables";
@@ -27,6 +28,8 @@ type MatchRow = {
   opening_break_player_id: string | null;
   winner_player_id: string | null;
   best_of: number;
+  team1_handicap_start: number | null;
+  team2_handicap_start: number | null;
 };
 
 type CompetitionRow = {
@@ -34,6 +37,7 @@ type CompetitionRow = {
   name: string;
   sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   competition_format: "knockout" | "league";
+  handicap_enabled: boolean;
 };
 
 type PlayerRow = {
@@ -44,7 +48,7 @@ type PlayerRow = {
 
 type FrameRow = { match_id: string; winner_player_id: string | null };
 type LeagueTableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
-type LeagueFixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
+type LeagueFixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
 type LeagueData = { competition: CompetitionRow; fixtures: LeagueFixture[]; table: LeagueTableRow[]; updatedAt: string };
 
 function startOfWeek(date: Date) {
@@ -116,7 +120,7 @@ export default function MyFixturesPage() {
 
       const matchesRes = await client
         .from("matches")
-        .select("id,competition_id,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,status,scheduled_for,round_no,match_no,opening_break_player_id,winner_player_id,best_of")
+        .select("id,competition_id,player1_id,player2_id,team1_player1_id,team1_player2_id,team2_player1_id,team2_player2_id,status,scheduled_for,round_no,match_no,opening_break_player_id,winner_player_id,best_of,team1_handicap_start,team2_handicap_start")
         .eq("is_archived", false)
         .or(
           `player1_id.eq.${playerId},player2_id.eq.${playerId},team1_player1_id.eq.${playerId},team1_player2_id.eq.${playerId},team2_player1_id.eq.${playerId},team2_player2_id.eq.${playerId}`
@@ -148,7 +152,7 @@ export default function MyFixturesPage() {
 
       const [competitionRes, playerRes, framesRes, bookingsRes] = await Promise.all([
         competitionIds.length
-          ? client.from("competitions").select("id,name,sport_type,competition_format").in("id", competitionIds)
+          ? client.from("competitions").select("id,name,sport_type,competition_format,handicap_enabled").in("id", competitionIds)
           : Promise.resolve({ data: [], error: null }),
         playerIds.length
           ? client.from("players").select("id,display_name,full_name").in("id", playerIds)
@@ -235,9 +239,12 @@ export default function MyFixturesPage() {
           teamTwoScore = teamTwoIds.includes(match.winner_player_id) ? 1 : 0;
         }
         const publishedFixture = publishedFixtureByMatch.get(match.id);
+        const competition = competitionById.get(match.competition_id);
+        const teamOneLabel = teamOneIds.map((id) => playerNameById.get(id as string) ?? "TBC").join(" & ");
+        const teamTwoLabel = teamTwoIds.map((id) => playerNameById.get(id as string) ?? "TBC").join(" & ");
         const activeRow = {
           match,
-          competition: competitionById.get(match.competition_id),
+          competition,
           myLabel: myIds.filter(Boolean).map((id) => playerNameById.get(id as string) ?? "TBC").join(" & "),
           opponentLabel: opponentIds.filter(Boolean).map((id) => playerNameById.get(id as string) ?? "TBC").join(" & ") || "BYE",
           opponentIds: opponentIds.filter(Boolean) as string[],
@@ -249,6 +256,9 @@ export default function MyFixturesPage() {
           rescheduledFrom: publishedFixture?.rescheduledFrom ?? null,
           rescheduledTo: publishedFixture?.rescheduledTo ?? null,
           booking: bookingByMatch.get(match.id) ?? null,
+          handicapLabel: !isBye && competition?.sport_type === "snooker" && competition.handicap_enabled
+            ? formatMatchHandicapStart(teamOneLabel, teamTwoLabel, match.team1_handicap_start, match.team2_handicap_start)
+            : null,
         };
         if (!activeRow.rescheduledFrom || !activeRow.rescheduledTo) return [activeRow];
         return [
@@ -304,7 +314,7 @@ export default function MyFixturesPage() {
 
   const renderFixtureCards = (rows: typeof allFixtureRows, emptyMessage: string) => rows.length ? (
     <section className="space-y-3">
-      {rows.map(({ match, competition, myLabel, opponentLabel, scoreLabel, displayScheduledFor, displayWeek, isBye, isReschedulePlaceholder, rescheduledFrom, rescheduledTo, booking }) => {
+      {rows.map(({ match, competition, myLabel, opponentLabel, scoreLabel, displayScheduledFor, displayWeek, isBye, isReschedulePlaceholder, rescheduledFrom, rescheduledTo, booking, handicapLabel }) => {
         const canOfferReschedule = Boolean(
           !isReschedulePlaceholder &&
           !isBye &&
@@ -330,6 +340,7 @@ export default function MyFixturesPage() {
           {isReschedulePlaceholder ? <p className="mt-2 text-sm font-semibold text-amber-900">Rescheduled to {rescheduledTo ? new Date(`${rescheduledTo}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "the new fixture week"}. Enter the result against the fixture in its new week.</p> : null}
           {!isReschedulePlaceholder && rescheduledFrom ? <p className="mt-2 text-xs font-semibold text-teal-800">Rescheduled from {new Date(`${rescheduledFrom}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}
           {!isBye && match.opening_break_player_id ? <p className="mt-2 text-xs font-semibold text-emerald-700">Opening break: {playerNameById.get(match.opening_break_player_id) ?? "Assigned player"}</p> : null}
+          {handicapLabel ? <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-bold text-sky-950">{handicapLabel}</p> : null}
           {booking ? <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950">Table booked: {fixtureBookingLabel(booking)}</p> : null}
         </div>
         );
@@ -453,6 +464,7 @@ export default function MyFixturesPage() {
                       {competitionWeekFixtures.map((fixture) => <article key={fixture.id} className={`rounded-2xl border p-4 ${fixture.isReschedulePlaceholder ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
                         <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Week {fixture.week} · Match {fixture.matchNo}</p><div className="flex items-center gap-2">{fixture.scheduledFor ? <p className="text-xs text-slate-500">{new Date(`${fixture.scheduledFor.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}<span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${fixture.isReschedulePlaceholder ? "border-amber-300 bg-amber-100 text-amber-900" : fixture.status === "complete" ? "border-blue-200 bg-blue-50 text-blue-800" : fixture.status === "in_progress" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{fixture.isReschedulePlaceholder ? "Rescheduled" : fixture.status === "complete" ? "Result" : fixture.status === "in_progress" ? "Live" : "To play"}</span></div></div>
                         <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span className="font-semibold">{fixture.player1}</span><strong className={`min-w-16 rounded-lg px-2 py-1.5 ${fixture.score ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{fixture.score?.void ? "VOID" : fixture.score ? `${fixture.score.player1} – ${fixture.score.player2}` : "v"}</strong><span className="font-semibold">{fixture.player2}</span></div>
+                        {!fixture.isReschedulePlaceholder && activeLeague.competition.sport_type === "snooker" && activeLeague.competition.handicap_enabled ? <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-center text-sm font-bold text-sky-950">{formatMatchHandicapStart(fixture.player1, fixture.player2, fixture.team1HandicapStart, fixture.team2HandicapStart)}</p> : null}
                         {fixture.isReschedulePlaceholder ? <p className="mt-2 text-center text-sm font-semibold text-amber-900">Rescheduled to {fixture.rescheduledTo ? new Date(`${fixture.rescheduledTo}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "the new fixture week"}.</p> : null}
                         {!fixture.isReschedulePlaceholder && fixture.rescheduledFrom ? <p className="mt-2 text-center text-xs font-semibold text-teal-800">Rescheduled from {new Date(`${fixture.rescheduledFrom}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}
                       </article>)}

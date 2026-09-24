@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { formatMatchHandicapStart } from "@/lib/match-handicap";
 
 type Match = {
   id: string;
@@ -197,7 +198,7 @@ export default function QuickDisplayPage() {
               </h1>
               {isHandicappedSnookerMatch ? (
                 <p className="mt-2 text-sm text-sky-300">
-                  Handicap start: {teams?.team1Label ?? "Team 1"} {match?.team1_handicap_start ?? 0} - {match?.team2_handicap_start ?? 0} {teams?.team2Label ?? "Team 2"}
+                  {formatMatchHandicapStart(teams?.team1Label ?? "Team 1", teams?.team2Label ?? "Team 2", match?.team1_handicap_start, match?.team2_handicap_start)}
                 </p>
               ) : null}
             </div>

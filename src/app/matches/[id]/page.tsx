@@ -14,6 +14,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
 import { assignFixtureBookings, fixtureBookingLabel, type FixtureBooking } from "@/lib/fixture-bookings";
+import { formatMatchHandicapStart } from "@/lib/match-handicap";
 
 type Match = {
   id: string;
@@ -2610,7 +2611,8 @@ export default function MatchPage() {
                 <p className="mt-1 text-slate-700">Status: {getMatchStatusLabel(match)}</p>
                 {isHandicappedSnookerMatch ? (
                   <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-                    Handicapped fixture. Each frame starts at {teams.team1Label} {match.team1_handicap_start ?? 0} - {match.team2_handicap_start ?? 0} {teams.team2Label}. Maximum start is capped at {MAX_SNOOKER_START}. Enter the final adjusted frame scores including that handicap start, not the raw points scored from scratch.
+                    <p className="font-bold text-sky-950">{formatMatchHandicapStart(teams.team1Label, teams.team2Label, match.team1_handicap_start, match.team2_handicap_start)}</p>
+                    <p className="mt-1">This is the start for this match. Maximum start is capped at {MAX_SNOOKER_START}. Enter the final adjusted frame scores including this handicap, not the raw points scored from scratch.</p>
                   </div>
                 ) : null}
                 {competition.app_assign_opening_break || openingBreakerName ? (
