@@ -266,6 +266,15 @@ export default function MyFixturesPage() {
   }, [competitionById, fixtureBookings, frames, leagueData, linkedPlayerId, matches, playerNameById]);
 
   const fixtureRows = useMemo(() => allFixtureRows.filter(({ displayScheduledFor }) => displayScheduledFor && displayScheduledFor >= range.from && displayScheduledFor <= range.to), [allFixtureRows, range]);
+  const outstandingRows = useMemo(() => {
+    const currentWeekStart = isoDate(startOfWeek(new Date()));
+    return allFixtureRows.filter(({ match, displayScheduledFor, isBye, isReschedulePlaceholder }) =>
+      !isReschedulePlaceholder &&
+      !isBye &&
+      (match.status === "pending" || match.status === "in_progress") &&
+      Boolean(displayScheduledFor && displayScheduledFor < currentWeekStart)
+    );
+  }, [allFixtureRows]);
   const resultRows = useMemo(() => allFixtureRows.filter(({ match, isReschedulePlaceholder }) => match.status === "complete" && !isReschedulePlaceholder), [allFixtureRows]);
   const filterSourceRows = view === "results" ? resultRows : allFixtureRows;
   const fixtureCompetitionOptions = useMemo(() => {
@@ -414,7 +423,20 @@ export default function MyFixturesPage() {
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
               No linked player profile found for this account yet.
             </section>
-          ) : view === "weekly" ? renderFixtureCards(fixtureRows, "No fixtures found for this week selection.")
+          ) : view === "weekly" ? <>
+              {outstandingRows.length ? <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Still to be played</p>
+                    <h2 className="mt-1 text-xl font-bold text-amber-950">Outstanding fixtures</h2>
+                    <p className="mt-1 text-sm text-amber-900">These fixtures have passed their original playing week but remain open because they have not been completed, rescheduled or voided.</p>
+                  </div>
+                  <span className="rounded-full bg-amber-200 px-3 py-1 text-sm font-black text-amber-950">{outstandingRows.length}</span>
+                </div>
+                <div className="mt-4">{renderFixtureCards(outstandingRows, "")}</div>
+              </section> : null}
+              {renderFixtureCards(fixtureRows, "No fixtures found for this week selection.")}
+            </>
             : view === "all" ? renderFixtureCards(filteredFixtureRows, fixtureCompetitionFilter !== "all" || opponentFilter !== "all" ? "No fixtures match those filters." : "No fixtures have been published for you yet.")
               : view === "results" ? renderFixtureCards(filteredFixtureRows, fixtureCompetitionFilter !== "all" || opponentFilter !== "all" ? "No results match those filters." : "You do not have any completed results yet.")
                 : view === "weekly-results" ? <section className={cardClass}>

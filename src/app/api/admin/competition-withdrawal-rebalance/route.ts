@@ -30,6 +30,8 @@ type MatchRow = {
   player2_id: string | null;
   scheduled_for: string | null;
   updated_at: string | null;
+  team1_handicap_start: number | null;
+  team2_handicap_start: number | null;
 };
 
 type PlannedFixture = {
@@ -141,13 +143,50 @@ function maximumRound(playerIds: string[], pairCounts: Map<string, number>, bloc
   return best;
 }
 
+function inferEstablishedCompetitionHandicaps(matches: MatchRow[]) {
+  const graph = new Map<string, Array<{ playerId: string; delta: number }>>();
+  const addEdge = (from: string, to: string, delta: number) => {
+    graph.set(from, [...(graph.get(from) ?? []), { playerId: to, delta }]);
+  };
+
+  for (const match of matches) {
+    if (match.status !== "complete" || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id) continue;
+    const team1Start = Number(match.team1_handicap_start ?? 0);
+    const team2Start = Number(match.team2_handicap_start ?? 0);
+    const playerTwoMinusPlayerOne = team2Start - team1Start;
+    addEdge(match.player1_id, match.player2_id, playerTwoMinusPlayerOne);
+    addEdge(match.player2_id, match.player1_id, -playerTwoMinusPlayerOne);
+  }
+
+  const inferred = new Map<string, number>();
+  for (const root of graph.keys()) {
+    if (inferred.has(root)) continue;
+    const component: string[] = [];
+    const queue = [root];
+    inferred.set(root, 0);
+    while (queue.length) {
+      const playerId = queue.shift() as string;
+      component.push(playerId);
+      const base = inferred.get(playerId) ?? 0;
+      for (const edge of graph.get(playerId) ?? []) {
+        if (inferred.has(edge.playerId)) continue;
+        inferred.set(edge.playerId, base + edge.delta);
+        queue.push(edge.playerId);
+      }
+    }
+    const minimum = Math.min(...component.map((playerId) => inferred.get(playerId) ?? 0));
+    for (const playerId of component) inferred.set(playerId, (inferred.get(playerId) ?? 0) - minimum);
+  }
+  return inferred;
+}
+
 async function buildPlan(client: SupabaseClient, competitionId: string, playerId: string, ownerUserId: string): Promise<Plan> {
   const [competitionResult, entryResult, entriesResult, playersResult, matchesResult] = await Promise.all([
     client.from("competitions").select("id,name,competition_format,league_schedule_mode,league_meetings,league_start_date,league_break_weeks,best_of,sport_type,handicap_enabled,app_assign_opening_break").eq("id", competitionId).maybeSingle(),
     client.from("competition_entries").select("id,player_id,status,payment_status,payment_amount_pence").eq("competition_id", competitionId).eq("player_id", playerId).eq("status", "approved").maybeSingle(),
     client.from("competition_entries").select("player_id").eq("competition_id", competitionId).eq("status", "approved"),
-    client.from("players").select("id,display_name,full_name,snooker_handicap").eq("is_archived", false),
-    client.from("matches").select("id,round_no,match_no,status,player1_id,player2_id,scheduled_for,updated_at").eq("competition_id", competitionId).eq("is_archived", false).order("scheduled_for").order("round_no").order("match_no"),
+    client.from("players").select("id,display_name,full_name,snooker_handicap,snooker_handicap_base").eq("is_archived", false),
+    client.from("matches").select("id,round_no,match_no,status,player1_id,player2_id,scheduled_for,updated_at,team1_handicap_start,team2_handicap_start").eq("competition_id", competitionId).eq("is_archived", false).order("scheduled_for").order("round_no").order("match_no"),
   ]);
   const error = competitionResult.error ?? entryResult.error ?? entriesResult.error ?? playersResult.error ?? matchesResult.error;
   if (error) throw new Error(error.message);
@@ -156,7 +195,7 @@ async function buildPlan(client: SupabaseClient, competitionId: string, playerId
   if (!competition || competition.competition_format !== "league" || competition.league_schedule_mode === "one_day") throw new Error("Withdrawal rebalancing is only available for weekly league competitions.");
   if (!entry) throw new Error("This player does not have an approved entry in the competition.");
 
-  const allPlayerRows = (playersResult.data ?? []) as Array<{ id: string; display_name: string; full_name: string | null; snooker_handicap: number | null }>;
+  const allPlayerRows = (playersResult.data ?? []) as Array<{ id: string; display_name: string; full_name: string | null; snooker_handicap: number | null; snooker_handicap_base: number | null }>;
   const playerById = new Map(allPlayerRows.map((player) => [player.id, player]));
   const remainingIds = [...new Set((entriesResult.data ?? []).map((row) => String(row.player_id)).filter((id) => id !== playerId))].sort();
   if (remainingIds.length < 2) throw new Error("At least two players must remain in the competition.");
@@ -260,7 +299,11 @@ async function buildPlan(client: SupabaseClient, competitionId: string, playerId
     const key = pairKey(match.player1_id, match.player2_id);
     occurrenceByPair.set(key, (occurrenceByPair.get(key) ?? 0) + 1);
   }
-  const handicapById = new Map(allPlayerRows.map((player) => [player.id, player.snooker_handicap ?? 0]));
+  const establishedCompetitionHandicapById = inferEstablishedCompetitionHandicaps(matches);
+  const handicapById = new Map(allPlayerRows.map((player) => [
+    player.id,
+    establishedCompetitionHandicapById.get(player.id) ?? player.snooker_handicap ?? player.snooker_handicap_base ?? 0,
+  ]));
   const fixtures: PlannedFixture[] = [];
   rawWeeks.forEach((week, weekIndex) => {
     const existingThatWeek = locked.filter((match) => match.scheduled_for && mondayOfWeek(match.scheduled_for) === week.date).length;

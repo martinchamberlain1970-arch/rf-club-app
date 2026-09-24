@@ -60,7 +60,7 @@ type PriorityCard = {
 };
 type DashboardLink = { href: string; title: string; desc: string };
 const playerExperienceLinks = [
-  { href: "/my-fixtures", title: "My Fixtures", desc: "Weekly view, all fixtures, results and tables.", symbol: "PLAY" },
+  { href: "/my-fixtures", title: "My Fixtures", desc: "Current and outstanding fixtures, results and tables.", symbol: "PLAY" },
   { href: "/my-fixtures?view=all&action=reschedule", title: "Reschedule Fixture", desc: "Request to play an eligible fixture in a different week.", symbol: "MOVE" },
   { href: "/table-bookings#request-table", title: "Book a Table", desc: "Reserve a pool or snooker table.", symbol: "BOOK" },
   { href: "/table-bookings#confirmed-bookings", title: "Table Reservations", desc: "See upcoming confirmed bookings.", symbol: "VIEW" },
