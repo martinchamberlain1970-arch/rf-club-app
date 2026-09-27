@@ -591,11 +591,12 @@ export async function POST(request: NextRequest) {
   const bookedForPlayerId = purpose === "fixture" ? participantOnePlayerId : auth.playerId;
   if (!bookedForPlayerId) return NextResponse.json({ error: "Choose a competition fixture with two players, or link the Super User account to a player profile first." }, { status: 409 });
   if (editingReservationId) {
-    const updateResult = await auth.client.from("table_reservations").update({ table_id: tableId, booked_for_player_id: bookedForPlayerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, competition_id: competitionId, participant_one_player_id: participantOnePlayerId, participant_two_player_id: participantTwoPlayerId, status, rejection_reason: null, reviewed_at: reviewedAt, reviewed_by_user_id: reviewedByUserId, cancelled_at: null, cancelled_by_user_id: null }).eq("id", editingReservationId);
+    const updateResult = await auth.client.from("table_reservations").update({ table_id: tableId, booked_for_player_id: bookedForPlayerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, competition_id: competitionId, participant_one_player_id: participantOnePlayerId, participant_two_player_id: participantTwoPlayerId, status, rejection_reason: null, reviewed_at: reviewedAt, reviewed_by_user_id: reviewedByUserId, cancelled_at: null, cancelled_by_user_id: null }).eq("id", editingReservationId).select("id").maybeSingle();
     if (updateResult.error) {
       if (updateResult.error.code === "23P01") return NextResponse.json({ error: "That table is already reserved during this time." }, { status: 409 });
       return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
     }
+    if (!updateResult.data) return NextResponse.json({ error: "The booking was not updated. Refresh the page and try again." }, { status: 409 });
     await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: auth.isSuper ? "table_reservation_edited" : "table_booking_edit_requested", entity_type: "table_reservation", entity_id: editingReservationId, summary: `${auth.isSuper ? "Cue table reservation edited" : "Cue table booking edit submitted for approval"}: ${startsAt.toISOString()} to ${endsAt.toISOString()}.`, meta: { table_id: tableId, player_id: auth.playerId, purpose } });
     return NextResponse.json({ ok: true, id: editingReservationId, status, autoApproved });
   }
