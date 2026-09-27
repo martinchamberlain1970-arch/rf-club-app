@@ -107,6 +107,7 @@ const barePrefixes = [
   "/display",
   "/join",
   "/entrant",
+  "/fixtures/outstanding",
   "/league/",
   "/review/",
   "/legion-masters",

@@ -169,6 +169,7 @@ export default function OutstandingFixturesPage() {
             title="Outstanding Fixtures"
             eyebrow="Club Manager"
             subtitle="Delayed and rescheduled league fixtures that still need to be played. Fixtures with a submitted result awaiting review are excluded."
+            actions={<Link href="/fixtures/outstanding" className="rounded-xl border border-teal-700 bg-teal-700 px-3 py-2 text-sm font-bold text-white hover:bg-teal-800">Public view</Link>}
           />
 
           {!admin.loading && !canManage ? (
