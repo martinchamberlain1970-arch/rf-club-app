@@ -70,6 +70,7 @@ const manageNavigation: NavigationGroup[] = [
     label: "Club operations",
     items: [
       { href: "/table-bookings", label: "Table bookings", adminOnly: true },
+      { href: "/outstanding-fixtures", label: "Outstanding fixtures", adminOnly: true },
       { href: "/players", label: "Players", adminOnly: true },
       { href: "/rankings", label: "Rankings" },
       { href: "/handicaps", label: "Handicaps" },

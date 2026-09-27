@@ -4,7 +4,11 @@ export function normalizeCompetitionName(value: string | null | undefined) {
 
 export function isLegionMastersLeague(value: string | null | undefined) {
   const name = normalizeCompetitionName(value);
-  return name === "greenhithe legion masters 2026" || name === "greenhithe legion masters snooker 2026";
+  return [
+    "greenhithe legion masters 2026",
+    "greenhithe legion masters pool 2026",
+    "greenhithe legion masters snooker 2026",
+  ].includes(name);
 }
 
 export function legionMastersCupName(value: string | null | undefined, sportType: string | null | undefined) {

@@ -35,6 +35,7 @@ const supportLinks = [
 const adminToolLinks = [
   { href: "/signups", title: "Competition Sign-ups", desc: "Review open sign-ups and player entry requests." },
   { href: "/live", title: "Live Overview", desc: "See active matches and competition progress at a glance." },
+  { href: "/outstanding-fixtures", title: "Outstanding Fixtures", desc: "Track delayed and rescheduled fixtures that still need to be played." },
   { href: "/table-bookings", title: "Table Bookings", desc: "Manage pool and snooker reservations and captain access." },
 ] as const;
 
