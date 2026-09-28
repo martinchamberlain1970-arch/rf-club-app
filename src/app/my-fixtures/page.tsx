@@ -284,6 +284,10 @@ export default function MyFixturesPage() {
       return Boolean(rescheduledFrom || (deadline && deadline < now));
     });
   }, [allFixtureRows]);
+  const weeklyFixtureRows = useMemo(() => {
+    const highlightedMatchIds = new Set(attentionRows.map(({ match }) => match.id));
+    return fixtureRows.filter(({ match }) => !highlightedMatchIds.has(match.id));
+  }, [attentionRows, fixtureRows]);
   const resultRows = useMemo(() => allFixtureRows.filter(({ match, isReschedulePlaceholder }) => match.status === "complete" && !isReschedulePlaceholder), [allFixtureRows]);
   const filterSourceRows = view === "results" ? resultRows : allFixtureRows;
   const fixtureCompetitionOptions = useMemo(() => {
@@ -445,7 +449,12 @@ export default function MyFixturesPage() {
                 </div>
                 <div className="mt-4">{renderFixtureCards(attentionRows, "")}</div>
               </section> : null}
-              {renderFixtureCards(fixtureRows, "No fixtures found for this week selection.")}
+              {renderFixtureCards(
+                weeklyFixtureRows,
+                fixtureRows.length
+                  ? "Any fixture needing attention this week is shown once in the highlighted section above."
+                  : "No fixtures found for this week selection."
+              )}
             </>
             : view === "all" ? renderFixtureCards(filteredFixtureRows, fixtureCompetitionFilter !== "all" || opponentFilter !== "all" ? "No fixtures match those filters." : "No fixtures have been published for you yet.")
               : view === "results" ? renderFixtureCards(filteredFixtureRows, fixtureCompetitionFilter !== "all" || opponentFilter !== "all" ? "No results match those filters." : "You do not have any completed results yet.")
