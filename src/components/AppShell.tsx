@@ -83,7 +83,6 @@ const manageNavigation: NavigationGroup[] = [
     label: "System owner",
     items: [
       { href: "/signup-requests", label: "Access requests", superOnly: true },
-      { href: "/reschedules", label: "Fixture week requests", superOnly: true },
       { href: "/snooker-handicap-exceptions", label: "Handicap exceptions", superOnly: true },
       { href: "/locations", label: "Locations", superOnly: true },
       { href: "/emails", label: "System email activity", superOnly: true },

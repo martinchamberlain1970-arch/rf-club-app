@@ -276,14 +276,13 @@ export default function MyFixturesPage() {
   }, [competitionById, fixtureBookings, frames, leagueData, linkedPlayerId, matches, playerNameById]);
 
   const fixtureRows = useMemo(() => allFixtureRows.filter(({ displayScheduledFor }) => displayScheduledFor && displayScheduledFor >= range.from && displayScheduledFor <= range.to), [allFixtureRows, range]);
-  const outstandingRows = useMemo(() => {
-    const currentWeekStart = isoDate(startOfWeek(new Date()));
-    return allFixtureRows.filter(({ match, displayScheduledFor, isBye, isReschedulePlaceholder }) =>
-      !isReschedulePlaceholder &&
-      !isBye &&
-      (match.status === "pending" || match.status === "in_progress") &&
-      Boolean(displayScheduledFor && displayScheduledFor < currentWeekStart)
-    );
+  const attentionRows = useMemo(() => {
+    const now = new Date();
+    return allFixtureRows.filter(({ match, competition, displayScheduledFor, isBye, isReschedulePlaceholder, rescheduledFrom }) => {
+      if (isReschedulePlaceholder || isBye || !["pending", "in_progress"].includes(match.status) || !displayScheduledFor) return false;
+      const deadline = getLeagueFixtureDeadline(displayScheduledFor, competition?.name);
+      return Boolean(rescheduledFrom || (deadline && deadline < now));
+    });
   }, [allFixtureRows]);
   const resultRows = useMemo(() => allFixtureRows.filter(({ match, isReschedulePlaceholder }) => match.status === "complete" && !isReschedulePlaceholder), [allFixtureRows]);
   const filterSourceRows = view === "results" ? resultRows : allFixtureRows;
@@ -435,16 +434,16 @@ export default function MyFixturesPage() {
               No linked player profile found for this account yet.
             </section>
           ) : view === "weekly" ? <>
-              {outstandingRows.length ? <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
+              {attentionRows.length ? <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Still to be played</p>
-                    <h2 className="mt-1 text-xl font-bold text-amber-950">Outstanding fixtures</h2>
-                    <p className="mt-1 text-sm text-amber-900">These fixtures have passed their original playing week but remain open because they have not been completed, rescheduled or voided.</p>
+                    <h2 className="mt-1 text-xl font-bold text-amber-950">Outstanding &amp; rescheduled fixtures</h2>
+                    <p className="mt-1 text-sm text-amber-900">These matches remain on your dashboard until they are completed or formally closed. Rescheduled matches show their approved new playing week.</p>
                   </div>
-                  <span className="rounded-full bg-amber-200 px-3 py-1 text-sm font-black text-amber-950">{outstandingRows.length}</span>
+                  <span className="rounded-full bg-amber-200 px-3 py-1 text-sm font-black text-amber-950">{attentionRows.length}</span>
                 </div>
-                <div className="mt-4">{renderFixtureCards(outstandingRows, "")}</div>
+                <div className="mt-4">{renderFixtureCards(attentionRows, "")}</div>
               </section> : null}
               {renderFixtureCards(fixtureRows, "No fixtures found for this week selection.")}
             </>

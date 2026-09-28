@@ -29,7 +29,7 @@ type EmailRow = {
 };
 
 type StatusFilter = "all" | "sent" | "failed";
-type TypeFilter = "all" | "registration" | "password" | "booking";
+type TypeFilter = "all" | "registration" | "password" | "booking" | "fixture";
 
 const emailActions = [
   "competition_welcome_sent",
@@ -42,12 +42,15 @@ const emailActions = [
   "table_booking_accepted",
   "table_booking_rejected",
   "table_booking_deleted",
+  "fixture_reminder_sent",
+  "fixture_reminder_failed",
 ];
 
 function emailType(row: EmailRow) {
   if (row.action.startsWith("competition_welcome")) return { key: "registration" as const, label: "Competition welcome" };
   if (row.action.startsWith("password_reset")) return { key: "password" as const, label: "Password reset" };
   if (row.action.startsWith("table_booking")) return { key: "booking" as const, label: row.meta?.email_type || "Table booking" };
+  if (row.action.startsWith("fixture_reminder")) return { key: "fixture" as const, label: "Fixture reminder" };
   return { key: "registration" as const, label: "Registration invitation" };
 }
 
@@ -161,6 +164,7 @@ export default function EmailsPage() {
                     <option value="registration">Registration invitations</option>
                     <option value="password">Password resets</option>
                     <option value="booking">Table bookings</option>
+                    <option value="fixture">Fixture reminders</option>
                   </select>
                   <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm">
                     <option value="all">All statuses</option>

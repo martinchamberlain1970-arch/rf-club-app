@@ -15,9 +15,11 @@ export async function GET() {
   });
   const competitionResult = await client
     .from("competitions")
-    .select("id,name,sport_type,competition_format,is_archived")
+    .select("id,name,sport_type,competition_format,is_archived,is_completed,league_schedule_mode")
     .eq("competition_format", "league")
-    .eq("is_archived", false);
+    .eq("is_archived", false)
+    .eq("is_completed", false)
+    .neq("league_schedule_mode", "one_day");
   if (competitionResult.error) {
     return NextResponse.json({ error: "Outstanding fixtures could not be loaded." }, { status: 400 });
   }
