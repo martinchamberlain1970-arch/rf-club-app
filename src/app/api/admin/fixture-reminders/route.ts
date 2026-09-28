@@ -115,6 +115,11 @@ export async function POST(request: NextRequest) {
   const statusText = rescheduled
     ? overdue ? "This rescheduled fixture has now passed its revised deadline." : "This fixture has been rescheduled and is still waiting to be played."
     : overdue ? "This fixture has passed its original deadline and no reschedule has been agreed." : "This fixture is still waiting to be played.";
+  const actionText = overdue
+    ? rescheduled
+      ? "Please arrange and play the fixture promptly. If another exceptional change is needed, contact the competition organiser and make sure the new arrangement is recorded correctly in Rack & Frame. A fixture that remains overdue by more than one week without a completed result or an approved revised arrangement may be voided."
+      : "Please arrange and play the fixture promptly, or agree a permitted new game week and submit a reschedule request in Rack & Frame for the organiser to approve. A fixture that remains overdue by more than one week without a completed result or an approved reschedule may be voided."
+    : `Please arrange and complete the fixture by ${formatDeadline(deadline)}. If you agree a permitted different week, submit the reschedule request in Rack & Frame so the organiser can approve it.`;
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").replace(/\/$/, "");
   const sent: string[] = [];
   const missing: string[] = [];
@@ -135,13 +140,13 @@ export async function POST(request: NextRequest) {
       missing.push(playerName);
       continue;
     }
-    const subject = `Fixture reminder: ${playerName} vs ${opponentName}`;
-    const text = `Hi ${playerName.split(/\s+/)[0]},\n\nThis is a reminder about your ${competitionName} fixture against ${opponentName}.\n\n${statusText}\n\nPlease arrange and complete the fixture by ${formatDeadline(deadline)}. If you have already agreed a different week, submit the reschedule request in Rack & Frame so the organiser can approve it.\n\nView your fixture: ${fixtureUrl}\n\nRack & Frame Club`;
+    const subject = `${overdue ? "Action needed: overdue fixture" : "Fixture reminder"}: ${playerName} vs ${opponentName}`;
+    const text = `Hi ${playerName.split(/\s+/)[0]},\n\nThis is a reminder about your ${competitionName} fixture against ${opponentName}.\n\n${statusText}\n\n${actionText}\n\nView your fixture: ${fixtureUrl}\n\nRack & Frame Club`;
     const html = brandedEmail({
       eyebrow: "Outstanding fixture reminder",
       title: `${playerName} vs ${opponentName}`,
       intro: `Hi ${playerName.split(/\s+/)[0]}, this is a reminder about your ${competitionName} fixture.`,
-      bodyHtml: `<p style="margin:0 0 14px"><strong>${escapeEmailHtml(statusText)}</strong></p><p style="margin:0 0 14px">Please arrange and complete the fixture by <strong>${escapeEmailHtml(formatDeadline(deadline))}</strong>.</p><p style="margin:0">If you have agreed a different week, submit the request in Rack &amp; Frame so the organiser can approve it.</p>`,
+      bodyHtml: `<p style="margin:0 0 14px"><strong>${escapeEmailHtml(statusText)}</strong></p><p style="margin:0">${escapeEmailHtml(actionText)}</p>`,
       primaryButton: { label: "View fixture", url: fixtureUrl },
       footerNote: "This is an automated fixture reminder from Rack & Frame Club. Replies are not monitored.",
     });
