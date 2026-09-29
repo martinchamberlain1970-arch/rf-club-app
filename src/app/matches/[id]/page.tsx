@@ -415,6 +415,8 @@ export default function MatchPage() {
   } | null>(null);
   const [infoModal, setInfoModal] = useState<{ title: string; description: string } | null>(null);
   const [redirectAfterInfo, setRedirectAfterInfo] = useState(false);
+  const [returnToFixturesAfterInfo, setReturnToFixturesAfterInfo] = useState(false);
+  const [rescheduleJourney, setRescheduleJourney] = useState(false);
   const [reviewNowMs] = useState(() => Date.now());
   const [requestingReschedule, setRequestingReschedule] = useState(false);
   const livePoolSaveTimerRef = useRef<number | null>(null);
@@ -798,6 +800,15 @@ export default function MatchPage() {
       !pendingRescheduleForMatch &&
       !approvedRescheduleForMatch
   );
+
+  useEffect(() => {
+    if (loading || !match || !competition || !viewerCanEditThisMatch || window.location.hash !== "#reschedule-fixture") return;
+    setRescheduleJourney(true);
+    const timer = window.setTimeout(() => {
+      document.getElementById("reschedule-fixture")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [competition, loading, match, viewerCanEditThisMatch]);
   const availableAdminGameWeeks = useMemo(() => {
     if (!competition || !match?.scheduled_for) return [];
     const now = new Date();
@@ -893,6 +904,7 @@ export default function MatchPage() {
       title: "Fixture change request sent",
       description: `Your exceptional request has been sent to the Super User. If approved, this fixture will move ${rescheduleTimingLabel(timing)} to ${new Date(`${targetDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}, and result entry will open for that approved week.`,
     });
+    setReturnToFixturesAfterInfo(true);
     await logAudit("league_reschedule_requested", {
       entityType: "match",
       entityId: match.id,
@@ -2426,10 +2438,10 @@ export default function MatchPage() {
       <div className="mx-auto max-w-4xl space-y-4">
         <RequireAuth>
           <ScreenHeader
-            title="Match"
-            eyebrow="Match"
-            subtitle="Live scoring and result submission."
-            warnOnNavigate={!isByeMatch && !isArchived && canEditFrames}
+            title={rescheduleJourney ? "Request a different week" : "Match"}
+            eyebrow={rescheduleJourney ? "Fixture reschedule" : "Match"}
+            subtitle={rescheduleJourney ? "Request an exceptional change to the playing week. No score is being entered." : "Live scoring and result submission."}
+            warnOnNavigate={!rescheduleJourney && !isByeMatch && !isArchived && canEditFrames}
             warnMessage="Progress may be lost if not saved. Leave this match anyway?"
             actions={
               <button
@@ -2443,6 +2455,12 @@ export default function MatchPage() {
           />
 
           {loading ? <p className="rounded-xl border border-slate-200 bg-white p-4">Loading match...</p> : null}
+          {!loading && rescheduleJourney ? (
+            <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-sm">
+              <p className="font-bold">You are requesting a fixture-week change.</p>
+              <p className="mt-1 text-sm">Choose the reason and preferred week below. This does not enter or submit a match score.</p>
+            </section>
+          ) : null}
           {!loading && loadError ? (
             <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
               <p>{loadError}</p>
@@ -3350,9 +3368,13 @@ export default function MatchPage() {
           open={Boolean(infoModal)}
           title={infoModal?.title ?? ""}
           description={infoModal?.description ?? ""}
+          closeLabel={returnToFixturesAfterInfo ? "Back to my fixtures" : "OK"}
           onClose={() => {
             setInfoModal(null);
-            if (redirectAfterInfo) {
+            if (returnToFixturesAfterInfo) {
+              setReturnToFixturesAfterInfo(false);
+              router.push("/my-fixtures");
+            } else if (redirectAfterInfo) {
               setRedirectAfterInfo(false);
               router.push("/");
             }

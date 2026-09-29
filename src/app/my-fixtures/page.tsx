@@ -327,6 +327,18 @@ export default function MyFixturesPage() {
           match.player1_id &&
           match.player2_id
         );
+        const canOfferBooking = Boolean(
+          !isReschedulePlaceholder &&
+          !isBye &&
+          competition &&
+          (match.status === "pending" || match.status === "in_progress") &&
+          match.player1_id &&
+          match.player2_id &&
+          match.player1_id !== match.player2_id &&
+          !booking
+        );
+        const hasBookingShortcut = canOfferBooking || Boolean(booking);
+        const actionGridClass = canOfferReschedule && hasBookingShortcut ? "sm:grid-cols-3" : canOfferReschedule || hasBookingShortcut ? "sm:grid-cols-2" : "sm:grid-cols-1";
         const card = (
           <div className={`block rounded-2xl border p-4 shadow-sm ${isReschedulePlaceholder ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -351,13 +363,22 @@ export default function MyFixturesPage() {
           ? <div key={`${match.id}:original`}>{card}</div>
           : <div key={`${match.id}:active`} className="space-y-2">
               {card}
-              {!isBye ? <div className={`grid gap-2 ${canOfferReschedule ? "grid-cols-2" : "grid-cols-1"}`}>
+              {!isBye ? <div className={`grid gap-2 ${actionGridClass}`}>
                 <Link href={`/matches/${match.id}`} className="rounded-xl border border-teal-700 bg-teal-700 px-3 py-2 text-center text-sm font-bold text-white shadow-sm">
                   {match.status === "complete" ? "View result" : "Open fixture"}
                 </Link>
+                {canOfferBooking ? (
+                  <Link href={`/table-bookings?competitionId=${encodeURIComponent(competition!.id)}&player1Id=${encodeURIComponent(match.player1_id!)}&player2Id=${encodeURIComponent(match.player2_id!)}#request-table`} className="rounded-xl border border-sky-400 bg-sky-50 px-3 py-2 text-center text-sm font-bold text-sky-950 shadow-sm">
+                    Book a table
+                  </Link>
+                ) : booking ? (
+                  <Link href="/table-bookings#confirmed-bookings" className="rounded-xl border border-sky-400 bg-sky-50 px-3 py-2 text-center text-sm font-bold text-sky-950 shadow-sm">
+                    View table booking
+                  </Link>
+                ) : null}
                 {canOfferReschedule ? (
                   <Link href={`/matches/${match.id}#reschedule-fixture`} className="rounded-xl border border-amber-400 bg-amber-100 px-3 py-2 text-center text-sm font-bold text-amber-950 shadow-sm">
-                    Request a different week
+                    Request reschedule
                   </Link>
                 ) : null}
               </div> : null}
