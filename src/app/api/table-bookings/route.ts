@@ -22,10 +22,13 @@ async function authorize(request: NextRequest) {
 
 async function eligibility(auth: NonNullable<Awaited<ReturnType<typeof authorize>>>) {
   const sports = new Set<string>();
+  const teamBookingSports = new Set<string>();
   let canBookOther = auth.isSuper;
   if (auth.isSuper) {
     sports.add("pool");
     sports.add("snooker");
+    teamBookingSports.add("pool");
+    teamBookingSports.add("snooker");
   }
   if (auth.playerId) {
     const [mastersResult, grantsResult] = await Promise.all([
@@ -46,10 +49,13 @@ async function eligibility(auth: NonNullable<Awaited<ReturnType<typeof authorize
     }
     for (const grant of grantsResult.data ?? []) {
       sports.add(grant.sport_type);
-      if (["captain", "vice_captain"].includes(grant.access_role)) canBookOther = true;
+      if (["captain", "vice_captain"].includes(grant.access_role)) {
+        canBookOther = true;
+        teamBookingSports.add(grant.sport_type);
+      }
     }
   }
-  return { eligibleSports: [...sports], canBookOther };
+  return { eligibleSports: [...sports], canBookOther, teamBookingSports: [...teamBookingSports] };
 }
 
 function londonDateParts(value: Date) {
@@ -110,7 +116,7 @@ async function effectiveBookingHours(
 }
 
 const bookingTitle = (reservation: { purpose: string; participant_one?: string | null; participant_two?: string | null; team_name?: string | null; notes?: string | null }) => reservation.purpose === "league_match"
-  ? reservation.team_name || "League team booking"
+  ? reservation.team_name || "Team booking"
   : reservation.purpose === "other"
     ? reservation.notes || "Other table booking"
     : [reservation.participant_one, reservation.participant_two].filter(Boolean).join(" vs. ") || "Competition booking";
@@ -119,7 +125,7 @@ const londonBookingTime = (startsAt: string, endsAt: string) => `${new Date(star
 export async function GET(request: NextRequest) {
   const auth = await authorize(request);
   if (!auth) return NextResponse.json({ error: "Sign in to view table bookings." }, { status: 401 });
-  const { eligibleSports, canBookOther } = await eligibility(auth);
+  const { eligibleSports, canBookOther, teamBookingSports } = await eligibility(auth);
   const now = new Date();
   const from = now.toISOString();
   const bookingViewDays = auth.isSuper ? 400 : 60;
@@ -201,6 +207,7 @@ export async function GET(request: NextRequest) {
     playerId: auth.playerId,
     eligibleSports,
     canBookOther,
+    teamBookingSports,
     tables: tablesResult.data ?? [],
     reservations: (reservationsResult.data ?? []).map((reservation) => ({
       ...reservation,
@@ -528,7 +535,7 @@ export async function POST(request: NextRequest) {
   const otherReason = String(body?.otherReason ?? "").trim().slice(0, 240) || null;
   if (purpose === "fixture" && (!competitionId || !participantOnePlayerId || !participantTwoPlayerId)) return NextResponse.json({ error: "Choose the competition and both players." }, { status: 400 });
   if (purpose === "fixture" && participantOnePlayerId === participantTwoPlayerId) return NextResponse.json({ error: "Choose two different players." }, { status: 400 });
-  if (purpose === "league_match" && !teamName) return NextResponse.json({ error: "Enter the pool or snooker team name." }, { status: 400 });
+  if (purpose === "league_match" && !teamName) return NextResponse.json({ error: "Enter details of the team practice, friendly or knockout." }, { status: 400 });
   if (purpose === "other" && !otherReason) return NextResponse.json({ error: "Enter a reason for the other booking, such as team practice night." }, { status: 400 });
   if (!tableId || Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return NextResponse.json({ error: "Choose a valid table, date and time." }, { status: 400 });
   const durationMinutes = (endsAt.getTime() - startsAt.getTime()) / 60000;
@@ -537,12 +544,15 @@ export async function POST(request: NextRequest) {
   const startInLondon = londonDateParts(startsAt);
   const tableResult = await auth.client.from("cue_tables").select("id,sport_type,is_active").eq("id", tableId).maybeSingle();
   if (!tableResult.data?.is_active) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
-  const maximumMinutes = tableResult.data.sport_type === "pool" ? 30 : 60;
-  if (!auth.isSuper && durationMinutes !== maximumMinutes) return NextResponse.json({ error: `${tableResult.data.sport_type === "pool" ? "Pool" : "Snooker"} table bookings must be ${maximumMinutes}-minute sessions.` }, { status: 400 });
-  if (!auth.isSuper && startInLondon.minutes % 30 !== 0) return NextResponse.json({ error: "Table bookings must start on the hour or half hour." }, { status: 400 });
-  const { eligibleSports, canBookOther } = await eligibility(auth);
+  const standardMinutes = tableResult.data.sport_type === "pool" ? 30 : 60;
+  const { eligibleSports, canBookOther, teamBookingSports } = await eligibility(auth);
   if (!eligibleSports.includes(tableResult.data.sport_type)) return NextResponse.json({ error: `You do not currently have ${tableResult.data.sport_type} table booking access.` }, { status: 403 });
   if (purpose === "other" && !canBookOther) return NextResponse.json({ error: "Other bookings are limited to team captains, vice-captains and the Super User." }, { status: 403 });
+  const canBookTeamMatch = teamBookingSports.includes(tableResult.data.sport_type);
+  if (purpose === "league_match" && !canBookTeamMatch) return NextResponse.json({ error: `${tableResult.data.sport_type === "pool" ? "Pool" : "Snooker"} team bookings are limited to that team's captains, vice-captains and the Super User.` }, { status: 403 });
+  if (!auth.isSuper && purpose === "league_match" && (durationMinutes % 30 !== 0 || durationMinutes > 360)) return NextResponse.json({ error: "Team bookings must be in 30-minute steps and can be up to 6 hours." }, { status: 400 });
+  if (!auth.isSuper && purpose !== "league_match" && durationMinutes !== standardMinutes) return NextResponse.json({ error: `${tableResult.data.sport_type === "pool" ? "Pool" : "Snooker"} competition bookings must be ${standardMinutes}-minute sessions.` }, { status: 400 });
+  if (!auth.isSuper && startInLondon.minutes % 30 !== 0) return NextResponse.json({ error: "Table bookings must start on the hour or half hour." }, { status: 400 });
   if (purpose === "fixture") {
     const competitionResult = await auth.client.from("competitions").select("id,name,sport_type,is_archived,is_completed").eq("id", competitionId).maybeSingle();
     if (competitionResult.error) return NextResponse.json({ error: competitionResult.error.message }, { status: 400 });
@@ -619,7 +629,7 @@ export async function POST(request: NextRequest) {
     await sendPushToUserIds(auth.client, (managersResult.data ?? []).map((manager) => manager.id), {
       title: "New table-booking request",
       body: `${bookingTitle({ purpose, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, notes: otherReason })} · ${londonBookingTime(startsAt.toISOString(), endsAt.toISOString())}`,
-      url: "/table-bookings",
+      url: "/table-bookings?view=manage#booking-requests",
       tag: `table-booking-request-${insertResult.data.id}`,
     });
   }

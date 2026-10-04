@@ -353,7 +353,7 @@ export default function NotificationsPage() {
         ).forEach((booking) => {
           const row = booking as unknown as BookingNotificationRow;
           const bookingName = row.purpose === "league_match"
-            ? row.team_name || "League team booking"
+            ? row.team_name || "Team booking"
             : row.purpose === "other"
               ? row.notes || "Other table booking"
               : [row.participant_one, row.participant_two].filter(Boolean).join(" vs. ") || "Competition booking";
@@ -363,7 +363,7 @@ export default function NotificationsPage() {
             title: admin.isAdmin && row.status === "pending" ? "Table booking awaiting review" : `Table booking ${row.status === "booked" ? "approved" : row.status}`,
             detail: `${bookingName} · ${row.cue_tables?.name ?? "Cue table"} · ${new Date(row.starts_at).toLocaleString()}${row.rejection_reason ? ` · ${row.rejection_reason}` : ""}`,
             created_at: row.created_at,
-            href: "/table-bookings",
+            href: admin.isAdmin && row.status === "pending" ? "/table-bookings?view=manage#booking-requests" : "/table-bookings",
             status,
           });
         });
