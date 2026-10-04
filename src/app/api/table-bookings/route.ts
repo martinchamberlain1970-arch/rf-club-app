@@ -518,7 +518,7 @@ export async function POST(request: NextRequest) {
   if (editingReservationId) {
     const existingResult = await auth.client.from("table_reservations").select("id,booked_by_user_id,status").eq("id", editingReservationId).maybeSingle();
     if (existingResult.error) return NextResponse.json({ error: existingResult.error.message }, { status: 400 });
-    if (!existingResult.data || existingResult.data.status !== "booked") return NextResponse.json({ error: "That confirmed booking could not be found." }, { status: 404 });
+    if (!existingResult.data || !["booked", "pending", "rejected"].includes(existingResult.data.status)) return NextResponse.json({ error: "That active booking request could not be found." }, { status: 404 });
     if (!auth.isSuper && existingResult.data.booked_by_user_id !== auth.user.id) return NextResponse.json({ error: "Only the person who made this booking or the Super User can edit it." }, { status: 403 });
   }
   const tableId = String(body?.tableId ?? "");
