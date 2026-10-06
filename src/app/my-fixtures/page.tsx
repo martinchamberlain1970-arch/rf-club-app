@@ -7,6 +7,7 @@ import PageNav from "@/components/PageNav";
 import { supabase } from "@/lib/supabase";
 import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
 import { assignFixtureBookings, fixtureBookingLabel, type FixtureBooking } from "@/lib/fixture-bookings";
+import { isLegionMastersLeague } from "@/lib/legion-masters";
 import { formatMatchHandicapStart } from "@/lib/match-handicap";
 
 type WeekFilter = "last" | "this" | "next";
@@ -38,6 +39,8 @@ type CompetitionRow = {
   sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
   competition_format: "knockout" | "league";
   handicap_enabled: boolean;
+  is_archived: boolean;
+  is_completed: boolean;
 };
 
 type PlayerRow = {
@@ -152,7 +155,7 @@ export default function MyFixturesPage() {
 
       const [competitionRes, playerRes, framesRes, bookingsRes] = await Promise.all([
         competitionIds.length
-          ? client.from("competitions").select("id,name,sport_type,competition_format,handicap_enabled").in("id", competitionIds)
+          ? client.from("competitions").select("id,name,sport_type,competition_format,handicap_enabled,is_archived,is_completed").in("id", competitionIds)
           : Promise.resolve({ data: [], error: null }),
         playerIds.length
           ? client.from("players").select("id,display_name,full_name").in("id", playerIds)
@@ -179,7 +182,12 @@ export default function MyFixturesPage() {
       setPlayers(((playerRes.data ?? []) as unknown) as PlayerRow[]);
       setFrames(((framesRes.data ?? []) as unknown) as FrameRow[]);
       setFixtureBookings(bookingsRes.error ? [] : (((bookingsRes.data ?? []) as unknown) as FixtureBooking[]));
-      const leagueResponses = await Promise.all(loadedCompetitions.filter((competition) => competition.competition_format === "league").map(async (competition) => {
+      const leagueResponses = await Promise.all(loadedCompetitions.filter((competition) =>
+        competition.competition_format === "league" &&
+        !competition.is_archived &&
+        !competition.is_completed &&
+        isLegionMastersLeague(competition.name)
+      ).map(async (competition) => {
         const response = await fetch(`/api/public/leagues/${encodeURIComponent(competition.id)}`, { cache: "no-store" });
         if (!response.ok) return null;
         return [competition.id, await response.json() as LeagueData] as const;
@@ -302,8 +310,14 @@ export default function MyFixturesPage() {
     return [...new Set(rows.flatMap((row) => row.opponentIds))].map((id) => ({ id, name: playerNameById.get(id) ?? "Player" })).sort((a, b) => a.name.localeCompare(b.name));
   }, [filterSourceRows, fixtureCompetitionFilter, playerNameById]);
   const filteredFixtureRows = useMemo(() => filterSourceRows.filter(({ competition, opponentIds }) => (fixtureCompetitionFilter === "all" || competitionFilterKey(competition?.name) === fixtureCompetitionFilter) && (opponentFilter === "all" || opponentIds.includes(opponentFilter))), [filterSourceRows, fixtureCompetitionFilter, opponentFilter]);
-  const leagueCompetitions = useMemo(() => competitions.filter((competition) => competition.competition_format === "league" && leagueData[competition.id]), [competitions, leagueData]);
-  const activeLeagueId = selectedLeagueId || leagueCompetitions[0]?.id || "";
+  const leagueCompetitions = useMemo(() => competitions.filter((competition) =>
+    competition.competition_format === "league" &&
+    !competition.is_archived &&
+    !competition.is_completed &&
+    isLegionMastersLeague(competition.name) &&
+    leagueData[competition.id]
+  ), [competitions, leagueData]);
+  const activeLeagueId = leagueCompetitions.some((competition) => competition.id === selectedLeagueId) ? selectedLeagueId : leagueCompetitions[0]?.id || "";
   const activeLeague = activeLeagueId ? leagueData[activeLeagueId] : null;
   const activeLeagueWeeks = useMemo(() => [...new Set((activeLeague?.fixtures ?? []).map((fixture) => fixture.week))].sort((a, b) => a - b), [activeLeague]);
   const activeLeagueCurrentWeek = useMemo(() => {
@@ -503,7 +517,20 @@ export default function MyFixturesPage() {
                 </section>
                 : <section className={`${cardClass} landscape:p-3`}>
                   <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Live standings</p><h2 className="mt-1 text-xl font-bold text-slate-950">League table</h2></div>{leagueCompetitions.length > 1 ? <label className="text-sm font-medium text-slate-700">Competition<select value={activeLeagueId} onChange={(event) => setSelectedLeagueId(event.target.value)} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2">{leagueCompetitions.map((competition) => <option key={competition.id} value={competition.id}>{competition.name}</option>)}</select></label> : null}</div>
-                  {activeLeague ? <><p className="mt-2 font-semibold text-slate-800">{activeLeague.competition.name}</p><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[720px] text-sm landscape:min-w-0 landscape:text-xs landscape:[&_td]:px-1 landscape:[&_th]:px-1"><thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Void</th><th className="p-2 text-center">PF</th><th className="p-2 text-center">PA</th><th className="p-2 text-center">PD</th><th className="p-2 text-center">Pts</th></tr></thead><tbody>{activeLeague.table.map((row, index) => <tr key={row.playerId} className={`border-b border-slate-200 ${row.playerId === linkedPlayerId ? "bg-lime-100" : ""}`}><td className="p-2 font-black">{index + 1}</td><td className="p-2 font-semibold">{row.playerName}{row.playerId === linkedPlayerId ? <span className="ml-2 text-xs font-bold text-emerald-800 landscape:ml-1 landscape:text-[10px]">YOU</span> : null}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center">{row.pointsFor}</td><td className="p-2 text-center">{row.pointsAgainst}</td><td className="p-2 text-center font-bold">{row.pointsDifference > 0 ? "+" : ""}{row.pointsDifference}</td><td className="p-2 text-center text-lg font-black landscape:text-sm">{row.points}</td></tr>)}</tbody></table></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">Updated {new Date(activeLeague.updatedAt).toLocaleString("en-GB")}</p><Link href={`/league/${activeLeagueId}`} className="rounded-lg border border-teal-300 px-3 py-2 text-sm font-bold text-teal-800">Open full league centre</Link></div></> : <p className="mt-4 text-sm text-slate-600">You are not currently listed in a league competition with a published table.</p>}
+                  {activeLeague ? <>
+                    <p className="mt-2 font-semibold text-slate-800">{activeLeague.competition.name}</p>
+                    <p className="mt-2 rounded-xl border border-lime-300 bg-lime-50 px-3 py-2 text-sm text-emerald-950"><strong>Top 8 highlighted:</strong> current Legion Masters Cup qualification places.</p>
+                    <div className="mt-4 overflow-x-auto">
+                      <table className="w-full min-w-[820px] text-sm landscape:min-w-0 landscape:text-[11px] landscape:[&_td]:px-1 landscape:[&_th]:px-1">
+                        <thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Void</th><th className="p-2 text-center">PF</th><th className="p-2 text-center">PA</th><th className="p-2 text-center">PD</th><th className="p-2 text-center">Pts</th><th className="p-2 text-center">Finals</th></tr></thead>
+                        <tbody>{activeLeague.table.map((row, index) => {
+                          const qualifying = index < 8;
+                          return <tr key={row.playerId} className={`border-b ${qualifying ? "border-lime-300 bg-lime-50" : "border-slate-200"} ${qualifying && index === 7 ? "border-b-4 border-b-lime-500" : ""} ${row.playerId === linkedPlayerId ? "ring-2 ring-inset ring-emerald-500" : ""}`}><td className="p-2 font-black">{index + 1}{qualifying ? <span className="ml-1 text-lime-700">★</span> : null}</td><td className="p-2 font-semibold">{row.playerName}{row.playerId === linkedPlayerId ? <span className="ml-2 text-xs font-bold text-emerald-800 landscape:ml-1 landscape:text-[10px]">YOU</span> : null}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center">{row.pointsFor}</td><td className="p-2 text-center">{row.pointsAgainst}</td><td className="p-2 text-center font-bold">{row.pointsDifference > 0 ? "+" : ""}{row.pointsDifference}</td><td className="p-2 text-center text-lg font-black landscape:text-sm">{row.points}</td><td className="p-2 text-center">{qualifying ? <span className="whitespace-nowrap rounded-full bg-lime-200 px-2 py-0.5 text-xs font-semibold text-lime-950 landscape:text-[10px]">Cup place</span> : "—"}</td></tr>;
+                        })}</tbody>
+                      </table>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">Updated {new Date(activeLeague.updatedAt).toLocaleString("en-GB")}</p><Link href={`/league/${activeLeagueId}`} className="rounded-lg border border-teal-300 px-3 py-2 text-sm font-bold text-teal-800">Open full league centre</Link></div>
+                  </> : <p className="mt-4 text-sm text-slate-600">You are not currently listed in an active Legion Masters competition with a published table.</p>}
                 </section>}
         </RequireAuth>
       </div>
