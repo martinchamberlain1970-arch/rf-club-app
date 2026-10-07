@@ -18,6 +18,7 @@ type MatchRow = {
   player1_id: string | null;
   player2_id: string | null;
   rating_applied_at: string | null;
+  owner_user_id: string | null;
 };
 
 type CompetitionRow = {
@@ -110,7 +111,7 @@ async function applyLocalRating(
 export async function tryAutoApproveMatchingResult(client: SupabaseClient, matchId: string, options: AutoApprovalOptions = {}) {
   const matchResult = await client
     .from("matches")
-    .select("id,competition_id,best_of,status,match_mode,player1_id,player2_id,rating_applied_at")
+    .select("id,competition_id,best_of,status,match_mode,player1_id,player2_id,rating_applied_at,owner_user_id")
     .eq("id", matchId)
     .maybeSingle();
   if (matchResult.error || !matchResult.data) return { autoApproved: false, error: matchResult.error?.message ?? "Match not found." };
@@ -153,11 +154,23 @@ export async function tryAutoApproveMatchingResult(client: SupabaseClient, match
   const team1Score = submission1.team1_score;
   const team2Score = submission1.team2_score;
   const fixedRackLeague = competition.sport_type !== "snooker";
-  const target = Math.floor(match.best_of / 2) + 1;
   const valid = fixedRackLeague
     ? team1Score + team2Score === match.best_of && team1Score !== team2Score
-    : (team1Score >= target || team2Score >= target) && team1Score !== team2Score;
+    : team1Score !== team2Score && team1Score + team2Score > 0;
   if (!valid) return { autoApproved: false, reason: "invalid_score" };
+
+  if (competition.sport_type === "snooker") {
+    if (!match.owner_user_id) return { autoApproved: false, error: "The fixture owner could not be resolved for the snooker frame." };
+    const frameWrite = await client.from("frames").upsert({
+      match_id: match.id,
+      frame_number: 1,
+      owner_user_id: match.owner_user_id,
+      winner_player_id: team1Score > team2Score ? match.player1_id : match.player2_id,
+      team1_points: team1Score,
+      team2_points: team2Score,
+    }, { onConflict: "match_id,frame_number" });
+    if (frameWrite.error) return { autoApproved: false, error: frameWrite.error.message };
+  }
 
   const reviewedAt = new Date().toISOString();
   const submissionIds = [submission1.id, submission2.id];

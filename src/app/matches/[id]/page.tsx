@@ -2126,8 +2126,8 @@ export default function MatchPage() {
           .insert({
             match_id: match.id,
             submitted_by_user_id: admin.userId,
-            team1_score: built.summary.team1Score,
-            team2_score: built.summary.team2Score,
+            team1_score: isSnooker && built.rows.length === 1 ? built.rows[0].team1_points : built.summary.team1Score,
+            team2_score: isSnooker && built.rows.length === 1 ? built.rows[0].team2_points : built.summary.team2Score,
             break_and_run: built.summary.breakRunTeam1 + built.summary.breakRunTeam2 > 0,
             run_out_against_break: built.summary.runOutTeam1 + built.summary.runOutTeam2 > 0,
             break_and_run_team1: built.summary.breakRunTeam1,
@@ -2225,7 +2225,7 @@ export default function MatchPage() {
     // A fixed-rack league submission is a complete score claim. Rebuild its rack
     // rows from the submission being approved so an earlier conflicting claim
     // cannot determine the league points.
-    if (isFixedRackLeague && existingFrames.length) {
+    if ((isFixedRackLeague || (isSnooker && !submission.submitted_by_user_id)) && existingFrames.length) {
       existingFrames = [];
     }
     let rows: Array<{
@@ -2244,7 +2244,29 @@ export default function MatchPage() {
       high_break_team1: number;
       high_break_team2: number;
     }> = [];
-    if (!existingFrames.length) {
+    if (!existingFrames.length && isSnooker) {
+      rows.push({
+        match_id: match.id,
+        frame_number: 1,
+        winner_player_id: winnerId,
+        break_and_run: false,
+        run_out_against_break: false,
+        is_walkover_award: false,
+        team1_points: submission.team1_score,
+        team2_points: submission.team2_score,
+        breaks_over_30_team1_values: [],
+        breaks_over_30_team2_values: [],
+        breaks_over_30_team1: 0,
+        breaks_over_30_team2: 0,
+        high_break_team1: 0,
+        high_break_team2: 0,
+      });
+      const save = await persistFrames(rows);
+      if (!save.ok) {
+        showReviewModal(save.error);
+        return;
+      }
+    } else if (!existingFrames.length) {
       let idx = 1;
       const br1 = Math.min(submission.break_and_run_team1 ?? 0, submission.team1_score);
       const br2 = Math.min(submission.break_and_run_team2 ?? 0, submission.team2_score);

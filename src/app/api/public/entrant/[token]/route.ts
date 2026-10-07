@@ -40,7 +40,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     client.from("competitions").select("id,name,venue,sport_type,competition_format,best_of").eq("id", entry.competition_id).maybeSingle(),
     client
       .from("matches")
-      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for")
+      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
       .eq("competition_id", entry.competition_id)
       .eq("is_archived", false)
       .or(`player1_id.eq.${entry.player_id},player2_id.eq.${entry.player_id}`)
@@ -109,6 +109,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         ? players.get(match.opening_break_player_id)?.full_name?.trim() || players.get(match.opening_break_player_id)?.display_name || "Assigned player"
         : null,
       entrantBreaksFirst: match.opening_break_player_id === entry.player_id,
+      entrantHandicapStart: Number(entrantIsPlayer1 ? match.team1_handicap_start ?? 0 : match.team2_handicap_start ?? 0),
+      opponentHandicapStart: Number(entrantIsPlayer1 ? match.team2_handicap_start ?? 0 : match.team1_handicap_start ?? 0),
       opponent: {
         name: opponent?.full_name?.trim() || opponent?.display_name || "Opponent to be confirmed",
         email: override?.email || opponentSignup?.email || (opponentId ? userEmails.get(opponentId) : null) || null,
@@ -143,21 +145,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Enter a valid whole-number score for both players." }, { status: 400 });
   }
   const { client, entry } = resolved;
-  const matchResult = await client
-    .from("matches")
-    .select("id,competition_id,best_of,status,player1_id,player2_id")
-    .eq("id", matchId)
-    .eq("competition_id", entry.competition_id)
-    .eq("is_archived", false)
-    .maybeSingle();
+  const [matchResult, competitionResult] = await Promise.all([
+    client
+      .from("matches")
+      .select("id,competition_id,best_of,status,player1_id,player2_id")
+      .eq("id", matchId)
+      .eq("competition_id", entry.competition_id)
+      .eq("is_archived", false)
+      .maybeSingle(),
+    client.from("competitions").select("sport_type").eq("id", entry.competition_id).maybeSingle(),
+  ]);
   const match = matchResult.data;
   if (!match || (match.player1_id !== entry.player_id && match.player2_id !== entry.player_id)) return NextResponse.json({ error: "Fixture not found." }, { status: 404 });
+  if (competitionResult.error || !competitionResult.data) return NextResponse.json({ error: "Competition details could not be loaded." }, { status: 400 });
+  const isSnooker = competitionResult.data.sport_type === "snooker";
+  const scoreUnit = isSnooker ? "points" : "racks";
   if (!["pending", "in_progress"].includes(match.status)) return NextResponse.json({ error: "This fixture is no longer open for a result." }, { status: 409 });
-  if (entrantScore > match.best_of || opponentScore > match.best_of) {
-    return NextResponse.json({ error: `Neither player can be awarded more than ${match.best_of} racks.` }, { status: 400 });
+  if (!isSnooker && (entrantScore > match.best_of || opponentScore > match.best_of)) {
+    return NextResponse.json({ error: `Neither player can be awarded more than ${match.best_of} ${scoreUnit}.` }, { status: 400 });
   }
-  if (entrantScore + opponentScore !== match.best_of || entrantScore === opponentScore) {
-    return NextResponse.json({ error: `Play all ${match.best_of} racks. The two scores must total exactly ${match.best_of}.` }, { status: 400 });
+  if (!isSnooker && (entrantScore + opponentScore !== match.best_of || entrantScore === opponentScore)) {
+    return NextResponse.json({ error: `Play all ${match.best_of} ${scoreUnit}. The two scores must total exactly ${match.best_of}.` }, { status: 400 });
+  }
+  if (isSnooker && (entrantScore === opponentScore || entrantScore + opponentScore === 0)) {
+    return NextResponse.json({ error: "Enter the final adjusted points for both players. A completed frame cannot be a draw." }, { status: 400 });
   }
   const pendingResult = await client.from("result_submissions").select("id").eq("match_id", match.id).eq("competition_entry_id", entry.id).eq("status", "pending").maybeSingle();
   if (pendingResult.data) return NextResponse.json({ error: "You already have a result awaiting comparison or approval for this fixture." }, { status: 409 });
