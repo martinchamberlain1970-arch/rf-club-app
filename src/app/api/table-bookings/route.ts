@@ -447,6 +447,45 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "notify_existing_fixture_bookings") {
+    if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
+    const reservationsResult = await auth.client
+      .from("table_reservations")
+      .select("id,competition_id,participant_one_player_id,participant_two_player_id,participant_one,participant_two,starts_at,ends_at,cue_tables(name)")
+      .eq("status", "booked")
+      .eq("purpose", "fixture")
+      .gt("ends_at", new Date().toISOString())
+      .not("competition_id", "is", null)
+      .not("participant_one_player_id", "is", null)
+      .not("participant_two_player_id", "is", null)
+      .order("starts_at");
+    if (reservationsResult.error) return NextResponse.json({ error: reservationsResult.error.message }, { status: 400 });
+    const results = [];
+    for (const reservation of reservationsResult.data ?? []) {
+      const table = reservation.cue_tables as unknown as { name?: string } | null;
+      const sent = await sendCompetitionBookingEmails(auth.client, {
+        id: reservation.id,
+        competitionId: reservation.competition_id as string,
+        participantOnePlayerId: reservation.participant_one_player_id as string,
+        participantTwoPlayerId: reservation.participant_two_player_id as string,
+        participantOne: reservation.participant_one as string,
+        participantTwo: reservation.participant_two as string,
+        tableName: table?.name || "Club table",
+        startsAt: reservation.starts_at,
+        endsAt: reservation.ends_at,
+      }, { user: auth.user, role: auth.role }, "existing_booking");
+      results.push(...sent.map((result) => ({ bookingId: reservation.id, ...result })));
+    }
+    return NextResponse.json({
+      ok: true,
+      bookings: reservationsResult.data?.length ?? 0,
+      sent: results.filter((result) => result.status === "sent").length,
+      skipped: results.filter((result) => ["duplicate", "no_email"].includes(result.status)).length,
+      failed: results.filter((result) => ["failed", "not_configured"].includes(result.status)).length,
+      results,
+    });
+  }
+
   if (["approve", "reject", "delete"].includes(action)) {
     if (!auth.isSuper) return NextResponse.json({ error: "Super User access required." }, { status: 403 });
     const reservationId = String(body?.reservationId ?? "");

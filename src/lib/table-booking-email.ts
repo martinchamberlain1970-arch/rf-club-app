@@ -68,6 +68,13 @@ export async function sendCompetitionBookingEmails(
   const bookingUrl = `${siteUrl}/table-bookings#confirmed-bookings`;
   const subject = `${kind === "updated" ? "Table booking updated" : "Table booked"}: ${fixtureName}`;
   const sentTo = new Set<string>();
+  const previousResult = kind === "updated"
+    ? { data: [] as Array<{ meta: Record<string, unknown> | null }> }
+    : await client.from("audit_logs").select("meta").eq("action", "table_booking_player_email_sent").eq("entity_id", booking.id);
+  const previouslySentTo = new Set((previousResult.data ?? [])
+    .filter((row) => row.meta?.kind === kind)
+    .map((row) => String(row.meta?.recipient ?? "").trim().toLowerCase())
+    .filter(Boolean));
   const results: Array<{ playerId: string; playerName: string; email: string | null; status: "sent" | "no_email" | "duplicate" | "not_configured" | "failed"; messageId: string | null; error?: string }> = [];
 
   for (const row of candidateRows) {
@@ -76,7 +83,7 @@ export async function sendCompetitionBookingEmails(
       results.push({ playerId: row.playerId, playerName: row.playerName, email: null, status: "no_email", messageId: null });
       continue;
     }
-    if (sentTo.has(email)) {
+    if (sentTo.has(email) || previouslySentTo.has(email)) {
       results.push({ playerId: row.playerId, playerName: row.playerName, email, status: "duplicate", messageId: null });
       continue;
     }
