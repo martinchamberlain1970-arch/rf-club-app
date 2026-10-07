@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { sendApprovedResultEmails } from "@/lib/result-approved-email";
 
 const AUTO_APPROVAL_NOTE = "Automatically approved because both players submitted the same score.";
 
@@ -200,6 +201,10 @@ export async function tryAutoApproveMatchingResult(client: SupabaseClient, match
       summary: `Both players agreed ${team1Score}-${team2Score}; result automatically approved.`,
       meta: { competitionId: match.competition_id, submissionIds, team1Score, team2Score, ratingWarning },
     });
+    await sendApprovedResultEmails(client, match.id, {
+      user: { id: options.actorUserId ?? null, email: options.actorEmail ?? null },
+      role: options.actorRole ?? "user",
+    }).catch(() => undefined);
   }
   return { autoApproved: true, team1Score, team2Score, winnerSide, ratingWarning };
 }

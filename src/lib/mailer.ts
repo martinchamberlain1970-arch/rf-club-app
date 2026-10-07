@@ -22,7 +22,7 @@ type SendEmailInput = {
 export async function sendEmail(input: SendEmailInput) {
   if (!hasMailerConfig()) throw new Error("Email configuration is missing.");
   const address = input.fromAddress?.trim() || requiredEnv("EMAIL_FROM_ADDRESS");
-  const name = input.fromName?.trim() || process.env.EMAIL_FROM_NAME?.trim() || "Rack & Frame Club";
+  const name = input.fromName?.trim() || "Rack & Frame Information";
   const from = `"${name.replaceAll('"', "")}" <${address}>`;
   const replyTo = input.replyTo === null
     ? undefined

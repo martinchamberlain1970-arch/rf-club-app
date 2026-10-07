@@ -1756,6 +1756,9 @@ export default function MatchPage() {
             summary: `Match completed. Winner: ${winnerName}.`,
             meta: { competitionId: match.competition_id, score: `${wins.team1}-${wins.team2}` },
           });
+          const session = await client.auth.getSession();
+          const token = session.data.session?.access_token;
+          if (token) await fetch("/api/results/approved-emails", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ matchId: match.id }), keepalive: true });
         })(),
         "Finalising ratings and the league table",
         25_000
@@ -2391,6 +2394,9 @@ export default function MatchPage() {
       summary: `Submission approved for match ${match.id}.`,
       meta: { matchId: match.id, competitionId: match.competition_id },
     });
+    const session = await client.auth.getSession();
+    const token = session.data.session?.access_token;
+    if (token) await fetch("/api/results/approved-emails", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ matchId: match.id }) }).catch(() => undefined);
     router.push("/results");
   };
 
