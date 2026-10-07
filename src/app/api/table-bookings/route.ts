@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendPushToUserIds } from "@/lib/push-server";
+import { sendCompetitionBookingEmails } from "@/lib/table-booking-email";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -542,7 +543,7 @@ export async function POST(request: NextRequest) {
   if (startsAt.getTime() < Date.now() - 5 * 60000 || durationMinutes < 30 || durationMinutes > 360) return NextResponse.json({ error: "Bookings must be between 30 minutes and 6 hours and cannot start in the past." }, { status: 400 });
   if (startsAt.getTime() > Date.now() + 60 * 24 * 60 * 60 * 1000) return NextResponse.json({ error: "Bookings can be made up to 60 days ahead." }, { status: 400 });
   const startInLondon = londonDateParts(startsAt);
-  const tableResult = await auth.client.from("cue_tables").select("id,sport_type,is_active").eq("id", tableId).maybeSingle();
+  const tableResult = await auth.client.from("cue_tables").select("id,name,sport_type,is_active").eq("id", tableId).maybeSingle();
   if (!tableResult.data?.is_active) return NextResponse.json({ error: "That table is not available." }, { status: 404 });
   const standardMinutes = tableResult.data.sport_type === "pool" ? 30 : 60;
   const { eligibleSports, canBookOther, teamBookingSports } = await eligibility(auth);
@@ -608,6 +609,19 @@ export async function POST(request: NextRequest) {
     }
     if (!updateResult.data) return NextResponse.json({ error: "The booking was not updated. Refresh the page and try again." }, { status: 409 });
     await auth.client.from("audit_logs").insert({ actor_user_id: auth.user.id, actor_email: auth.user.email ?? null, actor_role: auth.role, action: auth.isSuper ? "table_reservation_edited" : "table_booking_edit_requested", entity_type: "table_reservation", entity_id: editingReservationId, summary: `${auth.isSuper ? "Cue table reservation edited" : "Cue table booking edit submitted for approval"}: ${startsAt.toISOString()} to ${endsAt.toISOString()}.`, meta: { table_id: tableId, player_id: auth.playerId, purpose } });
+    if (status === "booked" && purpose === "fixture" && competitionId && participantOnePlayerId && participantTwoPlayerId && participantOne && participantTwo) {
+      await sendCompetitionBookingEmails(auth.client, {
+        id: editingReservationId,
+        competitionId,
+        participantOnePlayerId,
+        participantTwoPlayerId,
+        participantOne,
+        participantTwo,
+        tableName: tableResult.data.name,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+      }, { user: auth.user, role: auth.role }, "updated").catch(() => null);
+    }
     return NextResponse.json({ ok: true, id: editingReservationId, status, autoApproved });
   }
   const insertResult = await auth.client.from("table_reservations").insert({ table_id: tableId, booked_by_user_id: auth.user.id, booked_for_player_id: bookedForPlayerId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), purpose, notes: purpose === "other" ? otherReason : null, participant_one: participantOne, participant_two: participantTwo, team_name: teamName, competition_id: competitionId, participant_one_player_id: participantOnePlayerId, participant_two_player_id: participantTwoPlayerId, requester_email: auth.user.email ?? null, status, reviewed_at: reviewedAt, reviewed_by_user_id: reviewedByUserId }).select("id").single();
@@ -624,6 +638,19 @@ export async function POST(request: NextRequest) {
       url: "/table-bookings#confirmed-bookings",
       tag: `table-booking-confirmed-${insertResult.data.id}`,
     });
+    if (competitionId && participantOne && participantTwo) {
+      await sendCompetitionBookingEmails(auth.client, {
+        id: insertResult.data.id,
+        competitionId,
+        participantOnePlayerId,
+        participantTwoPlayerId,
+        participantOne,
+        participantTwo,
+        tableName: tableResult.data.name,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+      }, { user: auth.user, role: auth.role }, "confirmed").catch(() => null);
+    }
   } else if (!auth.isSuper) {
     const managersResult = await auth.client.from("app_users").select("id").in("role", ["owner", "super"]);
     await sendPushToUserIds(auth.client, (managersResult.data ?? []).map((manager) => manager.id), {
