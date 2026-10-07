@@ -716,7 +716,7 @@ export default function MatchPage() {
   const canAdminManageMatch = admin.isAdmin || admin.isSuper;
   const hasPendingSubmission = useMemo(() => submissions.some((s) => s.status === "pending"), [submissions]);
   const pendingSubmissionForReview = useMemo(() => submissions.find((s) => s.status === "pending") ?? null, [submissions]);
-  const adminReviewOnly = Boolean(canAdminManageMatch && hasPendingSubmission && !isArchived && !isByeMatch && match?.status !== "complete");
+  const adminReviewOnly = Boolean(canAdminManageMatch && hasPendingSubmission && !isArchived && !isByeMatch);
   const userApprovedSubmission = useMemo(() => {
     if (!admin.userId) return null;
     return submissions.find((s) => s.submitted_by_user_id === admin.userId && s.status === "approved") ?? null;
@@ -2543,7 +2543,7 @@ export default function MatchPage() {
                   This match is archived. Stats are retained, but the match is hidden from fixtures and live views.
                 </section>
               ) : null}
-              {match.status === "complete" && !confirmEditComplete ? (
+              {match.status === "complete" && !confirmEditComplete && !adminReviewOnly ? (
                 <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
                   <p className="text-amber-900">
                     This match is already complete. Are you sure you want to edit it?
@@ -2567,7 +2567,7 @@ export default function MatchPage() {
                 </section>
               ) : null}
 
-              {match.status !== "complete" || confirmEditComplete ? (
+              {match.status !== "complete" || confirmEditComplete || adminReviewOnly ? (
                 <>
               <section className={cardClass}>
                 <p className="text-sm text-slate-600">Round {match.round_no ?? 1} · Match {match.match_no ?? 1}</p>
