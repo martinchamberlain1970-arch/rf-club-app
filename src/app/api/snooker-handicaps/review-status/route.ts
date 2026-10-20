@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { nextSnookerHandicapReviewDate } from "@/lib/snooker-handicap-review-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -26,7 +27,7 @@ export async function GET() {
   if (result.error) return NextResponse.json({ error: result.error.message }, { status: 400 });
   const lastReviewedAt = result.data?.created_at ?? null;
   const nextReviewAt = lastReviewedAt
-    ? new Date(new Date(lastReviewedAt).getTime() + REVIEW_INTERVAL_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    ? `${nextSnookerHandicapReviewDate(lastReviewedAt, REVIEW_INTERVAL_DAYS)}T12:00:00.000Z`
     : null;
 
   return NextResponse.json({

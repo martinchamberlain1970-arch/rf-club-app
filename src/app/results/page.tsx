@@ -42,6 +42,7 @@ type CompetitionRow = {
   id: string;
   name: string;
   location_id?: string | null;
+  sport_type: "snooker" | "pool_8_ball" | "pool_9_ball";
 };
 
 type Player = { id: string; display_name: string; full_name?: string | null };
@@ -159,7 +160,7 @@ export default function ResultsQueuePage() {
 
     const competitionIds = Array.from(new Set(matchRows.map((m) => m.competition_id)));
     const cRes = competitionIds.length
-      ? await client.from("competitions").select("id,name,location_id").in("id", competitionIds)
+      ? await client.from("competitions").select("id,name,location_id,sport_type").in("id", competitionIds)
       : { data: [] as CompetitionRow[] };
     if ("error" in cRes && cRes.error) {
       setMessage(cRes.error?.message || "Failed to load competition data.");
@@ -230,6 +231,7 @@ export default function ResultsQueuePage() {
 
   const nameMap = useMemo(() => new Map(players.map((p) => [p.id, p.full_name?.trim() ? p.full_name : p.display_name])), [players]);
   const compMap = useMemo(() => new Map(competitions.map((c) => [c.id, c.name])), [competitions]);
+  const competitionMap = useMemo(() => new Map(competitions.map((c) => [c.id, c])), [competitions]);
   const matchMap = useMemo(() => new Map(matches.map((m) => [m.id, m])), [matches]);
   const entryPlayerMap = useMemo(() => new Map(entryLinks.map((entry) => [entry.id, entry.player_id])), [entryLinks]);
 
@@ -433,6 +435,7 @@ export default function ResultsQueuePage() {
                   {actionablePending.map((s) => {
                     const m = matchMap.get(s.match_id);
                     const title = m ? compMap.get(m.competition_id) ?? "Competition" : "Competition";
+                    const isPool = m ? competitionMap.get(m.competition_id)?.sport_type.startsWith("pool_") === true : false;
                     const p1 =
                       m?.match_mode === "doubles"
                         ? `${nameMap.get(m.team1_player1_id ?? "") ?? "TBC"} & ${nameMap.get(m.team1_player2_id ?? "") ?? "TBC"}`
@@ -466,14 +469,16 @@ export default function ResultsQueuePage() {
                                 Score {s.team1_score} - {s.team2_score}
                               </span>
                             </div>
-                            <div className="grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
-                              <p className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                Break &amp; Run: {p1} {s.break_and_run_team1 ?? 0} · {p2} {s.break_and_run_team2 ?? 0}
-                              </p>
-                              <p className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                Run Out: {p1} {s.run_out_against_break_team1 ?? 0} · {p2} {s.run_out_against_break_team2 ?? 0}
-                              </p>
-                            </div>
+                            {isPool ? (
+                              <div className="grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
+                                <p className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                  Break &amp; Run: {p1} {s.break_and_run_team1 ?? 0} · {p2} {s.break_and_run_team2 ?? 0}
+                                </p>
+                                <p className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                  Run Out: {p1} {s.run_out_against_break_team1 ?? 0} · {p2} {s.run_out_against_break_team2 ?? 0}
+                                </p>
+                              </div>
+                            ) : null}
                           </div>
                           <div className="flex min-w-[170px] flex-col items-start gap-3">
                             <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">

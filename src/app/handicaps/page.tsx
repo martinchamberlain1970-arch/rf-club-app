@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
 import { supabase } from "@/lib/supabase";
+import { targetSnookerHandicapFromElo } from "@/lib/snooker-handicap";
 
 type Competition = { id: string; name: string };
 type Entry = { competition_id: string; player_id: string };
-type Player = { id: string; display_name: string; full_name: string | null; snooker_handicap: number | null };
+type Player = { id: string; display_name: string; full_name: string | null; snooker_handicap: number | null; rating_snooker: number | null };
 type ReviewStatus = { lastReviewedAt: string | null; nextReviewAt: string | null; intervalDays: number; movementLimit: null };
 function playerName(player: Player) {
   return player.full_name?.trim() || player.display_name;
@@ -80,7 +81,7 @@ export default function HandicapsPage() {
       const loadedEntries = (entryResult.data ?? []) as Entry[];
       const playerIds = [...new Set(loadedEntries.map((entry) => entry.player_id))];
       const playerResult = playerIds.length
-        ? await client.from("players").select("id,display_name,full_name,snooker_handicap").in("id", playerIds)
+        ? await client.from("players").select("id,display_name,full_name,snooker_handicap,rating_snooker").in("id", playerIds)
         : { data: [], error: null };
       if (!active) return;
       if (playerResult.error) setMessage(playerResult.error.message);
@@ -98,7 +99,12 @@ export default function HandicapsPage() {
     const entrantIds = entries.filter((entry) => entry.competition_id === selectedCompetitionId).map((entry) => entry.player_id);
     return players
       .filter((player) => entrantIds.includes(player.id))
-      .map((player) => ({ ...player, name: playerName(player), handicap: Number(player.snooker_handicap ?? 0) }))
+      .map((player) => ({
+        ...player,
+        name: playerName(player),
+        handicap: Number(player.snooker_handicap ?? 0),
+        indicativeHandicap: targetSnookerHandicapFromElo(Math.round(player.rating_snooker ?? 1000)),
+      }))
       .sort((first, second) => first.name.localeCompare(second.name));
   }, [entries, players, selectedCompetitionId]);
   const ownRow = rows.find((row) => row.id === linkedPlayerId) ?? null;
@@ -124,8 +130,9 @@ export default function HandicapsPage() {
               ) : null}
               <section className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm">
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-700">{selectedCompetition?.name}</p>
-                <h2 className="mt-2 text-xl font-black text-slate-950">{ownRow ? `Your handicap: ${ownRow.handicap > 0 ? "+" : ""}${ownRow.handicap}` : "Competition handicaps"}</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-700">This is the player’s current Elo-aligned handicap. The exact <strong>match handicap start</strong> is calculated from the difference between both players and is shown on every fixture and match screen.</p>
+                <h2 className="mt-2 text-xl font-black text-slate-950">{ownRow ? `Your active handicap: ${ownRow.handicap > 0 ? "+" : ""}${ownRow.handicap}` : "Competition handicaps"}</h2>
+                {ownRow ? <p className="mt-2 text-sm font-semibold text-sky-900">If reviewed today from your current Elo: {ownRow.indicativeHandicap > 0 ? "+" : ""}{ownRow.indicativeHandicap}</p> : null}
+                <p className="mt-2 text-sm leading-6 text-slate-700">The active figure was set at the last scheduled review. The exact <strong>match handicap start</strong> is calculated from the difference between both players and is shown on every fixture and match screen.</p>
                 <p className="mt-1 text-xs text-slate-600">A lower handicap represents the stronger player. Only the difference is applied as the match start.</p>
               </section>
               <section className="rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
@@ -138,17 +145,21 @@ export default function HandicapsPage() {
                 <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-700">
                   <li>The calculation starts at Elo 1000: every five Elo points changes the handicap by one point, rounded to the nearest four.</li>
                   <li>There is no maximum movement at a review—the handicap moves directly to its Elo-aligned figure.</li>
+                  <li>The indicative figure below is recalculated from each player’s latest Elo, so players can see what their handicap would be if a review happened today.</li>
                   <li>Any change applies immediately to every unplayed fixture. Completed results are never changed.</li>
                   <li>The Super User can also recalculate a new player manually between scheduled reviews.</li>
                 </ul>
               </section>
               <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-200 px-4 py-3"><h2 className="font-bold text-slate-950">All player handicaps</h2><p className="mt-1 text-xs text-slate-500">Listed alphabetically. Match starts are capped at 40 points.</p></div>
+                <div className="border-b border-slate-200 px-4 py-3"><h2 className="font-bold text-slate-950">All player handicaps</h2><p className="mt-1 text-xs text-slate-500">Listed alphabetically. “If reviewed today” is a guide only; the active handicap changes at the scheduled four-week review. Match starts are capped at 40 points.</p></div>
                 <div className="divide-y divide-slate-200">
                   {rows.map((row) => (
-                    <div key={row.id} className={`flex items-center justify-between gap-4 px-4 py-3 ${row.id === linkedPlayerId ? "bg-emerald-50" : ""}`}>
+                    <div key={row.id} className={`flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${row.id === linkedPlayerId ? "bg-emerald-50" : ""}`}>
                       <div><p className="font-semibold text-slate-900">{row.name}</p>{row.id === linkedPlayerId ? <span className="text-xs font-bold uppercase tracking-wide text-emerald-700">You</span> : null}</div>
-                      <span className="min-w-14 rounded-xl bg-slate-900 px-3 py-2 text-center text-lg font-black text-white">{row.handicap > 0 ? "+" : ""}{row.handicap}</span>
+                      <div className="grid w-full grid-cols-2 gap-2 text-center sm:w-auto">
+                        <div><span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">Active</span><span className="mt-1 block min-w-14 rounded-xl bg-slate-900 px-3 py-2 text-lg font-black text-white">{row.handicap > 0 ? "+" : ""}{row.handicap}</span></div>
+                        <div><span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">If reviewed today</span><span className={`mt-1 block min-w-14 rounded-xl px-3 py-2 text-lg font-black ${row.indicativeHandicap === row.handicap ? "bg-slate-100 text-slate-700" : "bg-sky-100 text-sky-900"}`}>{row.indicativeHandicap > 0 ? "+" : ""}{row.indicativeHandicap}</span></div>
+                      </div>
                     </div>
                   ))}
                 </div>

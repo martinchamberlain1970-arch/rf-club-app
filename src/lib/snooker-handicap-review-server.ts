@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { calculateSnookerHandicapStarts } from "@/lib/snooker-handicap";
+import { calculateSnookerHandicapStarts, targetSnookerHandicapFromElo } from "@/lib/snooker-handicap";
 
 type PlayerRow = {
   id: string;
@@ -16,8 +16,7 @@ type ReviewOptions = {
 };
 
 export function targetHandicapFromElo(rating: number) {
-  const raw = (1000 - rating) / 5;
-  return Math.round(raw / 4) * 4;
+  return targetSnookerHandicapFromElo(rating);
 }
 
 export function currentLondonDate(from = new Date()) {
@@ -29,6 +28,19 @@ export function currentLondonDate(from = new Date()) {
   }).formatToParts(from);
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${value.year}-${value.month}-${value.day}`;
+}
+
+function addCalendarDays(date: string, days: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day + days, 12));
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+}
+
+export function nextSnookerHandicapReviewDate(lastReviewedAt: string | Date, intervalDays = 28) {
+  const intervalEnd = addCalendarDays(currentLondonDate(new Date(lastReviewedAt)), intervalDays);
+  const weekday = new Date(`${intervalEnd}T12:00:00Z`).getUTCDay();
+  const daysUntilSunday = (7 - weekday) % 7;
+  return addCalendarDays(intervalEnd, daysUntilSunday);
 }
 
 export async function runSnookerHandicapReview(client: SupabaseClient, options: ReviewOptions) {

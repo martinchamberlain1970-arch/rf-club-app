@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { currentLondonDate, runSnookerHandicapReview } from "@/lib/snooker-handicap-review-server";
+import { currentLondonDate, nextSnookerHandicapReviewDate, runSnookerHandicapReview } from "@/lib/snooker-handicap-review-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const cronSecret = process.env.CRON_SECRET;
-const REVIEW_INTERVAL_MS = 28 * 24 * 60 * 60 * 1000;
+const REVIEW_INTERVAL_DAYS = 28;
 
 export async function GET(request: NextRequest) {
   if (!supabaseUrl || !serviceRoleKey) return NextResponse.json({ error: "Server is not configured." }, { status: 500 });
@@ -23,11 +23,13 @@ export async function GET(request: NextRequest) {
     .maybeSingle();
   if (latestResult.error) return NextResponse.json({ error: latestResult.error.message }, { status: 400 });
   const lastReviewAt = latestResult.data?.created_at ? new Date(latestResult.data.created_at) : null;
-  if (lastReviewAt && Date.now() - lastReviewAt.getTime() < REVIEW_INTERVAL_MS) {
-    return NextResponse.json({ ok: true, reviewed: false, lastReviewAt: lastReviewAt.toISOString() });
+  const today = currentLondonDate();
+  const nextReviewDate = lastReviewAt ? nextSnookerHandicapReviewDate(lastReviewAt, REVIEW_INTERVAL_DAYS) : today;
+  if (today < nextReviewDate) {
+    return NextResponse.json({ ok: true, reviewed: false, lastReviewAt: lastReviewAt?.toISOString() ?? null, nextReviewDate });
   }
 
-  const effectiveFrom = currentLondonDate();
+  const effectiveFrom = today;
   try {
     const result = await runSnookerHandicapReview(client, {
       effectiveFrom,

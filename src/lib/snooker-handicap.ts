@@ -1,5 +1,10 @@
 export const MAX_SNOOKER_START = 40;
 
+export function targetSnookerHandicapFromElo(rating: number) {
+  const raw = (1000 - rating) / 5;
+  return Math.round(raw / 4) * 4;
+}
+
 export function calculateSnookerHandicapStarts(playerOneHandicap: number | null | undefined, playerTwoHandicap: number | null | undefined) {
   const h1 = playerOneHandicap ?? 0;
   const h2 = playerTwoHandicap ?? 0;

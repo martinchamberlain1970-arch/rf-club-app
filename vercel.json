@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/snooker-handicap-reviews",
-      "schedule": "30 1 * * *"
+      "schedule": "45 22 * * 0"
     }
   ]
 }
