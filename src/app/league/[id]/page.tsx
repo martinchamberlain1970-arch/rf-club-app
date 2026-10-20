@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { isLegionMastersLeague } from "@/lib/legion-masters";
 import { formatMatchHandicapStart } from "@/lib/match-handicap";
+import LeaguePlayerSummaryModal from "@/components/LeaguePlayerSummaryModal";
 
-type Fixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
+type Fixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1Id: string | null; player2Id: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
 type TableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
 type LeagueData = { competition: { id: string; name: string; venue: string | null; sport_type: string; league_schedule_mode: string | null; league_finals_size: number | null; handicap_enabled: boolean }; fixtures: Fixture[]; table: TableRow[]; updatedAt: string };
 
@@ -16,6 +17,7 @@ export default function PublicLeaguePage() {
   const [data, setData] = useState<LeagueData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedWeek, setSelectedWeek] = useState("current");
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/public/leagues/${encodeURIComponent(params.id)}`, { cache: "no-store" })
@@ -99,12 +101,13 @@ export default function PublicLeaguePage() {
               <thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Void</th><th className="p-2 text-center">PF</th><th className="p-2 text-center">PA</th><th className="p-2 text-center">PD</th><th className="p-2 text-center">Pts</th></tr></thead>
               <tbody>{data.table.map((row, index) => {
                 const qualifying = isMasters && index < 8;
-                return <tr key={row.playerId} className={`border-b border-slate-200 ${qualifying ? "bg-lime-50" : ""}`}><td className="p-2 font-black">{index + 1}{qualifying ? <span className="ml-1 text-lime-700">★</span> : null}</td><td className="p-2 font-semibold">{row.playerName}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center">{row.pointsFor}</td><td className="p-2 text-center">{row.pointsAgainst}</td><td className="p-2 text-center font-bold">{row.pointsDifference > 0 ? "+" : ""}{row.pointsDifference}</td><td className="p-2 text-center text-lg font-black">{row.points}</td></tr>;
+                return <tr key={row.playerId} className={`border-b border-slate-200 ${qualifying ? "bg-lime-50" : ""}`}><td className="p-2 font-black">{index + 1}{qualifying ? <span className="ml-1 text-lime-700">★</span> : null}</td><td className="p-2 font-semibold"><button type="button" onClick={() => setSelectedPlayerId(row.playerId)} className="text-left underline decoration-emerald-300 decoration-2 underline-offset-4 hover:text-emerald-800">{row.playerName}</button></td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center">{row.pointsFor}</td><td className="p-2 text-center">{row.pointsAgainst}</td><td className="p-2 text-center font-bold">{row.pointsDifference > 0 ? "+" : ""}{row.pointsDifference}</td><td className="p-2 text-center text-lg font-black">{row.points}</td></tr>;
               })}</tbody>
             </table>
           </div>
           <p className="mt-3 text-xs text-slate-500">Updated {new Date(data.updatedAt).toLocaleString("en-GB")} · Refresh this page for the latest approved results.</p>
         </section>
+        {selectedPlayerId ? <LeaguePlayerSummaryModal player={{ id: selectedPlayerId, name: data.table.find((row) => row.playerId === selectedPlayerId)?.playerName ?? "Player" }} competitionName={data.competition.name} fixtures={data.fixtures} onClose={() => setSelectedPlayerId(null)} /> : null}
       </div>
     </main>
   );

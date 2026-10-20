@@ -146,6 +146,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       bestOf: match.best_of,
       status: match.status,
       scheduledFor: match.scheduled_for,
+      player1Id: match.player1_id,
+      player2Id: isBye ? null : match.player2_id,
       player1: nameById.get(match.player1_id ?? "") || "TBC",
       player2: isBye ? "BYE" : nameById.get(match.player2_id ?? "") || "TBC",
       openingBreaker: isBye ? null : nameById.get(match.opening_break_player_id ?? "") || null,

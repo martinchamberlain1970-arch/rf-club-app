@@ -9,6 +9,7 @@ import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
 import { assignFixtureBookings, fixtureBookingLabel, type FixtureBooking } from "@/lib/fixture-bookings";
 import { isLegionMastersLeague } from "@/lib/legion-masters";
 import { formatMatchHandicapStart } from "@/lib/match-handicap";
+import LeaguePlayerSummaryModal from "@/components/LeaguePlayerSummaryModal";
 
 type WeekFilter = "last" | "this" | "next";
 type FixtureView = "weekly" | "all" | "results" | "weekly-results" | "tables";
@@ -51,7 +52,7 @@ type PlayerRow = {
 
 type FrameRow = { match_id: string; winner_player_id: string | null };
 type LeagueTableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
-type LeagueFixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
+type LeagueFixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1Id: string | null; player2Id: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
 type LeagueData = { competition: CompetitionRow; fixtures: LeagueFixture[]; table: LeagueTableRow[]; updatedAt: string };
 
 function startOfWeek(date: Date) {
@@ -98,6 +99,7 @@ export default function MyFixturesPage() {
   const [selectedResultsWeek, setSelectedResultsWeek] = useState("current");
   const [fixtureCompetitionFilter, setFixtureCompetitionFilter] = useState("all");
   const [opponentFilter, setOpponentFilter] = useState("all");
+  const [leaguePlayerId, setLeaguePlayerId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const cardClass = "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm";
 
@@ -525,12 +527,13 @@ export default function MyFixturesPage() {
                         <thead><tr className="border-b-2 border-slate-900 text-left"><th className="p-2">Pos</th><th className="p-2">Player</th><th className="p-2 text-center">P</th><th className="p-2 text-center">W</th><th className="p-2 text-center">L</th><th className="p-2 text-center">Void</th><th className="p-2 text-center">PF</th><th className="p-2 text-center">PA</th><th className="p-2 text-center">PD</th><th className="p-2 text-center">Pts</th><th className="p-2 text-center">Finals</th></tr></thead>
                         <tbody>{activeLeague.table.map((row, index) => {
                           const qualifying = index < 8;
-                          return <tr key={row.playerId} className={`border-b ${qualifying ? "border-lime-300 bg-lime-50" : "border-slate-200"} ${qualifying && index === 7 ? "border-b-4 border-b-lime-500" : ""} ${row.playerId === linkedPlayerId ? "ring-2 ring-inset ring-emerald-500" : ""}`}><td className="p-2 font-black">{index + 1}{qualifying ? <span className="ml-1 text-lime-700">★</span> : null}</td><td className="p-2 font-semibold">{row.playerName}{row.playerId === linkedPlayerId ? <span className="ml-2 text-xs font-bold text-emerald-800 landscape:ml-1 landscape:text-[10px]">YOU</span> : null}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center">{row.pointsFor}</td><td className="p-2 text-center">{row.pointsAgainst}</td><td className="p-2 text-center font-bold">{row.pointsDifference > 0 ? "+" : ""}{row.pointsDifference}</td><td className="p-2 text-center text-lg font-black landscape:text-sm">{row.points}</td><td className="p-2 text-center">{qualifying ? <span className="whitespace-nowrap rounded-full bg-lime-200 px-2 py-0.5 text-xs font-semibold text-lime-950 landscape:text-[10px]">Cup place</span> : "—"}</td></tr>;
+                          return <tr key={row.playerId} className={`border-b ${qualifying ? "border-lime-300 bg-lime-50" : "border-slate-200"} ${qualifying && index === 7 ? "border-b-4 border-b-lime-500" : ""} ${row.playerId === linkedPlayerId ? "ring-2 ring-inset ring-emerald-500" : ""}`}><td className="p-2 font-black">{index + 1}{qualifying ? <span className="ml-1 text-lime-700">★</span> : null}</td><td className="p-2 font-semibold"><button type="button" onClick={() => setLeaguePlayerId(row.playerId)} className="text-left underline decoration-teal-300 decoration-2 underline-offset-4 hover:text-teal-800">{row.playerName}</button>{row.playerId === linkedPlayerId ? <span className="ml-2 text-xs font-bold text-emerald-800 landscape:ml-1 landscape:text-[10px]">YOU</span> : null}</td><td className="p-2 text-center">{row.played}</td><td className="p-2 text-center">{row.won}</td><td className="p-2 text-center">{row.lost}</td><td className="p-2 text-center">{row.voided}</td><td className="p-2 text-center">{row.pointsFor}</td><td className="p-2 text-center">{row.pointsAgainst}</td><td className="p-2 text-center font-bold">{row.pointsDifference > 0 ? "+" : ""}{row.pointsDifference}</td><td className="p-2 text-center text-lg font-black landscape:text-sm">{row.points}</td><td className="p-2 text-center">{qualifying ? <span className="whitespace-nowrap rounded-full bg-lime-200 px-2 py-0.5 text-xs font-semibold text-lime-950 landscape:text-[10px]">Cup place</span> : "—"}</td></tr>;
                         })}</tbody>
                       </table>
                     </div>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">Updated {new Date(activeLeague.updatedAt).toLocaleString("en-GB")}</p><Link href={`/league/${activeLeagueId}`} className="rounded-lg border border-teal-300 px-3 py-2 text-sm font-bold text-teal-800">Open full league centre</Link></div>
                   </> : <p className="mt-4 text-sm text-slate-600">You are not currently listed in an active Legion Masters competition with a published table.</p>}
+                  {activeLeague && leaguePlayerId ? <LeaguePlayerSummaryModal player={{ id: leaguePlayerId, name: activeLeague.table.find((row) => row.playerId === leaguePlayerId)?.playerName ?? "Player" }} competitionName={activeLeague.competition.name} fixtures={activeLeague.fixtures} onClose={() => setLeaguePlayerId(null)} /> : null}
                 </section>}
         </RequireAuth>
       </div>
