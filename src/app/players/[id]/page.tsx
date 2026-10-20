@@ -144,8 +144,9 @@ export default function PlayerProfilePage() {
   const [creatingChild, setCreatingChild] = useState(false);
   const [showHandicap, setShowHandicap] = useState(true);
   const [showPerformance, setShowPerformance] = useState(true);
-  const [showOpponents, setShowOpponents] = useState(true);
-  const [showHistory, setShowHistory] = useState(true);
+  const [showOpponents, setShowOpponents] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [activeProfileView, setActiveProfileView] = useState<"overview" | "ratings" | "history" | "settings">("overview");
   const [infoModal, setInfoModal] = useState<{ title: string; description: string } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
@@ -1502,7 +1503,7 @@ export default function PlayerProfilePage() {
           <ScreenHeader
             title="Player Profile"
             eyebrow="Players"
-            subtitle="Profile details, club history, and player stats."
+            subtitle="Profile details and individual performance."
           />
           {loading ? <p className="rounded-xl border border-slate-200 bg-white p-4">Loading profile...</p> : null}
           <MessageModal message={message} onClose={() => setMessage(null)} />
@@ -1628,8 +1629,33 @@ export default function PlayerProfilePage() {
                   </div>
                 </section>
               ) : null}
+              {player ? (
+                <nav className="sticky top-2 z-20 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur" aria-label="Player profile sections">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {([
+                      ["overview", "Overview"],
+                      ["ratings", "Ratings & Handicap"],
+                      ["history", "Match History"],
+                      ["settings", "Profile Settings"],
+                    ] as const).map(([view, label]) => (
+                      <button
+                        key={view}
+                        type="button"
+                        onClick={() => setActiveProfileView(view)}
+                        className={`rounded-xl px-3 py-2.5 text-sm font-bold transition ${
+                          activeProfileView === view
+                            ? "bg-slate-950 text-white shadow-sm"
+                            : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </nav>
+              ) : null}
               {player && rankingCard ? (
-                <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <section className={`${activeProfileView === "overview" ? "grid" : "hidden"} gap-3 sm:grid-cols-2 xl:grid-cols-4`}>
                   <div className="rounded-2xl border border-cyan-200 bg-white p-4 shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">Current Elo</p>
                     <p className="mt-2 text-3xl font-black text-slate-950">{Math.round(rankingCard.snookerRating)}</p>
@@ -1657,7 +1683,7 @@ export default function PlayerProfilePage() {
                 </section>
               ) : null}
               {rankingCard ? (
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <section className={`${activeProfileView === "ratings" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-lg font-semibold text-slate-900">Ranking Card</h2>
                     <div className="flex flex-wrap items-center gap-2">
@@ -1737,7 +1763,7 @@ export default function PlayerProfilePage() {
                 </section>
               ) : null}
               {rankingCard ? (
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <section className={`${activeProfileView === "ratings" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
                   <button
                     type="button"
                     onClick={() => setShowHandicap((v) => !v)}
@@ -1829,7 +1855,7 @@ export default function PlayerProfilePage() {
                   ) : null}
                 </section>
               ) : null}
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className={`${activeProfileView === "overview" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
                 <button
                   type="button"
                   onClick={() => setShowPerformance((v) => !v)}
@@ -1897,7 +1923,7 @@ export default function PlayerProfilePage() {
                 ) : null}
               </section>
               {childProfilesEnabled && player && (player.age_band ?? "18_plus") === "18_plus" ? (
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <section className={`${activeProfileView === "settings" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
                   <h2 className="text-lg font-semibold text-slate-900">Create child profile</h2>
                   <p className="mt-1 text-sm text-slate-600">
                     Create an under-18 player profile linked to this parent or guardian. The request will be reviewed by a club admin, or by the Super User if no club admin exists yet.
@@ -1943,7 +1969,7 @@ export default function PlayerProfilePage() {
                   </div>
                 </section>
               ) : null}
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className={`${activeProfileView === "settings" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <p className="text-sm text-slate-600">
                     Profile details and edit controls
@@ -2237,7 +2263,7 @@ export default function PlayerProfilePage() {
                 ) : null}
               </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className={`${activeProfileView === "overview" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
                 <h2 className="text-xl font-semibold text-slate-900">Discipline Breakdown</h2>
                 <p className="mt-1 text-sm text-slate-600">How this player is performing across snooker and pool disciplines.</p>
                 {disciplineBreakdown.length === 0 ? (
@@ -2259,7 +2285,7 @@ export default function PlayerProfilePage() {
                 )}
               </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className={`${activeProfileView === "overview" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
                 <h2 className="text-xl font-semibold text-slate-900">Profile Highlights</h2>
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
                   <div className="rounded-xl border border-teal-200 bg-gradient-to-br from-teal-50 via-white to-emerald-50 p-3">
@@ -2359,7 +2385,7 @@ export default function PlayerProfilePage() {
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className={`${activeProfileView === "history" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
                 <button
                   type="button"
                   onClick={() => setShowOpponents((v) => !v)}
@@ -2400,7 +2426,7 @@ export default function PlayerProfilePage() {
                   </>
                 ) : null}
               </section>
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className={`${activeProfileView === "history" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
                 <button
                   type="button"
                   onClick={() => setShowHistory((v) => !v)}
