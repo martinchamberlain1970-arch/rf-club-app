@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { brandedEmail, escapeEmailHtml } from "@/lib/email-template";
-import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
+import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
 import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 import { sendPushToUserIds } from "@/lib/push-server";
 
@@ -108,18 +108,22 @@ export async function POST(request: NextRequest) {
     const player = playerById.get(playerId);
     return [playerId, player?.full_name?.trim() || player?.display_name || "Player"];
   }));
-  const deadline = getLeagueFixtureDeadline(match.scheduled_for, competitionName);
-  if (!deadline) return NextResponse.json({ error: "This fixture does not have a playing deadline." }, { status: 400 });
-  const overdue = deadline.getTime() < Date.now();
+  const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competitionName);
+  const finalDeadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competitionName);
+  if (!originalDeadline || !finalDeadline) return NextResponse.json({ error: "This fixture does not have a playing deadline." }, { status: 400 });
+  const originalWeekPassed = originalDeadline.getTime() < Date.now();
+  const overdue = finalDeadline.getTime() < Date.now();
   const rescheduled = Boolean(rescheduleResult.data);
-  const statusText = rescheduled
-    ? overdue ? "This rescheduled fixture has now passed its revised deadline." : "This fixture has been rescheduled and is still waiting to be played."
-    : overdue ? "This fixture has passed its original deadline and no reschedule has been agreed." : "This fixture is still waiting to be played.";
+  const statusText = overdue
+    ? "This fixture has passed its final four-week playing deadline."
+    : rescheduled
+      ? "This fixture has been rescheduled and is still waiting to be played."
+      : originalWeekPassed
+        ? "The original fixture week has passed, but the match remains inside its four-week playing window."
+        : "This fixture is still waiting to be played.";
   const actionText = overdue
-    ? rescheduled
-      ? "Please arrange and play the fixture promptly. If another exceptional change is needed, contact the competition organiser and make sure the new arrangement is recorded correctly in Rack & Frame. A fixture that remains overdue by more than one week without a completed result or an approved revised arrangement may be voided."
-      : "Please arrange and play the fixture promptly, or agree a permitted new game week and submit a reschedule request in Rack & Frame for the organiser to approve. A fixture that remains overdue by more than one week without a completed result or an approved reschedule may be voided."
-    : `Please arrange and complete the fixture by ${formatDeadline(deadline)}. If you agree a permitted different week, submit the reschedule request in Rack & Frame so the organiser can approve it.`;
+    ? "Please open the fixture now. The normal outcome is a walkover to the second-named player after the 24-hour review unless scheduling evidence has been submitted for organiser review."
+    : `Please arrange and complete the fixture by ${formatDeadline(finalDeadline)}. If you agree a permitted different week, submit the reschedule request in Rack & Frame so the organiser can approve it.`;
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").replace(/\/$/, "");
   const sent: string[] = [];
   const missing: string[] = [];
