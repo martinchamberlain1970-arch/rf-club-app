@@ -76,7 +76,7 @@ export default function PublicOutstandingFixturesPage() {
         <header className="rounded-3xl border border-emerald-400/30 bg-black/50 p-5 shadow-2xl sm:p-6">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-emerald-300">Rack &amp; Frame · League update</p>
           <h1 className="mt-2 text-3xl font-black sm:text-4xl">Outstanding fixtures</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-300">Matches that have been rescheduled or remain unplayed after their original deadline.</p>
+          <p className="mt-2 max-w-2xl text-sm text-slate-300">Matches that have been rescheduled or remain unplayed after their original fixture week. Each card shows the final four-week playing deadline.</p>
         </header>
 
         {payload ? (
@@ -91,7 +91,7 @@ export default function PublicOutstandingFixturesPage() {
               <label className="text-sm font-semibold text-slate-700">Show
                 <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="mt-1 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-950">
                   <option value="all">All outstanding</option>
-                  <option value="overdue">Past deadline</option>
+                  <option value="overdue">Past final deadline</option>
                   <option value="rescheduled">Rescheduled</option>
                 </select>
               </label>
@@ -107,7 +107,7 @@ export default function PublicOutstandingFixturesPage() {
             {visibleFixtures.map((fixture) => (
               <article key={`${fixture.competitionId}-${fixture.week}-${fixture.matchNo}-${fixture.playerOne}-${fixture.playerTwo}`} className="rounded-3xl bg-white p-5 text-slate-950 shadow-xl">
                 <div className="flex flex-wrap gap-2">
-                  {fixture.overdue ? <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800">Past deadline</span> : null}
+                  {fixture.overdue ? <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800">Past final deadline</span> : null}
                   {fixture.rescheduledTo ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900">Rescheduled</span> : null}
                 </div>
                 <p className="mt-3 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">{fixture.competitionName}</p>
@@ -118,7 +118,7 @@ export default function PublicOutstandingFixturesPage() {
                 ) : (
                   <p className="mt-3 text-sm text-slate-700">Week beginning {displayDate(fixture.scheduledFor)}</p>
                 )}
-                <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Play by {displayDeadline(fixture.deadline)}</p>
+                <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Final playing deadline: {displayDeadline(fixture.deadline)}</p>
                 <Link href={`/league/${fixture.competitionId}`} className="mt-4 inline-flex rounded-xl border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-50">View all competition fixtures</Link>
               </article>
             ))}

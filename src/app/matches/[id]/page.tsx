@@ -9,7 +9,11 @@ import useAdminStatus from "@/components/useAdminStatus";
 import { supabase } from "@/lib/supabase";
 import { logAudit } from "@/lib/audit";
 import { calculateSnookerHandicapStarts, MAX_SNOOKER_START } from "@/lib/snooker-handicap";
-import { getLeagueFixtureDeadline, getLeagueFixtureDeadlineTime } from "@/lib/league-deadline";
+import {
+  getLeagueFixtureDeadline,
+  getLeagueFixtureDeadlineTime,
+  getLeagueFixtureFinalDeadline,
+} from "@/lib/league-deadline";
 import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
 import MessageModal from "@/components/MessageModal";
@@ -147,6 +151,22 @@ type LeagueRescheduleRequest = {
 type CompetitionGameWeek = {
   roundNo: number;
   scheduledFor: string;
+};
+
+type FixtureDeadlineCase = {
+  id: string;
+  status: "pending_evidence" | "evidence_submitted" | "awarded_second" | "awarded_first" | "dismissed";
+  final_deadline: string;
+  review_until: string;
+  evidence_note: string | null;
+  evidence_submitted_at: string | null;
+};
+
+type FixtureDeadlinePolicy = {
+  firstNamedPlayerId: string | null;
+  finalDeadline: string | null;
+  claimWindowOpens: string | null;
+  reviewUntil: string | null;
 };
 
 const RESCHEDULE_REASONS = [
@@ -433,6 +453,10 @@ export default function MatchPage() {
   const [fixtureBooking, setFixtureBooking] = useState<FixtureBooking | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [deadlineCase, setDeadlineCase] = useState<FixtureDeadlineCase | null>(null);
+  const [deadlinePolicy, setDeadlinePolicy] = useState<FixtureDeadlinePolicy | null>(null);
+  const [deadlineEvidence, setDeadlineEvidence] = useState("");
+  const [submittingDeadlineEvidence, setSubmittingDeadlineEvidence] = useState(false);
 
   const openDisplay = () => {
     if (!matchId) return;
@@ -566,6 +590,23 @@ export default function MatchPage() {
           if (active) setFixtureContacts((contactData.contacts ?? []) as FixtureContact[]);
         } else if (active) {
           setFixtureContacts([]);
+        }
+        if (competitionRes.data.competition_format === "league" && competitionRes.data.league_schedule_mode !== "one_day") {
+          const deadlineResponse = await fetch(`/api/fixture-deadline-cases?matchId=${encodeURIComponent(matchId)}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }).catch(() => null);
+          if (deadlineResponse?.ok) {
+            const deadlineData = await deadlineResponse.json().catch(() => ({}));
+            if (active) {
+              setDeadlineCase((deadlineData.case ?? null) as FixtureDeadlineCase | null);
+              setDeadlinePolicy({
+                firstNamedPlayerId: deadlineData.firstNamedPlayerId ?? null,
+                finalDeadline: deadlineData.finalDeadline ?? null,
+                claimWindowOpens: deadlineData.claimWindowOpens ?? null,
+                reviewUntil: deadlineData.reviewUntil ?? null,
+              });
+            }
+          }
         }
       }
       if (competitionRes.data.competition_format === "league") {
@@ -744,7 +785,12 @@ export default function MatchPage() {
   }, [match, viewerLinkedPlayerId]);
   const leagueFixtureWindow = useMemo(() => {
     if (!match || competition?.competition_format !== "league") return null;
-    return getLeagueFixtureWindow(match.scheduled_for, competition.league_schedule_mode ?? "weekly", competition.name);
+    const normalWindow = getLeagueFixtureWindow(match.scheduled_for, competition.league_schedule_mode ?? "weekly", competition.name);
+    if (!normalWindow || competition.league_schedule_mode === "one_day") return normalWindow;
+    return {
+      opensAt: new Date(normalWindow.opensAt.getTime() - 7 * 24 * 60 * 60 * 1000),
+      dueAt: getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name) ?? normalWindow.dueAt,
+    };
   }, [competition, match]);
   const playerLeagueWindowOpen = useMemo(() => {
     if (!leagueFixtureWindow) return true;
@@ -799,6 +845,18 @@ export default function MatchPage() {
       !userApprovedSubmission &&
       !pendingRescheduleForMatch &&
       !approvedRescheduleForMatch
+  );
+  const canSubmitDeadlineEvidence = Boolean(
+    match?.status !== "complete" &&
+      !isArchived &&
+      !isByeMatch &&
+      viewerLinkedPlayerId &&
+      viewerLinkedPlayerId === deadlinePolicy?.firstNamedPlayerId &&
+      deadlinePolicy?.claimWindowOpens &&
+      deadlinePolicy?.reviewUntil &&
+      Date.now() >= Date.parse(deadlinePolicy.claimWindowOpens) &&
+      Date.now() <= Date.parse(deadlinePolicy.reviewUntil) &&
+      deadlineCase?.status !== "evidence_submitted"
   );
 
   useEffect(() => {
@@ -942,6 +1000,51 @@ export default function MatchPage() {
         await requestLeagueReschedule(timing);
       },
     });
+  };
+
+  const submitDeadlineEvidence = async () => {
+    const client = supabase;
+    if (!client || !match || !canSubmitDeadlineEvidence) return;
+    const note = deadlineEvidence.trim();
+    if (note.length < 10) {
+      setMessage("Briefly explain when and how you tried to arrange the fixture.");
+      return;
+    }
+    setSubmittingDeadlineEvidence(true);
+    try {
+      const sessionResult = await withOperationTimeout(client.auth.getSession(), "Checking your session", 12_000);
+      const accessToken = sessionResult.data.session?.access_token;
+      if (!accessToken) {
+        setMessage("Your session has expired. Please sign in again.");
+        return;
+      }
+      const response = await withOperationTimeout(fetch("/api/fixture-deadline-cases", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId: match.id, evidenceNote: note }),
+      }), "Submitting your evidence", 20_000);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload?.error || "Your evidence could not be submitted. Please try again.");
+        return;
+      }
+      setDeadlineCase((current) => ({
+        id: payload?.case?.id ?? current?.id ?? match.id,
+        status: "evidence_submitted",
+        final_deadline: current?.final_deadline ?? deadlinePolicy?.finalDeadline ?? "",
+        review_until: current?.review_until ?? deadlinePolicy?.reviewUntil ?? "",
+        evidence_note: note,
+        evidence_submitted_at: payload?.case?.evidence_submitted_at ?? new Date().toISOString(),
+      }));
+      setInfoModal({
+        title: "Evidence submitted",
+        description: "Your scheduling evidence has been recorded and the automatic walkover is paused for organiser review. Keep any messages or screenshots in case the organiser asks to see them.",
+      });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Your evidence could not be submitted. Please try again.");
+    } finally {
+      setSubmittingDeadlineEvidence(false);
+    }
   };
 
   const rescheduleAsDeadlineDecision = async () => {
@@ -3085,6 +3188,59 @@ export default function MatchPage() {
                 </section>
               ) : null}
               {!admin.loading &&
+              (viewerCanEditThisMatch || canAdminManageMatch) &&
+              competition?.competition_format === "league" &&
+              competition.league_schedule_mode !== "one_day" &&
+              match?.scheduled_for &&
+              !isByeMatch &&
+              !isArchived ? (
+                <section className={`${cardClass} space-y-3 border-sky-200 bg-sky-50/50`}>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-800">Fixture deadline rule</p>
+                    <h3 className="mt-1 text-xl font-semibold text-slate-900">Four-week playing window</h3>
+                  </div>
+                  <p className="text-sm text-slate-700">
+                    This fixture may be played in the week before it is due, its due week, or either of the following two weeks. The first-named player is responsible for arranging the game and ensuring the result or an approved reschedule is recorded.
+                  </p>
+                  {deadlinePolicy?.finalDeadline ? (
+                    <p className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-800">
+                      Playing window closes <strong>{new Date(deadlinePolicy.finalDeadline).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" })}</strong>. If it remains unplayed, the default walkover is to the second-named player after a 24-hour review period.
+                    </p>
+                  ) : null}
+                  {deadlineCase?.status === "pending_evidence" ? (
+                    <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
+                      Walkover review is open until {new Date(deadlineCase.review_until).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })}. The first-named player may record evidence below.
+                    </p>
+                  ) : null}
+                  {deadlineCase?.status === "evidence_submitted" ? (
+                    <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
+                      <p className="font-semibold">Scheduling evidence submitted — automatic award paused.</p>
+                      {deadlineCase.evidence_note && canAdminManageMatch ? <p className="mt-1">{deadlineCase.evidence_note}</p> : null}
+                      <p className="mt-1">The organiser will review the evidence before deciding the fixture.</p>
+                    </div>
+                  ) : null}
+                  {canSubmitDeadlineEvidence ? (
+                    <div className="space-y-2 rounded-xl border border-amber-300 bg-white p-3">
+                      <label className="block text-sm font-semibold text-slate-900" htmlFor="deadline-evidence">
+                        First-named player: record your attempts to arrange the game
+                      </label>
+                      <textarea
+                        id="deadline-evidence"
+                        value={deadlineEvidence}
+                        onChange={(event) => setDeadlineEvidence(event.target.value)}
+                        rows={3}
+                        maxLength={1000}
+                        placeholder="For example: I messaged my opponent on 12 and 18 October and offered three dates. Keep any screenshots in case the organiser asks for them."
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      />
+                      <button type="button" onClick={submitDeadlineEvidence} disabled={submittingDeadlineEvidence || deadlineEvidence.trim().length < 10} className={buttonSuccessClass}>
+                        {submittingDeadlineEvidence ? "Submitting…" : "Submit scheduling evidence"}
+                      </button>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+              {!admin.loading &&
               viewerCanEditThisMatch &&
               competition?.competition_format === "league" &&
               match?.scheduled_for &&
@@ -3095,7 +3251,7 @@ export default function MatchPage() {
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
                     <p className="font-medium text-slate-900">Exceptional circumstances?</p>
                     <p className="mt-1">
-                      You may request one week early, one week later, or two weeks later for reasons such as holiday, illness or working away. The Super User must approve the request before result entry opens for the changed week.
+                      You may request one week early, one week later, or two weeks later for reasons such as holiday, illness or working away. The Super User approves the calendar change so both players can clearly see when the fixture has moved; the four-week playing window above remains available for result entry.
                     </p>
                     {pendingRescheduleForMatch ? (
                       <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">

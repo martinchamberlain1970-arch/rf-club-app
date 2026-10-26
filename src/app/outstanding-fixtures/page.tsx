@@ -6,7 +6,7 @@ import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
 import useAdminStatus from "@/components/useAdminStatus";
 import { logAudit } from "@/lib/audit";
-import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
+import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
 import { resultSubmittedRescheduleNote } from "@/lib/reschedule-result-guard";
 import { supabase } from "@/lib/supabase";
 
@@ -156,11 +156,12 @@ export default function OutstandingFixturesPage() {
       const competition = competitionById.get(match.competition_id);
       if (!competition || competition.is_archived || submittedMatchIds.has(match.id)) return [];
       if (!match.player1_id || !match.player2_id || match.player1_id === match.player2_id || !match.scheduled_for) return [];
-      const deadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
-      if (!deadline) return [];
+      const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
+      const deadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name);
+      if (!originalDeadline || !deadline) return [];
       const reschedule = latestRescheduleByMatch.get(match.id) ?? null;
       const overdue = deadline.getTime() < now.getTime();
-      if (!overdue && !reschedule) return [];
+      if (originalDeadline.getTime() >= now.getTime() && !reschedule) return [];
       return [{
         match,
         competition,
@@ -292,7 +293,7 @@ export default function OutstandingFixturesPage() {
           <ScreenHeader
             title="Outstanding Fixtures"
             eyebrow="Club Manager"
-            subtitle="One workflow for overdue fixtures, reschedule requests, approved moves, reminders and deadline decisions. Fixtures with a submitted result awaiting review stay in Results & Approvals."
+            subtitle="One workflow for late fixtures, reschedule requests, approved moves, reminders and final deadline decisions. Fixtures with a submitted result awaiting review stay in Results & Approvals."
             actions={<Link href="/fixtures/outstanding" className="rounded-xl border border-teal-700 bg-teal-700 px-3 py-2 text-sm font-bold text-white hover:bg-teal-800">Public view</Link>}
           />
 
@@ -344,7 +345,9 @@ export default function OutstandingFixturesPage() {
                         ? "Rescheduled · new deadline missed"
                         : approvedReschedule
                           ? "Rescheduled · within new window"
-                          : "Overdue · no reschedule agreed";
+                          : fixture.overdue
+                            ? "Overdue · no reschedule agreed"
+                            : "Within extended playing window";
                     const contacts = contactsByMatch[fixture.match.id];
                     return (
                     <article key={fixture.match.id} className={`rounded-2xl border bg-white p-4 shadow-sm ${fixture.overdue && !pendingReschedule ? "border-rose-200" : pendingReschedule ? "border-violet-200" : "border-amber-200"}`}>
@@ -357,7 +360,7 @@ export default function OutstandingFixturesPage() {
                           <p className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-teal-700">{fixture.competition.name}</p>
                           <h2 className="mt-1 text-xl font-black text-slate-950">{fixture.playerOne} vs {fixture.playerTwo}</h2>
                           <p className="mt-1 text-sm text-slate-600">Week {fixture.match.round_no ?? "—"} · Match {fixture.match.match_no ?? "—"} · Week beginning {displayDate(fixture.match.scheduled_for)}</p>
-                          <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Current deadline: {displayDeadline(fixture.deadline)}</p>
+                          <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Final playing deadline: {displayDeadline(fixture.deadline)}</p>
                           {fixture.reschedule ? <p className={`mt-2 rounded-xl border px-3 py-2 text-sm ${pendingReschedule ? "border-violet-200 bg-violet-50 text-violet-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>{pendingReschedule ? "Requested move" : "Moved"} from the week beginning <strong>{displayDate(fixture.reschedule.original_scheduled_for)}</strong> to <strong>{displayDate(fixture.reschedule.requested_scheduled_for)}</strong>{pendingReschedule ? "; this still needs approval." : "."}</p> : null}
                           <div className="mt-4 flex flex-wrap gap-2">
                             <Link href={`/matches/${fixture.match.id}`} className="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-teal-800">{fixture.overdue ? "Review, reschedule or decide" : "Open fixture"}</Link>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
+import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -70,11 +70,12 @@ export async function GET() {
   const fixtures = matches.flatMap((match) => {
     const competition = competitionById.get(match.competition_id);
     if (!competition || submittedMatchIds.has(match.id) || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id || !match.scheduled_for) return [];
-    const deadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
-    if (!deadline) return [];
+    const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
+    const deadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name);
+    if (!originalDeadline || !deadline) return [];
     const reschedule = latestRescheduleByMatch.get(match.id) ?? null;
     const overdue = deadline.getTime() < now;
-    if (!overdue && !reschedule) return [];
+    if (originalDeadline.getTime() >= now && !reschedule) return [];
     return [{
       competitionId: competition.id,
       competitionName: competition.name,

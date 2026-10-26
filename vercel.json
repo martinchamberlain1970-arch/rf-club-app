@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/auto-void-league-fixtures",
-      "schedule": "0 22 * * *"
+      "schedule": "40 22 * * *"
     },
     {
       "path": "/api/cron/weekly-reviews",

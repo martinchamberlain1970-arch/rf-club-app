@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
+import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
 import { sendPushToUserIds } from "@/lib/push-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
   if (matchesResult.error) return NextResponse.json({ error: matchesResult.error.message }, { status: 400 });
   const now = new Date();
   const overdueMatches = (matchesResult.data ?? []).filter((match) => {
-    const deadline = getLeagueFixtureDeadline(match.scheduled_for, competitionNames.get(match.competition_id));
+    const deadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competitionNames.get(match.competition_id));
     return Boolean(deadline && now > deadline);
   });
   if (!overdueMatches.length) return NextResponse.json({ fixtures: [] });
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       competitionName: competitionNames.get(match.competition_id) || "League",
       week: match.round_no ?? 1,
       scheduledFor: match.scheduled_for,
-      deadline: getLeagueFixtureDeadline(match.scheduled_for, competitionNames.get(match.competition_id))?.toISOString() ?? null,
+      deadline: getLeagueFixtureFinalDeadline(match.scheduled_for, competitionNames.get(match.competition_id))?.toISOString() ?? null,
       player1: playerNames.get(match.player1_id ?? "") || "TBC",
       player2: playerNames.get(match.player2_id ?? "") || "TBC",
       bestOf: match.best_of,

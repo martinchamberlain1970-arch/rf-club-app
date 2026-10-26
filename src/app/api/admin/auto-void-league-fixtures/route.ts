@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
+import { getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   const now = new Date();
   const reviewMatchIds = matches
     .filter((match) => {
-      const deadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
+      const deadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name);
       if (!deadline || now <= deadline) return false;
       const submissions = submissionsByMatch.get(match.id) ?? [];
       return !submissions.some((submission) => submission.status === "approved");
