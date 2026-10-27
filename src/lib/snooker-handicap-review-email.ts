@@ -53,7 +53,9 @@ export async function sendSnookerHandicapReviewEmails(
   const alreadySent = new Set((priorResult.data ?? [])
     .filter((row) => (row.meta as { effectiveFrom?: string } | null)?.effectiveFrom === options.effectiveFrom)
     .map((row) => row.entity_id));
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").replace(/\/$/, "");
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").trim().replace(/\/$/, "");
+  const handicapsUrl = `${siteUrl}/handicaps`;
+  const signedInHandicapsUrl = `${siteUrl}/auth/sign-in?next=${encodeURIComponent("/handicaps")}`;
   let sent = 0;
   let skipped = 0;
   let failed = 0;
@@ -68,13 +70,13 @@ export async function sendSnookerHandicapReviewEmails(
     const reviewDate = displayDate(options.effectiveFrom);
     const nextReview = displayDate(options.nextReviewDate);
     const subject = `Your Masters Snooker handicap review: ${signed(handicap)}`;
-    const text = `Hi ${candidate.firstName},\n\nThe scheduled handicap review for ${competitionName} has now been completed.\n\nYour active playing handicap: ${signed(handicap)}\nCurrent Elo: ${elo}\nEffective from: ${reviewDate}\nNext scheduled review: ${nextReview}\n\nYour match start is calculated from the difference between your handicap and your opponent's handicap, and the exact start is shown on each fixture. Completed results are not changed by a handicap review.\n\nView handicaps: ${siteUrl}/handicaps\n\nThis is an automated message; replies are not monitored.\n\nRack & Frame Club`;
+    const text = `Hi ${candidate.firstName},\n\nThe scheduled handicap review for ${competitionName} has now been completed.\n\nYour active playing handicap: ${signed(handicap)}\nCurrent Elo: ${elo}\nEffective from: ${reviewDate}\nNext scheduled review: ${nextReview}\n\nYour match start is calculated from the difference between your handicap and your opponent's handicap, and the exact start is shown on each fixture. Completed results are not changed by a handicap review.\n\nSign in and view handicaps: ${signedInHandicapsUrl}\n\nIf the button or sign-in link does not open, copy and paste this address into your browser:\n${handicapsUrl}\n\nThis is an automated message; replies are not monitored.\n\nRack & Frame Club`;
     const html = brandedEmail({
       eyebrow: "Masters Snooker handicap review",
       title: `Your new playing handicap is ${signed(handicap)}`,
       intro: `Hi ${candidate.firstName}, the scheduled handicap review for ${competitionName} has now been completed.`,
-      bodyHtml: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse"><tr><td style="padding:9px 0;color:#64748b">Active playing handicap</td><td style="padding:9px 0;text-align:right;font-size:22px;font-weight:800;color:#0f172a">${escapeEmailHtml(signed(handicap))}</td></tr><tr><td style="padding:9px 0;color:#64748b">Current Elo</td><td style="padding:9px 0;text-align:right;font-weight:700;color:#0f172a">${elo}</td></tr><tr><td style="padding:9px 0;color:#64748b">Effective from</td><td style="padding:9px 0;text-align:right;font-weight:700;color:#0f172a">${escapeEmailHtml(reviewDate)}</td></tr><tr><td style="padding:9px 0;color:#64748b">Next scheduled review</td><td style="padding:9px 0;text-align:right;font-weight:700;color:#0f172a">${escapeEmailHtml(nextReview)}</td></tr></table><p style="margin:18px 0 0;color:#475569">Your match start is calculated from the difference between your handicap and your opponent's handicap. The exact start is shown on each fixture. Completed results are not changed.</p>`,
-      primaryButton: { label: "View all handicaps", url: `${siteUrl}/handicaps` },
+      bodyHtml: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse"><tr><td style="padding:9px 0;color:#64748b">Active playing handicap</td><td style="padding:9px 0;text-align:right;font-size:22px;font-weight:800;color:#0f172a">${escapeEmailHtml(signed(handicap))}</td></tr><tr><td style="padding:9px 0;color:#64748b">Current Elo</td><td style="padding:9px 0;text-align:right;font-weight:700;color:#0f172a">${elo}</td></tr><tr><td style="padding:9px 0;color:#64748b">Effective from</td><td style="padding:9px 0;text-align:right;font-weight:700;color:#0f172a">${escapeEmailHtml(reviewDate)}</td></tr><tr><td style="padding:9px 0;color:#64748b">Next scheduled review</td><td style="padding:9px 0;text-align:right;font-weight:700;color:#0f172a">${escapeEmailHtml(nextReview)}</td></tr></table><p style="margin:18px 0 0;color:#475569">Your match start is calculated from the difference between your handicap and your opponent's handicap. The exact start is shown on each fixture. Completed results are not changed.</p><p style="margin:18px 0 0;color:#64748b;font-size:13px;line-height:1.6">If the button does not open, copy and paste this address into your browser:<br><a href="${escapeEmailHtml(handicapsUrl)}" style="color:#0f766e;word-break:break-all">${escapeEmailHtml(handicapsUrl)}</a></p>`,
+      primaryButton: { label: "Sign in and view all handicaps", url: signedInHandicapsUrl },
       footerNote: "This is an automated competition update from Rack & Frame Club. Replies are not monitored.",
     });
     try {
