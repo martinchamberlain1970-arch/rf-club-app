@@ -6,6 +6,7 @@ import {
   runSnookerHandicapReview,
   scheduledSnookerHandicapReviewDate,
 } from "@/lib/snooker-handicap-review-server";
+import { sendSnookerHandicapReviewEmails } from "@/lib/snooker-handicap-review-email";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -44,15 +45,26 @@ export async function GET(request: NextRequest) {
       effectiveFrom,
       reason: "Automatic four-week Elo handicap review",
     });
+    const followingReviewDate = nextSnookerHandicapReviewDate(`${effectiveFrom}T12:00:00.000Z`, REVIEW_INTERVAL_DAYS);
+    const emailResult = await sendSnookerHandicapReviewEmails(client, {
+      effectiveFrom,
+      nextReviewDate: followingReviewDate,
+    }).catch((cause) => ({
+      sent: 0,
+      skipped: 0,
+      failed: 1,
+      notConfigured: false,
+      error: cause instanceof Error ? cause.message : "Handicap review emails failed.",
+    }));
     const auditResult = await client.from("audit_logs").insert({
       actor_role: "system",
       action: "snooker_handicap_scheduled_review",
       entity_type: "competition",
       summary: `Automatic four-week snooker handicap review completed for ${result.reviewedPlayers} players.`,
-      meta: { ...result, effectiveFrom, caughtUpOn: today === effectiveFrom ? null : today },
+      meta: { ...result, emails: emailResult, effectiveFrom, caughtUpOn: today === effectiveFrom ? null : today },
     });
     if (auditResult.error) return NextResponse.json({ error: auditResult.error.message }, { status: 400 });
-    return NextResponse.json({ ok: true, reviewed: true, ...result, effectiveFrom });
+    return NextResponse.json({ ok: true, reviewed: true, ...result, emails: emailResult, effectiveFrom, nextReviewDate: followingReviewDate });
   } catch (cause) {
     return NextResponse.json({ error: cause instanceof Error ? cause.message : "Automatic handicap review failed." }, { status: 400 });
   }
