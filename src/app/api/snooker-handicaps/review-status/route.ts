@@ -30,11 +30,23 @@ export async function GET() {
   const nextReviewAt = lastReviewDate
     ? `${nextSnookerHandicapReviewDate(lastReviewedAt!, REVIEW_INTERVAL_DAYS)}T12:00:00.000Z`
     : null;
+  const meta = (result.data?.meta ?? {}) as {
+    reviewedPlayers?: number;
+    changedPlayers?: number;
+    refreshedFixtures?: number;
+    emails?: { sent?: number; skipped?: number; failed?: number; notConfigured?: boolean; error?: string };
+  };
 
   return NextResponse.json({
     lastReviewedAt,
     nextReviewAt,
     intervalDays: REVIEW_INTERVAL_DAYS,
     movementLimit: null,
+    latestReview: result.data ? {
+      reviewedPlayers: meta.reviewedPlayers ?? 0,
+      changedPlayers: meta.changedPlayers ?? 0,
+      refreshedFixtures: meta.refreshedFixtures ?? 0,
+      emails: meta.emails ?? null,
+    } : null,
   });
 }
