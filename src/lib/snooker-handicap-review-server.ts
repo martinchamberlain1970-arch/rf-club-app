@@ -43,6 +43,14 @@ export function nextSnookerHandicapReviewDate(lastReviewedAt: string | Date, int
   return addCalendarDays(intervalEnd, daysUntilSunday);
 }
 
+export function scheduledSnookerHandicapReviewDate(row: { created_at: string; meta?: unknown }) {
+  const meta = row.meta && typeof row.meta === "object" ? (row.meta as Record<string, unknown>) : null;
+  const effectiveFrom = typeof meta?.effectiveFrom === "string" ? meta.effectiveFrom : "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)
+    ? effectiveFrom
+    : currentLondonDate(new Date(row.created_at));
+}
+
 export async function runSnookerHandicapReview(client: SupabaseClient, options: ReviewOptions) {
   let playerQuery = client
     .from("players")

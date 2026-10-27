@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { nextSnookerHandicapReviewDate } from "@/lib/snooker-handicap-review-server";
+import { nextSnookerHandicapReviewDate, scheduledSnookerHandicapReviewDate } from "@/lib/snooker-handicap-review-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -18,16 +18,17 @@ export async function GET() {
   });
   const result = await client
     .from("audit_logs")
-    .select("created_at")
+    .select("created_at,meta")
     .eq("action", "snooker_handicap_scheduled_review")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (result.error) return NextResponse.json({ error: result.error.message }, { status: 400 });
-  const lastReviewedAt = result.data?.created_at ?? null;
-  const nextReviewAt = lastReviewedAt
-    ? `${nextSnookerHandicapReviewDate(lastReviewedAt, REVIEW_INTERVAL_DAYS)}T12:00:00.000Z`
+  const lastReviewDate = result.data ? scheduledSnookerHandicapReviewDate(result.data) : null;
+  const lastReviewedAt = lastReviewDate ? `${lastReviewDate}T12:00:00.000Z` : null;
+  const nextReviewAt = lastReviewDate
+    ? `${nextSnookerHandicapReviewDate(lastReviewedAt!, REVIEW_INTERVAL_DAYS)}T12:00:00.000Z`
     : null;
 
   return NextResponse.json({

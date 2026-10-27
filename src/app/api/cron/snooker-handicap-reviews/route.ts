@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { currentLondonDate, nextSnookerHandicapReviewDate, runSnookerHandicapReview } from "@/lib/snooker-handicap-review-server";
+import {
+  currentLondonDate,
+  nextSnookerHandicapReviewDate,
+  runSnookerHandicapReview,
+  scheduledSnookerHandicapReviewDate,
+} from "@/lib/snooker-handicap-review-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -16,20 +21,24 @@ export async function GET(request: NextRequest) {
   const client = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const latestResult = await client
     .from("audit_logs")
-    .select("created_at")
+    .select("created_at,meta")
     .eq("action", "snooker_handicap_scheduled_review")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (latestResult.error) return NextResponse.json({ error: latestResult.error.message }, { status: 400 });
-  const lastReviewAt = latestResult.data?.created_at ? new Date(latestResult.data.created_at) : null;
+  const lastReviewDate = latestResult.data ? scheduledSnookerHandicapReviewDate(latestResult.data) : null;
   const today = currentLondonDate();
-  const nextReviewDate = lastReviewAt ? nextSnookerHandicapReviewDate(lastReviewAt, REVIEW_INTERVAL_DAYS) : today;
+  const nextReviewDate = lastReviewDate
+    ? nextSnookerHandicapReviewDate(`${lastReviewDate}T12:00:00.000Z`, REVIEW_INTERVAL_DAYS)
+    : today;
   if (today < nextReviewDate) {
-    return NextResponse.json({ ok: true, reviewed: false, lastReviewAt: lastReviewAt?.toISOString() ?? null, nextReviewDate });
+    return NextResponse.json({ ok: true, reviewed: false, lastReviewDate, nextReviewDate });
   }
 
-  const effectiveFrom = today;
+  // Use the scheduled Sunday as the effective date even when this daily safety
+  // check is catching up after Vercel missed the original invocation.
+  const effectiveFrom = nextReviewDate;
   try {
     const result = await runSnookerHandicapReview(client, {
       effectiveFrom,
@@ -40,7 +49,7 @@ export async function GET(request: NextRequest) {
       action: "snooker_handicap_scheduled_review",
       entity_type: "competition",
       summary: `Automatic four-week snooker handicap review completed for ${result.reviewedPlayers} players.`,
-      meta: { ...result, effectiveFrom },
+      meta: { ...result, effectiveFrom, caughtUpOn: today === effectiveFrom ? null : today },
     });
     if (auditResult.error) return NextResponse.json({ error: auditResult.error.message }, { status: 400 });
     return NextResponse.json({ ok: true, reviewed: true, ...result, effectiveFrom });
