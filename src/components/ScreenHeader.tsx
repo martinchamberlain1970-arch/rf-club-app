@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppShell } from "@/components/AppShellContext";
@@ -76,7 +77,16 @@ export default function ScreenHeader({
       <div className="p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className={`flex min-w-0 items-start ${appShell.enabled ? "" : "gap-3"}`}>
-            {!appShell.enabled ? <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#0f1a31] to-teal-800 text-xs font-black tracking-tight text-cyan-300 shadow-sm">R&amp;F</span> : null}
+            {!appShell.enabled ? (
+              <Image
+                src="/rf-logo.png"
+                alt="Rack & Frame logo"
+                width={48}
+                height={42}
+                priority
+                className="mt-0.5 h-11 w-12 shrink-0 rounded-xl object-cover shadow-sm"
+              />
+            ) : null}
             <div className="min-w-0">
               {!appShell.enabled ? (
                 <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500">

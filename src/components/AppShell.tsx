@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -177,7 +178,14 @@ function NavigationContent({
     <div className="flex h-full min-h-0 flex-col bg-[#0b1730] text-white">
       <div className="border-b border-white/10 px-5 py-5">
         <Link href="/" onClick={(event) => onNavigate("/", event)} className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-teal-500 text-xs font-black text-[#0b1730] shadow-lg shadow-cyan-950/30">R&amp;F</span>
+          <Image
+            src="/rf-logo.png"
+            alt="Rack & Frame logo"
+            width={48}
+            height={42}
+            priority
+            className="h-11 w-12 shrink-0 rounded-xl object-cover shadow-lg shadow-cyan-950/30"
+          />
           <span>
             <span className="block text-sm font-black tracking-wide">Rack &amp; Frame</span>
             <span className="block text-xs text-slate-400">Club Manager</span>
