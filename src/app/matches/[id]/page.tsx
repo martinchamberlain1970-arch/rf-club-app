@@ -2705,7 +2705,7 @@ export default function MatchPage() {
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-3xl font-semibold text-slate-900">
                   <div className="flex items-center gap-2">
                     {teams.team1Rep && avatarMap.get(teams.team1Rep) ? (
-                      <img
+                      <img loading="lazy" decoding="async"
                         src={avatarMap.get(teams.team1Rep) ?? ""}
                         alt={teams.team1Label}
                         className="h-8 w-8 rounded-full object-cover"
@@ -2716,7 +2716,7 @@ export default function MatchPage() {
                   <span>vs</span>
                   <div className="flex items-center gap-2">
                     {teams.team2Rep && avatarMap.get(teams.team2Rep) ? (
-                      <img
+                      <img loading="lazy" decoding="async"
                         src={avatarMap.get(teams.team2Rep) ?? ""}
                         alt={teams.team2Label}
                         className="h-8 w-8 rounded-full object-cover"

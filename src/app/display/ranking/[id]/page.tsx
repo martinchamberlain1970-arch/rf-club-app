@@ -146,7 +146,7 @@ export default function RankingDisplayPage() {
           <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-8 shadow-xl">
             <div className="flex items-center gap-4">
               <div className="h-20 w-20 overflow-hidden rounded-full border border-slate-700 bg-slate-900">
-                {player.avatar_url ? <img src={player.avatar_url} alt={playerName} className="h-full w-full object-cover" /> : null}
+                {player.avatar_url ? <img loading="lazy" decoding="async" src={player.avatar_url} alt={playerName} className="h-full w-full object-cover" /> : null}
               </div>
               <div>
                 <p className="text-3xl font-semibold text-white">{playerName}</p>

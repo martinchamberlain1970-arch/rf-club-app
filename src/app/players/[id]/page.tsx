@@ -380,49 +380,30 @@ export default function PlayerProfilePage() {
       return;
     }
     setUploading(true);
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `avatars/${player.id}-${Date.now()}.${ext}`;
-    const uploadRes = await client.storage.from("avatars").upload(path, file, { upsert: true });
-    if (uploadRes.error) {
-      setUploading(false);
-      setMessage(`Avatar upload failed: ${uploadRes.error.message}`);
-      return;
-    }
-    const publicUrl = client.storage.from("avatars").getPublicUrl(path).data.publicUrl;
-    if (!hasAdminPower) {
-      const { error } = await client.from("player_update_requests").insert({
-        player_id: player.id,
-        requester_user_id: userId,
-        requested_full_name: null,
-        requested_location_id: null,
-        requested_avatar_url: publicUrl,
-        status: "pending",
-      });
-      setUploading(false);
-      if (error) {
-        setMessage(`Failed to submit avatar update: ${error.message}`);
-        return;
-      }
-      setMessage(null);
-      setInfoModal({
-        title: "Profile photo submitted",
-        description: "Your profile photo has been sent for administrator approval.",
-      });
-      return;
-    }
-    const { error } = await client.from("players").update({ avatar_url: publicUrl }).eq("id", player.id);
-    setUploading(false);
-    if (error) {
-      setMessage(`Failed to save avatar: ${error.message}`);
-      return;
-    }
-    setPlayer((prev) => (prev ? { ...prev, avatar_url: publicUrl } : prev));
     setMessage(null);
-    setInfoModal({
-      title: "Profile photo updated",
-      description: "Your new profile photo has been saved.",
-    });
-    profileRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    try {
+      const { data } = await client.auth.getSession();
+      if (!data.session) throw new Error("Please sign in before uploading a photo.");
+      const form = new FormData();
+      form.append("playerId", player.id);
+      form.append("file", file);
+      const response = await fetch("/api/player/avatar", {
+        method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}` }, body: form,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Photo upload failed.");
+      if (result.mode === "pending") {
+        setInfoModal({ title: "Profile photo submitted", description: "Your profile photo has been sent for administrator approval." });
+      } else {
+        setPlayer(prev => prev ? { ...prev, avatar_url: result.publicUrl } : prev);
+        setInfoModal({ title: "Profile photo updated", description: "Your new profile photo has been saved." });
+        profileRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Photo upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const onRequestAdminAccess = async () => {
@@ -1528,7 +1509,7 @@ export default function PlayerProfilePage() {
                   <div className="flex flex-wrap items-start gap-5">
                     <div className="h-24 w-24 shrink-0 overflow-hidden rounded-full border-2 border-cyan-200 bg-slate-100 shadow-sm">
                       {player.avatar_url ? (
-                        <img src={player.avatar_url} alt={playerName} className="h-full w-full object-cover" />
+                        <img loading="lazy" decoding="async" src={player.avatar_url} alt={playerName} className="h-full w-full object-cover" />
                       ) : null}
                     </div>
                     <div className="min-w-[220px] flex-1 space-y-3">

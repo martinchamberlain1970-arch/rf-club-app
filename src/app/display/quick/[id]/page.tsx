@@ -247,7 +247,7 @@ export default function QuickDisplayPage() {
               <div className={`mt-6 grid items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/40 ${tvMode ? "p-10" : "p-6"} sm:grid-cols-[1fr_auto_1fr]`}>
                 <div className={`${tvMode ? "text-5xl" : "text-4xl"} font-semibold flex items-center gap-3`}>
                   {teams.team1Rep && avatarMap.get(teams.team1Rep) ? (
-                    <img src={avatarMap.get(teams.team1Rep) ?? ""} alt={teams.team1Label} className="h-10 w-10 rounded-full object-cover" />
+                    <img loading="lazy" decoding="async" src={avatarMap.get(teams.team1Rep) ?? ""} alt={teams.team1Label} className="h-10 w-10 rounded-full object-cover" />
                   ) : null}
                   <span>{teams.team1Label}</span>
                 </div>
@@ -257,7 +257,7 @@ export default function QuickDisplayPage() {
                 <div className={`${tvMode ? "text-5xl" : "text-4xl"} font-semibold text-right flex items-center justify-end gap-3`}>
                   <span>{teams.team2Label}</span>
                   {teams.team2Rep && avatarMap.get(teams.team2Rep) ? (
-                    <img src={avatarMap.get(teams.team2Rep) ?? ""} alt={teams.team2Label} className="h-10 w-10 rounded-full object-cover" />
+                    <img loading="lazy" decoding="async" src={avatarMap.get(teams.team2Rep) ?? ""} alt={teams.team2Label} className="h-10 w-10 rounded-full object-cover" />
                   ) : null}
                 </div>
               </div>
