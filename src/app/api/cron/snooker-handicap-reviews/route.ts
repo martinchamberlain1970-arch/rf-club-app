@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
       action: "snooker_handicap_scheduled_review",
       entity_type: "competition",
       summary: `Automatic four-week snooker handicap review completed for ${result.reviewedPlayers} players.`,
-      meta: { ...result, emails: emailResult, effectiveFrom, caughtUpOn: today === effectiveFrom ? null : today },
+      meta: { ...result, emails: emailResult, effectiveFrom, scheduledReviewDate: effectiveFrom, caughtUpOn: today === effectiveFrom ? null : today },
     });
     if (auditResult.error) return NextResponse.json({ error: auditResult.error.message }, { status: 400 });
     return NextResponse.json({ ok: true, reviewed: true, ...result, emails: emailResult, effectiveFrom, nextReviewDate: followingReviewDate });

@@ -45,9 +45,12 @@ export function nextSnookerHandicapReviewDate(lastReviewedAt: string | Date, int
 
 export function scheduledSnookerHandicapReviewDate(row: { created_at: string; meta?: unknown }) {
   const meta = row.meta && typeof row.meta === "object" ? (row.meta as Record<string, unknown>) : null;
-  const effectiveFrom = typeof meta?.effectiveFrom === "string" ? meta.effectiveFrom : "";
-  return /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)
-    ? effectiveFrom
+  // Older audits used effectiveFrom for the following fixture Monday, not for
+  // the date on which the review occurred. Only new audits have an explicit
+  // scheduledReviewDate; legacy rows must remain anchored to created_at.
+  const scheduledReviewDate = typeof meta?.scheduledReviewDate === "string" ? meta.scheduledReviewDate : "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(scheduledReviewDate)
+    ? scheduledReviewDate
     : currentLondonDate(new Date(row.created_at));
 }
 
