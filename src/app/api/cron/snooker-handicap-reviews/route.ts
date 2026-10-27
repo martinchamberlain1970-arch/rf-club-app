@@ -16,10 +16,11 @@ const REVIEW_INTERVAL_DAYS = 28;
 export async function GET(request: NextRequest) {
   if (!supabaseUrl || !serviceRoleKey) return NextResponse.json({ error: "Server is not configured." }, { status: 500 });
   const authHeader = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const isVercelCron = request.headers.get("user-agent") === "vercel-cron/1.0";
   // Scheduled invocations include CRON_SECRET. Vercel's dashboard "Run"
-  // action identifies itself with the platform cron header instead, so accept
-  // either form. The due-date guard below keeps manual runs idempotent.
-  const authorized = (cronSecret && authHeader === cronSecret) || Boolean(request.headers.get("x-vercel-cron"));
+  // action identifies itself through the Vercel cron user-agent, so accept
+  // either form. The due-date guard below keeps these runs idempotent.
+  const authorized = (cronSecret && authHeader === cronSecret) || isVercelCron;
   if (!authorized) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const client = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
