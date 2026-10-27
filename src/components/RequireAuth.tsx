@@ -9,6 +9,11 @@ type RequireAuthProps = {
   children: ReactNode;
 };
 
+function currentNextPath(pathname: string) {
+  if (typeof window === "undefined") return pathname;
+  return `${pathname}${window.location.search}${window.location.hash}`;
+}
+
 export default function RequireAuth({ children }: RequireAuthProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,8 +58,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
             if (!active) return;
             if (error || !appUser) {
               await withTimeout(client.auth.signOut());
-              const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
-              const next = `${pathname}${query ? `?${query}` : ""}`;
+              const next = currentNextPath(pathname);
               router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
               setAllowed(false);
               setReady(true);
@@ -66,8 +70,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
           return;
         }
 
-        const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
-        const next = `${pathname}${query ? `?${query}` : ""}`;
+        const next = currentNextPath(pathname);
         router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
         setAllowed(false);
         setReady(true);
@@ -86,8 +89,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
       if (session) {
         setAllowed(true);
       } else {
-        const query = typeof window !== "undefined" ? window.location.search.replace(/^\?/, "") : "";
-        const next = `${pathname}${query ? `?${query}` : ""}`;
+        const next = currentNextPath(pathname);
         router.replace(`/auth/sign-in?next=${encodeURIComponent(next)}`);
       }
     });

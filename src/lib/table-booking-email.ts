@@ -64,8 +64,9 @@ export async function sendCompetitionBookingEmails(
   const fixtureName = `${booking.participantOne} vs ${booking.participantTwo}`;
   const date = londonBookingDate(booking.startsAt);
   const time = londonBookingTime(booking.startsAt, booking.endsAt);
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").replace(/\/$/, "");
-  const bookingUrl = `${siteUrl}/table-bookings#confirmed-bookings`;
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").trim().replace(/\/$/, "");
+  const bookingPath = `/table-bookings?section=confirmed-bookings&bookingId=${encodeURIComponent(booking.id)}#booking-${encodeURIComponent(booking.id)}`;
+  const bookingUrl = `${siteUrl}${bookingPath}`;
   const subject = `${kind === "updated" ? "Table booking updated" : "Table booked"}: ${fixtureName}`;
   const sentTo = new Set<string>();
   const previousResult = kind === "updated"
