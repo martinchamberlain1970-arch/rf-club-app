@@ -6,7 +6,7 @@ import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
 import useAdminStatus from "@/components/useAdminStatus";
 import { logAudit } from "@/lib/audit";
-import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
+import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 import { resultSubmittedRescheduleNote } from "@/lib/reschedule-result-guard";
 import { supabase } from "@/lib/supabase";
 
@@ -52,6 +52,7 @@ type OutstandingFixture = {
   playerOne: string;
   playerTwo: string;
   deadline: Date;
+  awardAt: Date;
   reschedule: RescheduleRow | null;
   overdue: boolean;
 };
@@ -158,7 +159,8 @@ export default function OutstandingFixturesPage() {
       if (!match.player1_id || !match.player2_id || match.player1_id === match.player2_id || !match.scheduled_for) return [];
       const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
       const deadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name);
-      if (!originalDeadline || !deadline) return [];
+      const awardAt = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competition.name);
+      if (!originalDeadline || !deadline || !awardAt) return [];
       const reschedule = latestRescheduleByMatch.get(match.id) ?? null;
       const overdue = deadline.getTime() < now.getTime();
       if (originalDeadline.getTime() >= now.getTime() && !reschedule) return [];
@@ -168,6 +170,7 @@ export default function OutstandingFixturesPage() {
         playerOne: playerNameById.get(match.player1_id) ?? "Unknown player",
         playerTwo: playerNameById.get(match.player2_id) ?? "Unknown player",
         deadline,
+        awardAt,
         reschedule,
         overdue,
       }];
@@ -188,6 +191,32 @@ export default function OutstandingFixturesPage() {
   const awaitingRescheduleCount = outstanding.filter((fixture) => fixture.reschedule?.status === "pending").length;
   const rescheduledCount = outstanding.filter((fixture) => fixture.reschedule?.status === "approved").length;
   const appOrigin = typeof window === "undefined" ? "https://rf-club-app.vercel.app" : window.location.origin;
+
+  const shareOutstandingFixtures = (sport: "pool" | "snooker") => {
+    const sportFixtures = outstanding.filter((fixture) =>
+      sport === "snooker" ? fixture.competition.sport_type === "snooker" : fixture.competition.sport_type !== "snooker"
+    );
+    if (!sportFixtures.length) {
+      setNotice(`There are no outstanding ${sport} fixtures to share.`);
+      return;
+    }
+    const heading = `Rack & Frame — outstanding ${sport === "snooker" ? "snooker" : "pool"} fixtures`;
+    const fixtureLines = sportFixtures.flatMap((fixture) => [
+      `• ${fixture.playerOne} vs ${fixture.playerTwo} (${fixture.competition.name})`,
+      `  Final playing deadline: ${displayDeadline(fixture.deadline)}`,
+      `  If unresolved and no arranging evidence is recorded, the fixture will be awarded to ${fixture.playerTwo} after ${displayDeadline(fixture.awardAt)}.`,
+    ]);
+    const text = [
+      heading,
+      "",
+      ...fixtureLines,
+      "",
+      "The first-named player is responsible for arranging and recording the fixture. If they have made genuine attempts to arrange it, they must record that evidence in the app before the review closes.",
+      "",
+      `Live list: ${appOrigin}/fixtures/outstanding`,
+    ].join("\n");
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+  };
 
   const loadContacts = async (matchId: string) => {
     if (contactsByMatch[matchId]) {
@@ -312,6 +341,15 @@ export default function OutstandingFixturesPage() {
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Rescheduled</p><p className="mt-1 text-3xl font-black text-amber-950">{rescheduledCount}</p></div>
               </section>
 
+              <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800">Share outstanding fixtures</p>
+                <p className="mt-1 text-sm text-emerald-950">Each WhatsApp summary includes the final playing deadline, the second-named player who receives the default walkover, and the time the 24-hour evidence review closes.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" onClick={() => shareOutstandingFixtures("pool")} className="rounded-xl bg-[#25D366] px-4 py-2 text-sm font-bold text-white hover:bg-[#1faf54]">Share Pool on WhatsApp ({outstanding.filter((fixture) => fixture.competition.sport_type !== "snooker").length})</button>
+                  <button type="button" onClick={() => shareOutstandingFixtures("snooker")} className="rounded-xl bg-[#25D366] px-4 py-2 text-sm font-bold text-white hover:bg-[#1faf54]">Share Snooker on WhatsApp ({outstanding.filter((fixture) => fixture.competition.sport_type === "snooker").length})</button>
+                </div>
+              </section>
+
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="text-sm font-semibold text-slate-700">Competition
@@ -361,6 +399,7 @@ export default function OutstandingFixturesPage() {
                           <h2 className="mt-1 text-xl font-black text-slate-950">{fixture.playerOne} vs {fixture.playerTwo}</h2>
                           <p className="mt-1 text-sm text-slate-600">Week {fixture.match.round_no ?? "—"} · Match {fixture.match.match_no ?? "—"} · Week beginning {displayDate(fixture.match.scheduled_for)}</p>
                           <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Final playing deadline: {displayDeadline(fixture.deadline)}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-700">Default outcome: awarded to {fixture.playerTwo} after {displayDeadline(fixture.awardAt)}, unless the result, a valid reschedule, or the first-named player&apos;s arranging evidence is recorded.</p>
                           {fixture.reschedule ? <p className={`mt-2 rounded-xl border px-3 py-2 text-sm ${pendingReschedule ? "border-violet-200 bg-violet-50 text-violet-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>{pendingReschedule ? "Requested move" : "Moved"} from the week beginning <strong>{displayDate(fixture.reschedule.original_scheduled_for)}</strong> to <strong>{displayDate(fixture.reschedule.requested_scheduled_for)}</strong>{pendingReschedule ? "; this still needs approval." : "."}</p> : null}
                           <div className="mt-4 flex flex-wrap gap-2">
                             <Link href={`/matches/${fixture.match.id}`} className="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-teal-800">{fixture.overdue ? "Review, reschedule or decide" : "Open fixture"}</Link>
@@ -371,7 +410,7 @@ export default function OutstandingFixturesPage() {
                           {contacts ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{contacts.map((contact) => {
                             const number = contact.phone ? whatsappNumber(contact.phone) : "";
                             const opponent = contact.playerId === fixture.match.player1_id ? fixture.playerTwo : fixture.playerOne;
-                            const reminderText = `Hi ${contact.name.split(/\s+/)[0]}, just a reminder about your ${fixture.competition.name} fixture against ${opponent}. ${workflowLabel}. Please arrange the match and update Rack & Frame. ${appOrigin}/my-fixtures`;
+                            const reminderText = `Hi ${contact.name.split(/\s+/)[0]}, just a reminder about your ${fixture.competition.name} fixture against ${opponent}. ${workflowLabel}. The final playing deadline is ${displayDeadline(fixture.deadline)}. If it remains unresolved and no arranging evidence is recorded, it will be awarded to ${fixture.playerTwo} after ${displayDeadline(fixture.awardAt)}. Please arrange the match and update Rack & Frame. ${appOrigin}/my-fixtures`;
                             return <div key={contact.playerId} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><p className="font-bold text-slate-900">{contact.name}</p>{number ? <a href={`https://wa.me/${number}?text=${encodeURIComponent(reminderText)}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded-lg bg-[#25D366] px-3 py-2 text-sm font-bold text-white">Open WhatsApp</a> : <p className="mt-2 text-xs text-slate-500">No mobile number recorded.</p>}</div>;
                           })}</div> : null}
                         </div>

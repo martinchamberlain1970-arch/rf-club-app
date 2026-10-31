@@ -11,6 +11,8 @@ type PublicFixture = {
   playerTwo: string;
   scheduledFor: string;
   deadline: string;
+  awardAt: string;
+  automaticAwardName: string;
   week: number | null;
   matchNo: number | null;
   status: string;
@@ -76,7 +78,7 @@ export default function PublicOutstandingFixturesPage() {
         <header className="rounded-3xl border border-emerald-400/30 bg-black/50 p-5 shadow-2xl sm:p-6">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-emerald-300">Rack &amp; Frame · League update</p>
           <h1 className="mt-2 text-3xl font-black sm:text-4xl">Outstanding fixtures</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-300">Matches that have been rescheduled or remain unplayed after their original fixture week. Each card shows the final four-week playing deadline.</p>
+          <p className="mt-2 max-w-2xl text-sm text-slate-300">Matches that have been rescheduled or remain unplayed after their original fixture week. Each card shows the final playing deadline and the default outcome after the 24-hour evidence review.</p>
         </header>
 
         {payload ? (
@@ -119,6 +121,7 @@ export default function PublicOutstandingFixturesPage() {
                   <p className="mt-3 text-sm text-slate-700">Week beginning {displayDate(fixture.scheduledFor)}</p>
                 )}
                 <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Final playing deadline: {displayDeadline(fixture.deadline)}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-700">If unresolved and no arranging evidence is recorded, this will be awarded to {fixture.automaticAwardName} after {displayDeadline(fixture.awardAt)}.</p>
                 <Link href={`/league/${fixture.competitionId}`} className="mt-4 inline-flex rounded-xl border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-50">View all competition fixtures</Link>
               </article>
             ))}
