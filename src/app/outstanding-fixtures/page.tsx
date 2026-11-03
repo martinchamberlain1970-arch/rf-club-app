@@ -55,6 +55,7 @@ type OutstandingFixture = {
   awardAt: Date;
   reschedule: RescheduleRow | null;
   overdue: boolean;
+  decisionDue: boolean;
 };
 
 function displayDate(value: string | null) {
@@ -94,11 +95,12 @@ export default function OutstandingFixturesPage() {
   const [reschedules, setReschedules] = useState<RescheduleRow[]>([]);
   const [submittedMatchIds, setSubmittedMatchIds] = useState<Set<string>>(new Set());
   const [competitionFilter, setCompetitionFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "overdue_unarranged" | "awaiting_reschedule" | "rescheduled" | "rescheduled_overdue">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "decision_due" | "overdue_unarranged" | "awaiting_reschedule" | "rescheduled" | "rescheduled_overdue">("all");
   const [contactsByMatch, setContactsByMatch] = useState<Record<string, FixtureContact[]>>({});
   const [contactLoadingId, setContactLoadingId] = useState<string | null>(null);
   const [reminderBusyId, setReminderBusyId] = useState<string | null>(null);
   const [rescheduleBusyId, setRescheduleBusyId] = useState<string | null>(null);
+  const [decisionBusyId, setDecisionBusyId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -173,12 +175,14 @@ export default function OutstandingFixturesPage() {
         awardAt,
         reschedule,
         overdue,
+        decisionDue: awardAt.getTime() < now.getTime(),
       }];
     }).sort((a, b) => a.deadline.getTime() - b.deadline.getTime() || a.competition.name.localeCompare(b.competition.name));
   }, [competitionById, latestRescheduleByMatch, matches, playerNameById, submittedMatchIds]);
 
   const visibleFixtures = outstanding.filter((fixture) => {
     if (competitionFilter !== "all" && fixture.competition.id !== competitionFilter) return false;
+    if (statusFilter === "decision_due" && !fixture.decisionDue) return false;
     if (statusFilter === "overdue_unarranged" && (!fixture.overdue || fixture.reschedule?.status === "approved")) return false;
     if (statusFilter === "awaiting_reschedule" && fixture.reschedule?.status !== "pending") return false;
     if (statusFilter === "rescheduled" && fixture.reschedule?.status !== "approved") return false;
@@ -188,6 +192,7 @@ export default function OutstandingFixturesPage() {
   const listedCompetitions = [...new Map(outstanding.map((fixture) => [fixture.competition.id, fixture.competition])).values()]
     .sort((a, b) => a.name.localeCompare(b.name));
   const overdueUnarrangedCount = outstanding.filter((fixture) => fixture.overdue && fixture.reschedule?.status !== "approved").length;
+  const decisionDueCount = outstanding.filter((fixture) => fixture.decisionDue).length;
   const awaitingRescheduleCount = outstanding.filter((fixture) => fixture.reschedule?.status === "pending").length;
   const rescheduledCount = outstanding.filter((fixture) => fixture.reschedule?.status === "approved").length;
   const appOrigin = typeof window === "undefined" ? "https://rf-club-app.vercel.app" : window.location.origin;
@@ -267,6 +272,30 @@ export default function OutstandingFixturesPage() {
     setNotice(`Reminder sent to ${sent}.${missing}${failed}`);
   };
 
+  const awardDefaultWin = async (fixture: OutstandingFixture) => {
+    const client = supabase;
+    if (!client || !canManage) return;
+    const confirmed = window.confirm(`Award this overdue fixture to ${fixture.playerTwo}? Both players will be emailed the confirmed outcome where an email address is held.`);
+    if (!confirmed) return;
+    setDecisionBusyId(fixture.match.id);
+    const sessionResult = await client.auth.getSession();
+    const token = sessionResult.data.session?.access_token;
+    const response = await fetch("/api/admin/fixture-deadline-decisions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ matchId: fixture.match.id }),
+    });
+    const body = await response.json().catch(() => ({}));
+    setDecisionBusyId(null);
+    if (!response.ok) {
+      setNotice(body.error || "The deadline decision could not be saved.");
+      return;
+    }
+    const sentCount = Array.isArray(body.emailResults) ? body.emailResults.filter((result: { status?: string }) => result.status === "sent").length : 0;
+    setNotice(`${fixture.playerTwo} has been awarded the win. Outcome email${sentCount === 1 ? "" : "s"} sent to ${sentCount} player${sentCount === 1 ? "" : "s"}.`);
+    setRefreshKey((value) => value + 1);
+  };
+
   const reviewReschedule = async (fixture: OutstandingFixture, decision: "approved" | "rejected") => {
     const client = supabase;
     const request = fixture.reschedule;
@@ -334,8 +363,9 @@ export default function OutstandingFixturesPage() {
 
           {canManage ? (
             <>
-              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Still to play</p><p className="mt-1 text-3xl font-black text-slate-950">{outstanding.length}</p></div>
+                <button type="button" onClick={() => setStatusFilter("decision_due")} className="rounded-2xl border border-red-300 bg-red-50 p-4 text-left shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-red-700">Decision due</p><p className="mt-1 text-3xl font-black text-red-950">{decisionDueCount}</p><p className="mt-1 text-xs font-semibold text-red-800">Review or award now</p></button>
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-rose-700">Overdue · no move agreed</p><p className="mt-1 text-3xl font-black text-rose-950">{overdueUnarrangedCount}</p></div>
                 <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-violet-700">Move awaiting approval</p><p className="mt-1 text-3xl font-black text-violet-950">{awaitingRescheduleCount}</p></div>
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Rescheduled</p><p className="mt-1 text-3xl font-black text-amber-950">{rescheduledCount}</p></div>
@@ -361,6 +391,7 @@ export default function OutstandingFixturesPage() {
                   <label className="text-sm font-semibold text-slate-700">Show
                     <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="mt-1 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900">
                       <option value="all">All outstanding</option>
+                      <option value="decision_due">Decision due now</option>
                       <option value="overdue_unarranged">Overdue · no reschedule agreed</option>
                       <option value="awaiting_reschedule">Reschedule awaiting approval</option>
                       <option value="rescheduled">Approved reschedules</option>
@@ -375,9 +406,12 @@ export default function OutstandingFixturesPage() {
               {!loading && !error ? (
                 <section className="space-y-3">
                   {visibleFixtures.map((fixture) => {
+                    const decisionDue = fixture.decisionDue;
                     const pendingReschedule = fixture.reschedule?.status === "pending";
                     const approvedReschedule = fixture.reschedule?.status === "approved";
-                    const workflowLabel = pendingReschedule
+                    const workflowLabel = decisionDue
+                      ? "Decision due · review period closed"
+                      : pendingReschedule
                       ? "Reschedule requested · awaiting approval"
                       : approvedReschedule && fixture.overdue
                         ? "Rescheduled · new deadline missed"
@@ -392,7 +426,7 @@ export default function OutstandingFixturesPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap gap-2">
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${pendingReschedule ? "bg-violet-100 text-violet-900" : fixture.overdue ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-900"}`}>{workflowLabel}</span>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${decisionDue ? "bg-red-600 text-white" : pendingReschedule ? "bg-violet-100 text-violet-900" : fixture.overdue ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-900"}`}>{workflowLabel}</span>
                             {fixture.match.status === "in_progress" ? <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800">In progress</span> : null}
                           </div>
                           <p className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-teal-700">{fixture.competition.name}</p>
@@ -402,6 +436,7 @@ export default function OutstandingFixturesPage() {
                           <p className="mt-1 text-sm font-semibold text-slate-700">Default outcome: awarded to {fixture.playerTwo} after {displayDeadline(fixture.awardAt)}, unless the result, a valid reschedule, or the first-named player&apos;s arranging evidence is recorded.</p>
                           {fixture.reschedule ? <p className={`mt-2 rounded-xl border px-3 py-2 text-sm ${pendingReschedule ? "border-violet-200 bg-violet-50 text-violet-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>{pendingReschedule ? "Requested move" : "Moved"} from the week beginning <strong>{displayDate(fixture.reschedule.original_scheduled_for)}</strong> to <strong>{displayDate(fixture.reschedule.requested_scheduled_for)}</strong>{pendingReschedule ? "; this still needs approval." : "."}</p> : null}
                           <div className="mt-4 flex flex-wrap gap-2">
+                            {decisionDue ? <button type="button" disabled={decisionBusyId === fixture.match.id} onClick={() => void awardDefaultWin(fixture)} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-800 disabled:opacity-50">{decisionBusyId === fixture.match.id ? "Awarding & emailing…" : `Award win to ${fixture.playerTwo}`}</button> : null}
                             <Link href={`/matches/${fixture.match.id}`} className="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-teal-800">{fixture.overdue ? "Review, reschedule or decide" : "Open fixture"}</Link>
                             {pendingReschedule && admin.isSuper ? <><button type="button" disabled={rescheduleBusyId === fixture.reschedule?.id} onClick={() => void reviewReschedule(fixture, "approved")} className="rounded-xl border border-violet-700 bg-violet-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Approve new week</button><button type="button" disabled={rescheduleBusyId === fixture.reschedule?.id} onClick={() => void reviewReschedule(fixture, "rejected")} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-900 disabled:opacity-50">Reject request</button></> : null}
                             <button type="button" disabled={reminderBusyId === fixture.match.id} onClick={() => void sendEmailReminders(fixture.match.id)} className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-bold text-sky-900 disabled:opacity-50">{reminderBusyId === fixture.match.id ? "Sending…" : "Email both players"}</button>

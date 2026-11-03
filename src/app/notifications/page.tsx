@@ -393,6 +393,24 @@ export default function NotificationsPage() {
         });
       }
       if (admin.isSuper) {
+        const sessionResult = await client.auth.getSession();
+        const accessToken = sessionResult.data.session?.access_token;
+        if (accessToken) {
+          const deadlineResponse = await fetch("/api/admin/fixture-deadline-decisions", { headers: { Authorization: `Bearer ${accessToken}` } });
+          const deadlineBody = await deadlineResponse.json().catch(() => ({}));
+          if (deadlineResponse.ok && Array.isArray(deadlineBody.fixtures)) {
+            deadlineBody.fixtures.forEach((fixture: { id: string; competitionName: string; playerOne: string; playerTwo: string; reviewUntil: string | null; evidenceSubmitted: boolean }) => {
+              out.push({
+                key: `fixture-deadline-decision:${fixture.id}`,
+                title: fixture.evidenceSubmitted ? "Fixture evidence needs review" : "Overdue fixture decision due",
+                detail: `${fixture.competitionName}: ${fixture.playerOne} vs ${fixture.playerTwo}${fixture.evidenceSubmitted ? " · arranging evidence recorded" : ` · default award to ${fixture.playerTwo}`}`,
+                created_at: fixture.reviewUntil ?? new Date().toISOString(),
+                href: "/outstanding-fixtures?status=decision_due",
+                status: "pending",
+              });
+            });
+          }
+        }
         const [resultRes, autoResultRes, claimRes, updateRes, adminReqRes, premiumRes, locationReqRes] = await Promise.all([
           client.from("result_submissions").select("id,match_id,submitted_at,status").eq("status", "pending").order("submitted_at", { ascending: false }),
           client.from("result_submissions").select("id,match_id,submitted_at,status,reviewed_at,note").eq("status", "approved").eq("note", "Automatically approved because both players submitted the same score.").order("reviewed_at", { ascending: false }).limit(100),

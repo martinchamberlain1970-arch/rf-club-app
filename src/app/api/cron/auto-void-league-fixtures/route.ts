@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   const matchIds = matches.map((match) => match.id);
   const [submissionsResult, deadlineEventsResult] = await Promise.all([
     client.from("result_submissions").select("match_id,status").in("match_id", matchIds).in("status", ["pending", "approved"]),
-    client.from("audit_logs").select("entity_id,action,created_at").eq("entity_type", "match").in("entity_id", matchIds).in("action", ["fixture_deadline_review_opened", "fixture_deadline_evidence_submitted", "fixture_deadline_walkover_awarded"]),
+    client.from("audit_logs").select("entity_id,action,created_at").eq("entity_type", "match").in("entity_id", matchIds).in("action", ["fixture_deadline_review_opened", "fixture_deadline_evidence_submitted", "fixture_deadline_decision_due", "fixture_deadline_walkover_awarded"]),
   ]);
   if (submissionsResult.error || deadlineEventsResult.error) return NextResponse.json({ error: submissionsResult.error?.message ?? deadlineEventsResult.error?.message }, { status: 400 });
   const protectedMatchIds = new Set((submissionsResult.data ?? []).map((row) => row.match_id as string));
@@ -72,32 +72,25 @@ export async function GET(req: NextRequest) {
     }
     if (deadlineActions.has("fixture_deadline_evidence_submitted") || deadlineActions.has("fixture_deadline_walkover_awarded") || now <= reviewUntil) continue;
 
-    let ownerUserId = match.owner_user_id;
-    if (!ownerUserId) {
-      const linked = await client.from("app_users").select("id").eq("linked_player_id", match.player2_id).limit(1).maybeSingle();
-      ownerUserId = linked.data?.id ?? null;
-    }
-    if (!ownerUserId) continue;
-    const awardedCount = competition.sport_type === "snooker" ? 1 : Math.max(1, Number(match.best_of ?? 1));
-    const clearFrames = await client.from("frames").delete().eq("match_id", match.id);
-    if (clearFrames.error) continue;
-    const frameInsert = await client.from("frames").insert(Array.from({ length: awardedCount }, (_, index) => ({ match_id: match.id, frame_number: index + 1, owner_user_id: ownerUserId, winner_player_id: match.player2_id, break_and_run: false, run_out_against_break: false, is_walkover_award: true, team1_points: 0, team2_points: 0, breaks_over_30_team1_values: [], breaks_over_30_team2_values: [], breaks_over_30_team1: 0, breaks_over_30_team2: 0, high_break_team1: 0, high_break_team2: 0 })));
-    if (frameInsert.error) continue;
-    const matchUpdate = await client.from("matches").update({ status: "complete", winner_player_id: match.player2_id }).eq("id", match.id).in("status", ["pending", "in_progress"]);
-    if (matchUpdate.error) continue;
-    await client.from("audit_logs").insert({
+    if (deadlineActions.has("fixture_deadline_decision_due")) continue;
+    const decisionEvent = await client.from("audit_logs").insert({
       actor_user_id: null,
       actor_email: null,
       actor_role: "system",
-      action: "fixture_deadline_walkover_awarded",
+      action: "fixture_deadline_decision_due",
       entity_type: "match",
       entity_id: match.id,
-      summary: "The overdue fixture was awarded to the second-named player after the review period closed.",
-      meta: { competition_id: match.competition_id, winner_player_id: match.player2_id },
+      summary: "The 24-hour review period closed and the overdue fixture now needs a Club Manager decision.",
+      meta: { competition_id: match.competition_id, default_winner_player_id: match.player2_id, review_until: reviewUntil.toISOString() },
     });
-    awarded.push(match.id);
-    const participants = await client.from("app_users").select("id").in("linked_player_id", [match.player1_id, match.player2_id]);
-    if (!participants.error) await sendPushToUserIds(client, (participants.data ?? []).map((row) => row.id), { title: "Fixture awarded by walkover", body: `${competition.name}: the unplayed fixture has been awarded to the second-named player after the evidence period closed.`, url: `/matches/${match.id}`, tag: `fixture-awarded-${match.id}` });
+    if (decisionEvent.error) continue;
+    const managers = await client.from("app_users").select("id").in("role", ["owner", "admin"]);
+    if (!managers.error) await sendPushToUserIds(client, (managers.data ?? []).map((row) => row.id), {
+      title: "Overdue fixture decision due",
+      body: `${competition.name}: the 24-hour review has closed. Review the fixture or award the default win now.`,
+      url: "/outstanding-fixtures",
+      tag: `fixture-decision-${match.id}`,
+    });
   }
 
   return NextResponse.json({ ok: true, opened, awarded });
