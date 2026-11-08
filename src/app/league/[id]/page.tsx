@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { isLegionMastersLeague } from "@/lib/legion-masters";
 import { formatMatchHandicapStart } from "@/lib/match-handicap";
+import { getCalendarCurrentLeagueWeek } from "@/lib/league-current-week";
 import LeaguePlayerSummaryModal from "@/components/LeaguePlayerSummaryModal";
 
 type Fixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1Id: string | null; player2Id: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
@@ -30,11 +31,7 @@ export default function PublicLeaguePage() {
   }, [params.id]);
 
   const weeks = useMemo(() => [...new Set((data?.fixtures ?? []).map((fixture) => fixture.week))].sort((a, b) => a - b), [data]);
-  const currentWeek = useMemo(() => {
-    if (!data?.fixtures.length) return weeks[0] ?? 1;
-    const unfinished = data.fixtures.find((fixture) => !fixture.isReschedulePlaceholder && !["complete", "bye"].includes(fixture.status));
-    return unfinished?.week ?? weeks.at(-1) ?? 1;
-  }, [data, weeks]);
+  const currentWeek = useMemo(() => getCalendarCurrentLeagueWeek(data?.fixtures ?? [], weeks), [data, weeks]);
   const visibleFixtures = useMemo(() => {
     if (!data) return [];
     const week = selectedWeek === "current" ? currentWeek : Number(selectedWeek);

@@ -9,6 +9,7 @@ import { getLeagueFixtureDeadline } from "@/lib/league-deadline";
 import { assignFixtureBookings, fixtureBookingLabel, type FixtureBooking } from "@/lib/fixture-bookings";
 import { isLegionMastersLeague } from "@/lib/legion-masters";
 import { formatMatchHandicapStart } from "@/lib/match-handicap";
+import { getCalendarCurrentLeagueWeek } from "@/lib/league-current-week";
 import LeaguePlayerSummaryModal from "@/components/LeaguePlayerSummaryModal";
 
 type WeekFilter = "last" | "this" | "next";
@@ -322,10 +323,7 @@ export default function MyFixturesPage() {
   const activeLeagueId = leagueCompetitions.some((competition) => competition.id === selectedLeagueId) ? selectedLeagueId : leagueCompetitions[0]?.id || "";
   const activeLeague = activeLeagueId ? leagueData[activeLeagueId] : null;
   const activeLeagueWeeks = useMemo(() => [...new Set((activeLeague?.fixtures ?? []).map((fixture) => fixture.week))].sort((a, b) => a - b), [activeLeague]);
-  const activeLeagueCurrentWeek = useMemo(() => {
-    const unfinished = activeLeague?.fixtures.find((fixture) => !fixture.isReschedulePlaceholder && !["complete", "bye"].includes(fixture.status));
-    return unfinished?.week ?? activeLeagueWeeks.at(-1) ?? 1;
-  }, [activeLeague, activeLeagueWeeks]);
+  const activeLeagueCurrentWeek = useMemo(() => getCalendarCurrentLeagueWeek(activeLeague?.fixtures ?? [], activeLeagueWeeks), [activeLeague, activeLeagueWeeks]);
   const visibleCompetitionWeek = selectedResultsWeek === "current" ? activeLeagueCurrentWeek : Number(selectedResultsWeek);
   const competitionWeekFixtures = useMemo(() => (activeLeague?.fixtures ?? []).filter((fixture) => fixture.week === visibleCompetitionWeek && fixture.status !== "bye"), [activeLeague, visibleCompetitionWeek]);
   const playableCompetitionWeekFixtures = useMemo(() => competitionWeekFixtures.filter((fixture) => !fixture.isReschedulePlaceholder), [competitionWeekFixtures]);
