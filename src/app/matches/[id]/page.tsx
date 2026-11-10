@@ -169,6 +169,14 @@ type FixtureDeadlinePolicy = {
   reviewUntil: string | null;
 };
 
+type PlayingWindowException = {
+  id: string;
+  player_id: string;
+  active_from: string;
+  expires_on: string;
+  note: string;
+};
+
 const RESCHEDULE_REASONS = [
   "Holiday",
   "Illness or injury",
@@ -457,6 +465,7 @@ export default function MatchPage() {
   const [deadlinePolicy, setDeadlinePolicy] = useState<FixtureDeadlinePolicy | null>(null);
   const [deadlineEvidence, setDeadlineEvidence] = useState("");
   const [submittingDeadlineEvidence, setSubmittingDeadlineEvidence] = useState(false);
+  const [playingWindowException, setPlayingWindowException] = useState<PlayingWindowException | null>(null);
 
   const openDisplay = () => {
     if (!matchId) return;
@@ -517,7 +526,15 @@ export default function MatchPage() {
         linkedPlayerId = (linkRes.data?.linked_player_id as string | null) ?? null;
       }
 
-      const [adminLocRes, playersRes, competitionRes, framesRes, submissionsRes, bookingsRes] = await Promise.all([
+      const matchPlayerIds = [...new Set([
+        loadedMatch.player1_id,
+        loadedMatch.player2_id,
+        loadedMatch.team1_player1_id,
+        loadedMatch.team1_player2_id,
+        loadedMatch.team2_player1_id,
+        loadedMatch.team2_player2_id,
+      ].filter(Boolean) as string[])];
+      const [adminLocRes, playersRes, competitionRes, framesRes, submissionsRes, bookingsRes, playingExceptionsRes] = await Promise.all([
         (async () => {
           if (!signedInUserId || admin.isSuper || !admin.isAdmin) return null;
           const linked = linkedPlayerId;
@@ -554,10 +571,17 @@ export default function MatchPage() {
               .eq("status", "booked")
               .or(`participant_one_player_id.eq.${loadedMatch.player1_id},participant_two_player_id.eq.${loadedMatch.player1_id}`)
           : Promise.resolve({ data: [], error: null }),
+        matchPlayerIds.length
+          ? client
+              .from("league_playing_window_exceptions")
+              .select("id,player_id,active_from,expires_on,note")
+              .eq("competition_id", loadedMatch.competition_id)
+              .in("player_id", matchPlayerIds)
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (!active) return;
-      if (playersRes.error || competitionRes.error || framesRes.error || submissionsRes.error || !playersRes.data || !competitionRes.data || !framesRes.data) {
+      if (playersRes.error || competitionRes.error || framesRes.error || submissionsRes.error || playingExceptionsRes.error || !playersRes.data || !competitionRes.data || !framesRes.data) {
         finishLoading();
         setLoadError(
           [
@@ -565,6 +589,7 @@ export default function MatchPage() {
             competitionRes.error?.message && `Competition: ${competitionRes.error.message}`,
             framesRes.error?.message && `Frames: ${framesRes.error.message}`,
             submissionsRes.error?.message && `Submissions: ${submissionsRes.error.message}`,
+            playingExceptionsRes.error?.message && `Early-play exception: ${playingExceptionsRes.error.message}`,
             !playersRes.data && "Players: missing data",
             !competitionRes.data && "Competition: missing data",
             !framesRes.data && "Frames: missing data",
@@ -676,6 +701,10 @@ export default function MatchPage() {
       const loadedCompetition = (competitionRes.data as unknown) as CompetitionSettings;
       const isFixedRackLeague = loadedCompetition.competition_format === "league" && loadedCompetition.sport_type !== "snooker";
       setCompetition(loadedCompetition);
+      const londonToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      const activePlayingException = (((playingExceptionsRes.data ?? []) as unknown) as PlayingWindowException[])
+        .find((exception) => exception.active_from <= londonToday && exception.expires_on >= londonToday) ?? null;
+      setPlayingWindowException(activePlayingException);
       const loadedBookings = bookingsRes.error ? [] : (((bookingsRes.data ?? []) as unknown) as FixtureBooking[]);
       setFixtureBooking(assignFixtureBookings([loadedMatch], loadedBookings).get(loadedMatch.id) ?? null);
       setFrames(
@@ -795,8 +824,9 @@ export default function MatchPage() {
   const playerLeagueWindowOpen = useMemo(() => {
     if (!leagueFixtureWindow) return true;
     const now = new Date();
-    return now >= leagueFixtureWindow.opensAt && now <= leagueFixtureWindow.dueAt;
-  }, [leagueFixtureWindow]);
+    if (now > leagueFixtureWindow.dueAt) return false;
+    return Boolean(playingWindowException) || now >= leagueFixtureWindow.opensAt;
+  }, [leagueFixtureWindow, playingWindowException]);
   const pendingRescheduleForMatch = useMemo(
     () => rescheduleRequests.find((request) => request.status === "pending") ?? null,
     [rescheduleRequests]
@@ -3161,6 +3191,7 @@ export default function MatchPage() {
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                       Pending. Enter the full {competition.sport_type === "snooker" ? "frame" : "rack"} result above, then submit it for approval.
                       {isHandicappedSnookerMatch ? " Use the final adjusted score including the handicap start shown on this fixture." : ""}
+                      {playingWindowException ? " Early result entry is open under the temporary travel exception shown above." : ""}
                     </div>
                   ) : null}
                   {userPendingSubmission ? (
@@ -3202,6 +3233,12 @@ export default function MatchPage() {
                   <p className="text-sm text-slate-700">
                     This fixture may be played in the week before it is due, its due week, or either of the following two weeks. The first-named player is responsible for arranging the game and ensuring the result or an approved reschedule is recorded.
                   </p>
+                  {playingWindowException ? (
+                    <div className="rounded-xl border border-cyan-300 bg-cyan-50 px-3 py-2 text-sm text-cyan-950">
+                      <p className="font-semibold">Early play permitted until {new Date(`${playingWindowException.expires_on}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}.</p>
+                      <p className="mt-1">{playingWindowException.note} This exception opens result entry early but does not move the fixture or extend its final deadline.</p>
+                    </div>
+                  ) : null}
                   {deadlinePolicy?.finalDeadline ? (
                     <p className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-800">
                       Playing window closes <strong>{new Date(deadlinePolicy.finalDeadline).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" })}</strong>. If it remains unplayed, the default walkover is to the second-named player after a 24-hour review period.

@@ -43,6 +43,7 @@ const systemToolLinks = [
   { href: "/locations", title: "Locations", desc: "Review and tidy club and venue records." },
   { href: "/signup-requests", title: "Signup Requests", desc: "Review pending access, profile, and child requests." },
   { href: "/snooker-handicap-exceptions", title: "Handicap Exceptions", desc: "Set first-time snooker handicaps and seed starting Elo." },
+  { href: "/playing-window-exceptions", title: "Early-play Exceptions", desc: "Temporarily open future fixtures for one player without changing the schedule." },
   { href: "/weekly-reviews", title: "Weekly Reviews", desc: "Generate, publish and share weekly league reports." },
   { href: "/backup", title: "Data Management", desc: "Run maintenance and data cleanup tools." },
   { href: "/audit", title: "Audit Log", desc: "Check important account and system actions." },
