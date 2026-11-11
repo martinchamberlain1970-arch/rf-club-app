@@ -4,6 +4,7 @@ import "./globals.css";
 import PwaSetup from "@/components/PwaSetup";
 import AppCopyright from "@/components/AppCopyright";
 import AppShell from "@/components/AppShell";
+import WebAppExperience from "@/components/WebAppExperience";
 
 export const metadata: Metadata = {
   title: "Rack & Frame Club",
@@ -39,6 +40,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         <PwaSetup />
+        <WebAppExperience appName="Rack & Frame Club" />
         <Suspense fallback={<>{children}<AppCopyright /></>}>
           <AppShell>
             {children}

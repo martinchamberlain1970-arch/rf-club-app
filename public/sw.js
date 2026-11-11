@@ -1,5 +1,6 @@
-const CACHE_NAME = "rack-frame-shell-v4";
-const APP_ASSETS = ["/pwa/icon-192.png", "/pwa/icon-512.png", "/pwa/notification-badge.svg"];
+const CACHE_NAME = "rack-frame-shell-v5";
+const OFFLINE_URL = "/offline.html";
+const APP_ASSETS = [OFFLINE_URL, "/pwa/icon-192.png", "/pwa/icon-512.png", "/pwa/notification-badge.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS)));
@@ -28,6 +29,10 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const requestUrl = new URL(event.request.url);
   if (event.request.method !== "GET" || requestUrl.origin !== self.location.origin || requestUrl.pathname.startsWith("/api/")) return;
+  if (event.request.mode === "navigate") {
+    event.respondWith(fetch(event.request).catch(() => caches.match(OFFLINE_URL)));
+    return;
+  }
   if (!requestUrl.pathname.startsWith("/pwa/") && !requestUrl.pathname.startsWith("/_next/static/")) return;
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
 });

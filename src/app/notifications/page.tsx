@@ -196,19 +196,19 @@ export default function NotificationsPage() {
 
   const enablePush = async () => {
     if (!pushStatus?.configured || !pushStatus.publicKey) {
-      setMessage("Android notifications are awaiting server configuration.");
+      setMessage("App notifications are awaiting server configuration.");
       return;
     }
     setPushBusy(true);
     try {
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") throw new Error("Notifications were not allowed. Enable them for Rack & Frame in Android site settings, then try again.");
+      if (permission !== "granted") throw new Error("Notifications were not allowed. Enable them for Rack & Frame in your phone or browser settings, then try again.");
       const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
       const subscription = existing ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(pushStatus.publicKey) });
       await pushRequest("POST", { subscription: subscription.toJSON() });
       const test = await pushRequest("POST", { action: "test" });
-      setMessage(Number(test.sent ?? 0) > 0 ? "Android notifications enabled. A test notification has been sent to this device." : "Notifications were enabled, but the test could not yet be delivered.");
+      setMessage(Number(test.sent ?? 0) > 0 ? "App notifications enabled. A test notification has been sent to this device." : "Notifications were enabled, but the test could not yet be delivered.");
       await refreshPushStatus();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Notifications could not be enabled.");
@@ -682,9 +682,9 @@ export default function NotificationsPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <p className="font-semibold text-violet-950">Phone notifications</p>
-                <p className="mt-1 max-w-2xl text-sm text-violet-800">Installed Android PWAs need permission on each phone. Enable this once to receive important competition and booking alerts even when Rack &amp; Frame is closed.</p>
+                <p className="mt-1 max-w-2xl text-sm text-violet-800">Enable notifications separately on each phone. On iPhone or iPad, add Rack &amp; Frame to the Home Screen first. Compatible Android browsers can enable them directly.</p>
                 <p className="mt-2 text-xs font-semibold text-violet-700">
-                  {!pushStatus ? "Checking this device…" : pushStatus.permission === "unsupported" ? "This browser does not support Web Push." : !pushStatus.configured ? "Server setup pending." : pushStatus.enabledOnDevice && pushStatus.permission === "granted" ? "Enabled on this device" : pushStatus.permission === "denied" ? "Blocked in Android settings" : "Not enabled on this device"}
+                  {!pushStatus ? "Checking this device…" : pushStatus.permission === "unsupported" ? "This browser does not support Web Push." : !pushStatus.configured ? "Server setup pending." : pushStatus.enabledOnDevice && pushStatus.permission === "granted" ? "Enabled on this device" : pushStatus.permission === "denied" ? "Blocked in device settings" : "Not enabled on this device"}
                 </p>
               </div>
               {pushStatus?.enabledOnDevice ? (
