@@ -19,6 +19,7 @@ const coreActionLinks = [
   { href: "/notifications", title: "Notifications", desc: "Check inbox updates and pending actions." },
   { href: "/stats", title: "Stats", desc: "View club rankings, form, and performance summaries." },
   { href: "/high-breaks", title: "High Breaks", desc: "See the dedicated snooker high-break table." },
+  { href: "/pool-achievements", title: "Break & Run Table", desc: "Pool Break & Run and Run Out Against the Break rankings." },
   { href: "/rankings", title: "Rankings", desc: "Browse Elo-style player leaderboards by discipline." },
 ] as const;
 
@@ -69,6 +70,7 @@ const playerExperienceLinks = [
   { href: "/rankings", title: "Rankings", desc: "See where you stand.", symbol: "RANK" },
   { href: "/handicaps", title: "Handicaps", desc: "See your snooker handicap and every competition player.", symbol: "HCP" },
   { href: "/high-breaks", title: "High Breaks", desc: "Club snooker break table.", symbol: "BREAK" },
+  { href: "/pool-achievements", title: "Break & Run", desc: "Pool achievement league for both run-out types.", symbol: "RUN" },
   { href: "/quick-match", title: "Quick Match", desc: "Start a social or practice match.", symbol: "START" },
   { href: "/notifications", title: "Updates", desc: "Results, requests and messages.", symbol: "NEWS" },
 ] as const;

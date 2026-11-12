@@ -37,6 +37,7 @@ const playerNavigation: NavigationGroup[] = [
     label: "Results & performance",
     items: [
       { href: "/rankings", label: "Rankings" },
+      { href: "/pool-achievements", label: "Break & Run table" },
       { href: "/handicaps", label: "Handicaps" },
       { href: "/high-breaks", label: "High breaks" },
       { href: "/stats", label: "Club statistics", adminOnly: true },
@@ -74,6 +75,7 @@ const manageNavigation: NavigationGroup[] = [
       { href: "/outstanding-fixtures", label: "Outstanding fixtures", adminOnly: true },
       { href: "/players", label: "Players", adminOnly: true },
       { href: "/rankings", label: "Rankings" },
+      { href: "/pool-achievements", label: "Break & Run table" },
       { href: "/handicaps", label: "Handicaps" },
       { href: "/high-breaks", label: "High breaks" },
       { href: "/stats", label: "Club statistics", adminOnly: true },
