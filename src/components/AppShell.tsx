@@ -49,7 +49,7 @@ const playerNavigation: NavigationGroup[] = [
       { href: "/install", label: "Install the app" },
       { href: "/rules", label: "Rules" },
       { href: "/help", label: "Help & user guide" },
-      { href: "/premium", label: "Premium" },
+      { href: "/premium", label: "Feature access" },
       { href: "/legal", label: "Legal & privacy" },
     ],
   },

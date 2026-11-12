@@ -51,9 +51,9 @@ const faqs: { question: string; answer: string }[] = [
       "The live match start is capped at 40 so frames stay competitive and do not feel decided before play begins. Elo still tracks the full strength gap in the background, but the cap keeps the scoreline understandable and the match playable for both sides.",
   },
   {
-    question: "What does Premium unlock?",
+    question: "Which features are included?",
     answer:
-      "Premium adds advanced extras such as doubles support, full stats, live overview access where relevant, auto breaker, and more advanced competition tools. Core player and club features remain available without Premium.",
+      "All player features are currently included without payment: doubles, full stats, live overview access where relevant, auto breaker, Break & Run / Run Out tracking, and advanced competition tools. Account roles still control administrative permissions.",
   },
 ];
 

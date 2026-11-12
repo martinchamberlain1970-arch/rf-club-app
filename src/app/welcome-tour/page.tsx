@@ -41,10 +41,10 @@ const stepsByRole: Record<TourRole, { title: string; detail: string; href: strin
       cta: "Open Events",
     },
     {
-      title: "6) Explore Premium extras",
-      detail: "Premium adds doubles, stats, live overview access where relevant, auto breaker, and other advanced features.",
+      title: "6) Explore all features",
+      detail: "Doubles, stats, live overview, auto breaker and the advanced match tools are currently included for everyone.",
       href: "/premium",
-      cta: "Open Premium",
+      cta: "View Features",
     },
   ],
   admin: [

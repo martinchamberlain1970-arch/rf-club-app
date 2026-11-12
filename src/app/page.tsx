@@ -27,7 +27,7 @@ const supportLinks = [
   { href: "/rules", title: "Rules" },
   { href: "/help", title: "Help" },
   { href: "/help#report-an-issue", title: "Report An Issue" },
-  { href: "/premium", title: "Premium" },
+  { href: "/premium", title: "Feature access" },
   { href: "/welcome-tour", title: "Welcome Tour" },
   { href: "/legal", title: "Legal" },
 ] as const;
@@ -888,8 +888,8 @@ export default function HomePage() {
             {!admin.isSuper ? (
               <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-3 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div><p className="text-sm font-semibold text-teal-800">Premium access</p><p className="text-xs text-slate-600">Advanced competition and player features</p></div>
-                  <Link href="/premium" className={actionLinkClass}>View Premium</Link>
+                  <div><p className="text-sm font-semibold text-teal-800">Feature access</p><p className="text-xs text-slate-600">All competition and player features are currently included</p></div>
+                  <Link href="/premium" className={actionLinkClass}>View features</Link>
                 </div>
               </div>
             ) : null}

@@ -52,7 +52,10 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (existingUser?.id) {
-      return adminClient.from("app_users").update({ linked_player_id: playerId }).eq("id", createdUserId);
+      return adminClient
+        .from("app_users")
+        .update({ linked_player_id: playerId, premium_unlocked: true })
+        .eq("id", createdUserId);
     }
 
     return adminClient.from("app_users").insert({
@@ -60,6 +63,7 @@ export async function POST(req: NextRequest) {
       email,
       role: "user",
       linked_player_id: playerId,
+      premium_unlocked: true,
     });
   };
 

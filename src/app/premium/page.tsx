@@ -233,9 +233,9 @@ export default function PremiumPage() {
       <div className="mx-auto max-w-5xl space-y-3 sm:space-y-4">
         <RequireAuth>
           <ScreenHeader
-            title="Premium"
-            eyebrow="Premium"
-            subtitle={isSuperAdmin ? "Manage premium approvals and account access." : "Premium adds the advanced extras on top of the standard Player and Club Admin roles."}
+            title="Feature access"
+            eyebrow="Features"
+            subtitle="All player and competition features are currently included for every account."
           />
 
           <section className={`${cardBaseClass} space-y-2`}>
@@ -304,26 +304,26 @@ export default function PremiumPage() {
                   </section>
                 ) : null}
                 <section className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-teal-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Premium Unlock</p>
-                  <p className="mt-1 text-2xl font-bold text-slate-900">One-off £12.99</p>
-                  <p className="text-sm text-slate-600">No subscription · one account upgrade</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Feature access</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">All features enabled for everyone</p>
+                  <p className="text-sm text-slate-600">No payment, subscription or approval is currently required.</p>
                   <p className="mt-2 text-slate-700">
-                    Premium does not replace roles. Player, Club Admin, and Super User stay the same. Premium simply adds the advanced extras to Player or Club Admin accounts.
+                    The previous Premium charging model is paused. Player, Club Admin and Super User roles still control administrative permissions, but they no longer restrict these app features.
                   </p>
                 </section>
 
                 <section className="rounded-xl border border-slate-200 bg-white p-4">
                   <p className="font-semibold text-slate-900">How access works</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                    <li>Free Player accounts can use Quick Match and the standard club-viewing screens.</li>
-                    <li>Free Club Admin accounts can create competitions, manage players, and run their club.</li>
-                    <li>Premium adds advanced extras like doubles, stats, live overview, and enhanced match tools.</li>
-                    <li>Super User always keeps full system access and is not governed by Premium status.</li>
+                    <li>Every account can use the complete player feature set.</li>
+                    <li>Club Admin accounts can additionally create competitions, manage players and run club workflows.</li>
+                    <li>Doubles, statistics, live overview and enhanced match tools are included.</li>
+                    <li>Roles still protect administrative and governance functions.</li>
                   </ul>
                 </section>
 
                 <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="font-semibold text-slate-900">What Premium adds</p>
+                  <p className="font-semibold text-slate-900">Features now included</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
                     {premiumHighlights.map((item) => (
                       <li key={item}>{item}</li>
@@ -331,7 +331,7 @@ export default function PremiumPage() {
                   </ul>
                 </section>
 
-                <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <section className="hidden rounded-xl border border-slate-200 bg-white p-4" aria-hidden="true">
                   <p className="font-semibold text-slate-900">Access snapshot</p>
                   <p className="mt-1 text-sm text-slate-600">
                     Use this table as the quick guide to what is included on each plan and role level.
@@ -455,7 +455,7 @@ export default function PremiumPage() {
                   </div>
                 ) : !premium.loading && premium.unlocked ? (
                   <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
-                    {premium.trialActive ? "Premium trial is active on your account." : "Premium is active on your account."}
+                    All app features are currently enabled on your account.
                   </p>
                 ) : null}
               </>
