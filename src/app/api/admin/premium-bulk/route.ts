@@ -42,7 +42,10 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const appUserUpdate = await adminClient.from("app_users").update({ premium_unlocked: enabled });
+  const appUserUpdate = await adminClient
+    .from("app_users")
+    .update({ premium_unlocked: enabled })
+    .not("id", "is", null);
   if (appUserUpdate.error) {
     const message = appUserUpdate.error.message.toLowerCase();
     if (!message.includes("column") || !message.includes("premium_unlocked")) {
