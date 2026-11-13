@@ -45,11 +45,11 @@ export default function WebAppExperience({ appName }: { appName: string }) {
   return (
     <>
       {!online ? (
-        <div role="status" className="fixed inset-x-0 top-0 z-[200] bg-amber-400 px-4 py-3 text-center text-sm font-bold text-amber-950 shadow-lg">
+        <div role="status" className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-[200] bg-amber-400 px-4 py-3 text-center text-sm font-bold text-amber-950 shadow-lg">
           You’re offline. Keep this screen open—reconnect before submitting or approving changes.
         </div>
       ) : recovered ? (
-        <div role="status" className="fixed inset-x-0 top-0 z-[200] bg-emerald-600 px-4 py-3 text-center text-sm font-bold text-white shadow-lg">
+        <div role="status" className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-[200] bg-emerald-600 px-4 py-3 text-center text-sm font-bold text-white shadow-lg">
           You’re back online. You can continue safely.
         </div>
       ) : null}

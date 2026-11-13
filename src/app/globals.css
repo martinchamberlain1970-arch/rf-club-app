@@ -31,7 +31,7 @@ body {
 }
 
 .rf-app-shell main.min-h-screen {
-  min-height: calc(100dvh - 4rem);
+  min-height: calc(100dvh - 4rem - env(safe-area-inset-top, 0px));
 }
 
 .rf-app-shell main {
@@ -84,5 +84,32 @@ body {
 @media (max-width: 639px) {
   .rf-app-shell main {
     padding: 0.75rem !important;
+  }
+}
+
+/* Keep navigation below iOS status bars in Safari and installed web apps. */
+.rf-app-shell .rf-app-header {
+  height: calc(4rem + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+}
+
+.rf-mobile-navigation {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.rf-mobile-navigation .rf-navigation-close {
+  top: calc(1rem + env(safe-area-inset-top, 0px));
+  right: calc(1rem + env(safe-area-inset-right, 0px));
+}
+
+@media (min-width: 640px) {
+  .rf-app-shell .rf-app-header {
+    padding-left: max(1.25rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1.25rem, env(safe-area-inset-right, 0px));
   }
 }

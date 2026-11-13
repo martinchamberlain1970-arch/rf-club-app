@@ -333,7 +333,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="rf-app-shell min-h-screen bg-[var(--rf-canvas)]">
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 lg:block"><NavigationContent {...navigationProps} /></aside>
         <div className="min-h-screen lg:pl-72">
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/95 px-3 shadow-sm backdrop-blur sm:px-5">
+          <header className="rf-app-header sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white px-3 shadow-sm sm:px-5">
             <button type="button" onClick={() => setMobileOpen(true)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-800 lg:hidden" aria-label="Open navigation">☰</button>
             <button type="button" onClick={requestBack} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-teal-50" aria-label="Go back">←</button>
             <div className="min-w-0 flex-1"><p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-teal-700">Home / {details.group}</p><p className="truncate text-sm font-black text-slate-950 sm:text-base">{details.label}</p></div>
@@ -344,7 +344,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div>{children}</div>
         </div>
 
-        {mobileOpen ? <div className="fixed inset-0 z-[80] bg-[#0b1730] lg:hidden" role="dialog" aria-modal="true" aria-label="Rack & Frame navigation"><button type="button" onClick={() => setMobileOpen(false)} className="absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-lg border border-white/20 bg-white/10 text-xl text-white" aria-label="Close navigation">×</button><NavigationContent {...navigationProps} /></div> : null}
+        {mobileOpen ? <div className="rf-mobile-navigation fixed inset-0 z-[80] bg-[#0b1730] lg:hidden" role="dialog" aria-modal="true" aria-label="Rack & Frame navigation"><button type="button" onClick={() => setMobileOpen(false)} className="rf-navigation-close absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-lg border border-white/20 bg-white/10 text-xl text-white" aria-label="Close navigation">×</button><NavigationContent {...navigationProps} /></div> : null}
 
         <ConfirmModal open={Boolean(pendingAction)} title="Unsaved changes" description={guard.message} confirmLabel="Leave screen" cancelLabel="Stay" onConfirm={() => { if (pendingAction) completeNavigation(pendingAction); setPendingAction(null); }} onCancel={() => setPendingAction(null)} />
       </div>
