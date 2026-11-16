@@ -6,7 +6,7 @@ import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
 import useAdminStatus from "@/components/useAdminStatus";
 import { logAudit } from "@/lib/audit";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil, hasLeagueFixtureTransitionGrace } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, buildLeagueFixtureDeadlineExceptionMap, getLeagueFixtureDeadline, getLeagueFixtureEffectiveFinalDeadline, getLeagueFixtureWalkoverReviewUntil, hasLeagueFixtureTransitionGrace } from "@/lib/league-deadline";
 import { resultSubmittedRescheduleNote } from "@/lib/reschedule-result-guard";
 import { supabase } from "@/lib/supabase";
 
@@ -45,6 +45,7 @@ type RescheduleRow = {
 };
 
 type FixtureContact = { playerId: string; name: string; email: string | null; phone: string | null };
+type DeadlineExceptionRow = { match_id: string; extended_until: string; reason: string; is_active: boolean };
 
 type OutstandingFixture = {
   match: MatchRow;
@@ -57,6 +58,7 @@ type OutstandingFixture = {
   overdue: boolean;
   decisionDue: boolean;
   graceApplied: boolean;
+  deadlineException: DeadlineExceptionRow | null;
 };
 
 function displayDate(value: string | null) {
@@ -95,6 +97,7 @@ export default function OutstandingFixturesPage() {
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [reschedules, setReschedules] = useState<RescheduleRow[]>([]);
   const [submittedMatchIds, setSubmittedMatchIds] = useState<Set<string>>(new Set());
+  const [deadlineExceptions, setDeadlineExceptions] = useState<DeadlineExceptionRow[]>([]);
   const [competitionFilter, setCompetitionFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "decision_due" | "overdue_unarranged" | "awaiting_reschedule" | "rescheduled" | "rescheduled_overdue">("all");
   const [contactsByMatch, setContactsByMatch] = useState<Record<string, FixtureContact[]>>({});
@@ -102,6 +105,10 @@ export default function OutstandingFixturesPage() {
   const [reminderBusyId, setReminderBusyId] = useState<string | null>(null);
   const [rescheduleBusyId, setRescheduleBusyId] = useState<string | null>(null);
   const [decisionBusyId, setDecisionBusyId] = useState<string | null>(null);
+  const [exceptionFixture, setExceptionFixture] = useState<OutstandingFixture | null>(null);
+  const [exceptionUntil, setExceptionUntil] = useState("");
+  const [exceptionReason, setExceptionReason] = useState("");
+  const [exceptionBusy, setExceptionBusy] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,15 +125,16 @@ export default function OutstandingFixturesPage() {
         return;
       }
       setLoading(true);
-      const [competitionRes, matchRes, playerRes, rescheduleRes, submissionRes] = await Promise.all([
+      const [competitionRes, matchRes, playerRes, rescheduleRes, submissionRes, exceptionRes] = await Promise.all([
         client.from("competitions").select("id,name,sport_type,competition_format,is_archived,is_completed,league_schedule_mode").eq("competition_format", "league").eq("is_archived", false).eq("is_completed", false).neq("league_schedule_mode", "one_day"),
         client.from("matches").select("id,competition_id,player1_id,player2_id,scheduled_for,status,round_no,match_no").eq("is_archived", false).in("status", ["pending", "in_progress"]),
         client.from("players").select("id,display_name,full_name").eq("is_archived", false),
         client.from("league_reschedule_requests").select("id,match_id,competition_id,original_scheduled_for,requested_scheduled_for,status,note,reviewed_at,created_at").in("status", ["pending", "approved"]).order("created_at", { ascending: true }),
         client.from("result_submissions").select("match_id").eq("status", "pending"),
+        client.from("league_fixture_deadline_exceptions").select("match_id,extended_until,reason,is_active").eq("is_active", true),
       ]);
       if (cancelled) return;
-      const firstError = competitionRes.error || matchRes.error || playerRes.error || rescheduleRes.error || submissionRes.error;
+      const firstError = competitionRes.error || matchRes.error || playerRes.error || rescheduleRes.error || submissionRes.error || exceptionRes.error;
       if (firstError) {
         setError(firstError.message || "Outstanding fixtures could not be loaded.");
       } else {
@@ -135,6 +143,7 @@ export default function OutstandingFixturesPage() {
         setPlayers((playerRes.data ?? []) as PlayerRow[]);
         setReschedules((rescheduleRes.data ?? []) as RescheduleRow[]);
         setSubmittedMatchIds(new Set((submissionRes.data ?? []).map((row) => String(row.match_id))));
+        setDeadlineExceptions((exceptionRes.data ?? []) as DeadlineExceptionRow[]);
         setError(null);
       }
       setLoading(false);
@@ -157,6 +166,8 @@ export default function OutstandingFixturesPage() {
     () => buildLeagueFixtureAnchorMap(reschedules.filter((request) => request.status === "approved")),
     [reschedules]
   );
+  const deadlineExceptionByMatch = useMemo(() => buildLeagueFixtureDeadlineExceptionMap(deadlineExceptions), [deadlineExceptions]);
+  const deadlineExceptionRowByMatch = useMemo(() => new Map(deadlineExceptions.map((row) => [row.match_id, row])), [deadlineExceptions]);
 
   const outstanding = useMemo(() => {
     const now = new Date();
@@ -166,8 +177,9 @@ export default function OutstandingFixturesPage() {
       if (!match.player1_id || !match.player2_id || match.player1_id === match.player2_id || !match.scheduled_for) return [];
       const deadlineScheduledFor = deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for;
       const originalDeadline = getLeagueFixtureDeadline(deadlineScheduledFor, competition.name);
-      const deadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competition.name);
-      const awardAt = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name);
+      const exceptionUntil = deadlineExceptionByMatch.get(match.id) ?? null;
+      const deadline = getLeagueFixtureEffectiveFinalDeadline(deadlineScheduledFor, competition.name, exceptionUntil);
+      const awardAt = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name, exceptionUntil);
       if (!originalDeadline || !deadline || !awardAt) return [];
       const reschedule = latestRescheduleByMatch.get(match.id) ?? null;
       const overdue = deadline.getTime() < now.getTime();
@@ -183,9 +195,10 @@ export default function OutstandingFixturesPage() {
         overdue,
         decisionDue: awardAt.getTime() < now.getTime(),
         graceApplied: hasLeagueFixtureTransitionGrace(deadlineScheduledFor, competition.name),
+        deadlineException: deadlineExceptionRowByMatch.get(match.id) ?? null,
       }];
     }).sort((a, b) => a.deadline.getTime() - b.deadline.getTime() || a.competition.name.localeCompare(b.competition.name));
-  }, [competitionById, deadlineAnchorByMatch, latestRescheduleByMatch, matches, playerNameById, submittedMatchIds]);
+  }, [competitionById, deadlineAnchorByMatch, deadlineExceptionByMatch, deadlineExceptionRowByMatch, latestRescheduleByMatch, matches, playerNameById, submittedMatchIds]);
 
   const visibleFixtures = outstanding.filter((fixture) => {
     if (competitionFilter !== "all" && fixture.competition.id !== competitionFilter) return false;
@@ -352,6 +365,50 @@ export default function OutstandingFixturesPage() {
     setRefreshKey((value) => value + 1);
   };
 
+  const saveDeadlineException = async () => {
+    const client = supabase;
+    if (!client || !exceptionFixture || !exceptionUntil || exceptionReason.trim().length < 5) {
+      setNotice("Choose a revised deadline and add a short reason for the exception.");
+      return;
+    }
+    setExceptionBusy(true);
+    const sessionResult = await client.auth.getSession();
+    const token = sessionResult.data.session?.access_token;
+    const response = await fetch("/api/admin/fixture-deadline-exceptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ matchId: exceptionFixture.match.id, extendedUntil: exceptionUntil, reason: exceptionReason.trim() }),
+    });
+    const body = await response.json().catch(() => ({}));
+    setExceptionBusy(false);
+    if (!response.ok) {
+      setNotice(body.error || "The deadline exception could not be saved.");
+      return;
+    }
+    setNotice(`Exception saved for ${exceptionFixture.playerOne} vs ${exceptionFixture.playerTwo}. The fixture will not auto-void before the revised deadline.`);
+    setExceptionFixture(null);
+    setExceptionUntil("");
+    setExceptionReason("");
+    setRefreshKey((value) => value + 1);
+  };
+
+  const removeDeadlineException = async (fixture: OutstandingFixture) => {
+    const client = supabase;
+    if (!client || !fixture.deadlineException || !window.confirm("Remove this exceptional deadline and restore the normal automatic-void rule?")) return;
+    setExceptionBusy(true);
+    const sessionResult = await client.auth.getSession();
+    const token = sessionResult.data.session?.access_token;
+    const response = await fetch(`/api/admin/fixture-deadline-exceptions?matchId=${encodeURIComponent(fixture.match.id)}`, { method: "DELETE", headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    const body = await response.json().catch(() => ({}));
+    setExceptionBusy(false);
+    if (!response.ok) {
+      setNotice(body.error || "The deadline exception could not be removed.");
+      return;
+    }
+    setNotice("The exceptional deadline has been removed. Normal fixture rules apply again.");
+    setRefreshKey((value) => value + 1);
+  };
+
   return (
     <main className="min-h-screen bg-slate-100 p-3 sm:p-6">
       <div className="mx-auto max-w-6xl space-y-4">
@@ -364,6 +421,17 @@ export default function OutstandingFixturesPage() {
           />
 
           {notice ? <section className="flex items-start justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sky-950 shadow-sm"><p>{notice}</p><button type="button" onClick={() => setNotice(null)} className="font-bold">Close</button></section> : null}
+
+          {exceptionFixture ? <section className="rounded-2xl border-2 border-indigo-300 bg-indigo-50 p-5 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-700">Exceptional playing deadline</p>
+            <h2 className="mt-1 text-xl font-black text-slate-950">{exceptionFixture.playerOne} vs {exceptionFixture.playerTwo}</h2>
+            <p className="mt-1 text-sm text-slate-700">Use this only where illness, access, travel or another exceptional circumstance means the normal window is unsuitable. Automatic voiding will pause until the revised deadline.</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="text-sm font-bold text-slate-800">New final playing date<input type="date" value={exceptionUntil} onChange={(event) => setExceptionUntil(event.target.value)} className="mt-1 block w-full rounded-xl border border-indigo-300 bg-white px-3 py-2" /></label>
+              <label className="text-sm font-bold text-slate-800">Reason<input value={exceptionReason} maxLength={300} onChange={(event) => setExceptionReason(event.target.value)} placeholder="For example: player temporarily unable to attend the club." className="mt-1 block w-full rounded-xl border border-indigo-300 bg-white px-3 py-2" /></label>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={exceptionBusy} onClick={() => void saveDeadlineException()} className="rounded-xl bg-indigo-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{exceptionBusy ? "Saving…" : "Grant exception"}</button><button type="button" disabled={exceptionBusy} onClick={() => setExceptionFixture(null)} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800">Cancel</button></div>
+          </section> : null}
 
           {!admin.loading && !canManage ? (
             <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900">Club Manager access only.</section>
@@ -444,10 +512,12 @@ export default function OutstandingFixturesPage() {
                           <p className="mt-1 text-sm text-slate-600">Week {fixture.match.round_no ?? "—"} · Match {fixture.match.match_no ?? "—"} · Week beginning {displayDate(fixture.match.scheduled_for)}</p>
                           <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Final playing deadline: {displayDeadline(fixture.deadline)}</p>
                           <p className="mt-1 text-sm font-semibold text-slate-700">Default outcome: void with no points to either player after {displayDeadline(fixture.awardAt)}, unless a result or valid reschedule is recorded.</p>
+                          {fixture.deadlineException ? <p className="mt-2 rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-950"><strong>Exceptional deadline granted:</strong> {fixture.deadlineException.reason} This fixture remains open until {displayDeadline(fixture.deadline)}.</p> : null}
                           {fixture.graceApplied ? <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-950">One-off grace period: this fixture remains playable until Sunday 22 November at 10:30pm. Normal enforcement begins Monday 23 November.</p> : null}
                           {fixture.reschedule ? <p className={`mt-2 rounded-xl border px-3 py-2 text-sm ${pendingReschedule ? "border-violet-200 bg-violet-50 text-violet-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>{pendingReschedule ? "Requested move" : "Moved"} from the week beginning <strong>{displayDate(fixture.reschedule.original_scheduled_for)}</strong> to <strong>{displayDate(fixture.reschedule.requested_scheduled_for)}</strong>{pendingReschedule ? "; this still needs approval." : "."}</p> : null}
                           <div className="mt-4 flex flex-wrap gap-2">
                             {decisionDue ? <button type="button" disabled={decisionBusyId === fixture.match.id} onClick={() => void voidExpiredFixture(fixture)} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-800 disabled:opacity-50">{decisionBusyId === fixture.match.id ? "Voiding & emailing…" : "Void fixture — no points"}</button> : null}
+                            {fixture.deadlineException ? <button type="button" disabled={exceptionBusy} onClick={() => void removeDeadlineException(fixture)} className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-900 disabled:opacity-50">Remove exception</button> : <button type="button" onClick={() => { setExceptionFixture(fixture); setExceptionUntil(""); setExceptionReason(""); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="rounded-xl border border-indigo-400 bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-900">Grant exception</button>}
                             <Link href={`/matches/${fixture.match.id}`} className="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-teal-800">{fixture.overdue ? "Review, reschedule or decide" : "Open fixture"}</Link>
                             {pendingReschedule && admin.isSuper ? <><button type="button" disabled={rescheduleBusyId === fixture.reschedule?.id} onClick={() => void reviewReschedule(fixture, "approved")} className="rounded-xl border border-violet-700 bg-violet-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Approve new week</button><button type="button" disabled={rescheduleBusyId === fixture.reschedule?.id} onClick={() => void reviewReschedule(fixture, "rejected")} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-900 disabled:opacity-50">Reject request</button></> : null}
                             <button type="button" disabled={reminderBusyId === fixture.match.id} onClick={() => void sendEmailReminders(fixture.match.id)} className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-bold text-sky-900 disabled:opacity-50">{reminderBusyId === fixture.match.id ? "Sending…" : "Email both players"}</button>

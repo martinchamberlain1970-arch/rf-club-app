@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { brandedEmail, escapeEmailHtml } from "@/lib/email-template";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, buildLeagueFixtureDeadlineExceptionMap, getLeagueFixtureDeadline, getLeagueFixtureEffectiveFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -85,16 +85,17 @@ export async function GET(request: NextRequest) {
   if (!matches.length) return NextResponse.json({ ok: true, sent: 0, skipped: 0 });
   const matchIds = matches.map((match) => match.id);
   const playerIds = [...new Set(matches.flatMap((match) => [match.player1_id, match.player2_id]))];
-  const [playersResult, entriesResult, linkedUsersResult, submissionResult, rescheduleResult, priorDigestResult] = await Promise.all([
+  const [playersResult, entriesResult, linkedUsersResult, submissionResult, rescheduleResult, priorDigestResult, exceptionResult] = await Promise.all([
     client.from("players").select("id,display_name,full_name").in("id", playerIds),
     client.from("competition_entries").select("id,competition_id,player_id,public_signup_id,fixture_access_token").in("competition_id", [...competitions.keys()]).eq("status", "approved").in("player_id", playerIds),
     client.from("app_users").select("id,linked_player_id,email").in("linked_player_id", playerIds),
     client.from("result_submissions").select("match_id").in("match_id", matchIds).in("status", ["pending", "approved"]),
     client.from("league_reschedule_requests").select("match_id,status,original_scheduled_for,requested_scheduled_for,created_at").in("match_id", matchIds).in("status", ["pending", "approved"]).order("created_at", { ascending: true }),
     client.from("audit_logs").select("entity_id").eq("entity_type", "player").eq("action", "fixture_weekly_digest_sent").gte("created_at", `${today}T00:00:00Z`),
+    client.from("league_fixture_deadline_exceptions").select("match_id,extended_until,is_active").in("match_id", matchIds).eq("is_active", true),
   ]);
-  if (playersResult.error || entriesResult.error || linkedUsersResult.error || submissionResult.error || rescheduleResult.error || priorDigestResult.error) {
-    return NextResponse.json({ error: playersResult.error?.message ?? entriesResult.error?.message ?? linkedUsersResult.error?.message ?? submissionResult.error?.message ?? rescheduleResult.error?.message ?? priorDigestResult.error?.message }, { status: 400 });
+  if (playersResult.error || entriesResult.error || linkedUsersResult.error || submissionResult.error || rescheduleResult.error || priorDigestResult.error || exceptionResult.error) {
+    return NextResponse.json({ error: playersResult.error?.message ?? entriesResult.error?.message ?? linkedUsersResult.error?.message ?? submissionResult.error?.message ?? rescheduleResult.error?.message ?? priorDigestResult.error?.message ?? exceptionResult.error?.message }, { status: 400 });
   }
   const entries = entriesResult.data ?? [];
   const signupIds = entries.map((entry) => entry.public_signup_id).filter(Boolean) as string[];
@@ -111,6 +112,7 @@ export async function GET(request: NextRequest) {
   const contactByEntry = new Map((contactsResult.data ?? []).map((contact) => [contact.competition_entry_id, contact]));
   const protectedMatches = new Set([...(submissionResult.data ?? []).map((row) => row.match_id), ...(rescheduleResult.data ?? []).filter((row) => row.status === "pending").map((row) => row.match_id)]);
   const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap((rescheduleResult.data ?? []).filter((row) => row.status === "approved"));
+  const deadlineExceptionByMatch = buildLeagueFixtureDeadlineExceptionMap(exceptionResult.data ?? []);
   const latestApprovedRescheduleByMatch = new Map<string, { requested_scheduled_for: string }>();
   for (const row of rescheduleResult.data ?? []) if (row.status === "approved") latestApprovedRescheduleByMatch.set(row.match_id, row);
   const alreadySent = new Set((priorDigestResult.data ?? []).map((row) => row.entity_id));
@@ -129,8 +131,9 @@ export async function GET(request: NextRequest) {
       const deadlineScheduledFor = deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for;
       const displayScheduledFor = latestApprovedRescheduleByMatch.get(match.id)?.requested_scheduled_for ?? match.scheduled_for;
       const originalDeadline = getLeagueFixtureDeadline(deadlineScheduledFor, competitionName);
-      const finalDeadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competitionName);
-      const voidAt = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competitionName);
+      const exceptionUntil = deadlineExceptionByMatch.get(match.id) ?? null;
+      const finalDeadline = getLeagueFixtureEffectiveFinalDeadline(deadlineScheduledFor, competitionName, exceptionUntil);
+      const voidAt = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competitionName, exceptionUntil);
       if (!originalDeadline || !finalDeadline || !voidAt) continue;
       const entry = entryByCompetitionPlayer.get(`${match.competition_id}:${playerId}`);
       const signup = signupById.get(entry?.public_signup_id ?? "");

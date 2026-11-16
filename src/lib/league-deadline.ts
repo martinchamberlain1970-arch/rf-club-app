@@ -9,6 +9,12 @@ type ApprovedRescheduleAnchor = {
   created_at?: string | null;
 };
 
+type FixtureDeadlineException = {
+  match_id: string;
+  extended_until: string | null;
+  is_active?: boolean | null;
+};
+
 /** Keep deadlines tied to the first approved reschedule's original fixture week. */
 export function buildLeagueFixtureAnchorMap(rows: ApprovedRescheduleAnchor[]) {
   const anchors = new Map<string, { date: string; createdAt: string }>();
@@ -21,6 +27,14 @@ export function buildLeagueFixtureAnchorMap(rows: ApprovedRescheduleAnchor[]) {
     }
   }
   return new Map([...anchors].map(([matchId, value]) => [matchId, value.date]));
+}
+
+export function buildLeagueFixtureDeadlineExceptionMap(rows: FixtureDeadlineException[]) {
+  return new Map(
+    rows
+      .filter((row) => row.match_id && row.extended_until && row.is_active !== false)
+      .map((row) => [row.match_id, row.extended_until as string])
+  );
 }
 
 function londonOffsetMs(at: Date) {
@@ -48,6 +62,15 @@ export function getLeagueFixtureDeadline(scheduledFor: string | null | undefined
   if (!year || !month || !day) return null;
   const [hour, minute] = getLeagueFixtureDeadlineTime(competitionName).split(":").map(Number);
   const wallClockGuess = new Date(Date.UTC(year, month - 1, day + 6, hour, minute, 0));
+  return new Date(wallClockGuess.getTime() - londonOffsetMs(wallClockGuess));
+}
+
+export function getLeagueFixtureDeadlineOnDate(dateValue: string | null | undefined, competitionName?: string | null) {
+  if (!dateValue) return null;
+  const [year, month, day] = dateValue.slice(0, 10).split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const [hour, minute] = getLeagueFixtureDeadlineTime(competitionName).split(":").map(Number);
+  const wallClockGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
   return new Date(wallClockGuess.getTime() - londonOffsetMs(wallClockGuess));
 }
 
@@ -80,6 +103,18 @@ export function getLeagueFixtureFinalDeadline(scheduledFor: string | null | unde
   return standardFinalDeadline > graceDeadline ? standardFinalDeadline : graceDeadline;
 }
 
+export function getLeagueFixtureEffectiveFinalDeadline(
+  scheduledFor: string | null | undefined,
+  competitionName?: string | null,
+  exceptionUntil?: string | null
+) {
+  const normalDeadline = getLeagueFixtureFinalDeadline(scheduledFor, competitionName);
+  const exceptionDeadline = getLeagueFixtureDeadlineOnDate(exceptionUntil, competitionName);
+  if (!normalDeadline) return exceptionDeadline;
+  if (!exceptionDeadline) return normalDeadline;
+  return exceptionDeadline > normalDeadline ? exceptionDeadline : normalDeadline;
+}
+
 /** Legacy claim-window helper retained for existing recorded deadline cases. */
 export function getLeagueFixtureClaimWindowOpens(scheduledFor: string | null | undefined, competitionName?: string | null) {
   const finalDeadline = getLeagueFixtureFinalDeadline(scheduledFor, competitionName);
@@ -87,6 +122,6 @@ export function getLeagueFixtureClaimWindowOpens(scheduledFor: string | null | u
 }
 
 /** Legacy-named helper: unresolved fixtures become void as soon as the final playing deadline passes. */
-export function getLeagueFixtureWalkoverReviewUntil(scheduledFor: string | null | undefined, competitionName?: string | null) {
-  return getLeagueFixtureFinalDeadline(scheduledFor, competitionName);
+export function getLeagueFixtureWalkoverReviewUntil(scheduledFor: string | null | undefined, competitionName?: string | null, exceptionUntil?: string | null) {
+  return getLeagueFixtureEffectiveFinalDeadline(scheduledFor, competitionName, exceptionUntil);
 }

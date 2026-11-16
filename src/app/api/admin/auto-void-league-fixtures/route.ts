@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, buildLeagueFixtureDeadlineExceptionMap, getLeagueFixtureEffectiveFinalDeadline } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -65,14 +65,16 @@ export async function POST(req: NextRequest) {
   }
 
   const matchIds = matches.map((match) => match.id);
-  const [submissionRes, rescheduleRes] = await Promise.all([
+  const [submissionRes, rescheduleRes, exceptionRes] = await Promise.all([
     adminClient.from("result_submissions").select("id,match_id,status").in("match_id", matchIds),
     adminClient.from("league_reschedule_requests").select("match_id,original_scheduled_for,created_at").in("match_id", matchIds).eq("status", "approved").order("created_at", { ascending: true }),
+    adminClient.from("league_fixture_deadline_exceptions").select("match_id,extended_until,is_active").in("match_id", matchIds).eq("is_active", true),
   ]);
-  if (submissionRes.error || rescheduleRes.error) {
-    return NextResponse.json({ error: submissionRes.error?.message ?? rescheduleRes.error?.message }, { status: 400 });
+  if (submissionRes.error || rescheduleRes.error || exceptionRes.error) {
+    return NextResponse.json({ error: submissionRes.error?.message ?? rescheduleRes.error?.message ?? exceptionRes.error?.message }, { status: 400 });
   }
   const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap(rescheduleRes.data ?? []);
+  const deadlineExceptionByMatch = buildLeagueFixtureDeadlineExceptionMap(exceptionRes.data ?? []);
 
   const submissionsByMatch = new Map<string, Array<{ id: string; status: "pending" | "approved" | "rejected" }>>();
   for (const submission of (submissionRes.data ?? []) as Array<{ id: string; match_id: string; status: "pending" | "approved" | "rejected" }>) {
@@ -84,7 +86,7 @@ export async function POST(req: NextRequest) {
   const now = new Date();
   const reviewMatchIds = matches
     .filter((match) => {
-      const deadline = getLeagueFixtureFinalDeadline(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competition.name);
+      const deadline = getLeagueFixtureEffectiveFinalDeadline(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competition.name, deadlineExceptionByMatch.get(match.id) ?? null);
       if (!deadline || now <= deadline) return false;
       const submissions = submissionsByMatch.get(match.id) ?? [];
       return !submissions.some((submission) => submission.status === "approved");

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil, hasLeagueFixtureTransitionGrace } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, buildLeagueFixtureDeadlineExceptionMap, getLeagueFixtureDeadline, getLeagueFixtureEffectiveFinalDeadline, getLeagueFixtureWalkoverReviewUntil, hasLeagueFixtureTransitionGrace } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -43,7 +43,7 @@ export async function GET() {
   const matches = matchResult.data ?? [];
   const matchIds = matches.map((match) => match.id);
   const playerIds = [...new Set(matches.flatMap((match) => [match.player1_id, match.player2_id]).filter((value): value is string => Boolean(value)))];
-  const [playerResult, rescheduleResult, submissionResult] = await Promise.all([
+  const [playerResult, rescheduleResult, submissionResult, exceptionResult] = await Promise.all([
     playerIds.length
       ? client.from("players").select("id,display_name,full_name").in("id", playerIds)
       : Promise.resolve({ data: [], error: null }),
@@ -53,8 +53,11 @@ export async function GET() {
     matchIds.length
       ? client.from("result_submissions").select("match_id").in("match_id", matchIds).eq("status", "pending")
       : Promise.resolve({ data: [], error: null }),
+    matchIds.length
+      ? client.from("league_fixture_deadline_exceptions").select("match_id,extended_until,reason,is_active").in("match_id", matchIds).eq("is_active", true)
+      : Promise.resolve({ data: [], error: null }),
   ]);
-  if (playerResult.error || rescheduleResult.error || submissionResult.error) {
+  if (playerResult.error || rescheduleResult.error || submissionResult.error || exceptionResult.error) {
     return NextResponse.json({ error: "Outstanding fixtures could not be loaded." }, { status: 400 });
   }
 
@@ -65,6 +68,8 @@ export async function GET() {
     latestRescheduleByMatch.set(request.match_id, request);
   }
   const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap(rescheduleResult.data ?? []);
+  const deadlineExceptionByMatch = buildLeagueFixtureDeadlineExceptionMap(exceptionResult.data ?? []);
+  const deadlineExceptionDetailsByMatch = new Map((exceptionResult.data ?? []).map((row) => [row.match_id, row]));
   const submittedMatchIds = new Set((submissionResult.data ?? []).map((submission) => submission.match_id));
   const now = Date.now();
 
@@ -73,8 +78,9 @@ export async function GET() {
     if (!competition || submittedMatchIds.has(match.id) || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id || !match.scheduled_for) return [];
     const deadlineScheduledFor = deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for;
     const originalDeadline = getLeagueFixtureDeadline(deadlineScheduledFor, competition.name);
-    const deadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competition.name);
-    const voidAt = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name);
+    const exceptionUntil = deadlineExceptionByMatch.get(match.id) ?? null;
+    const deadline = getLeagueFixtureEffectiveFinalDeadline(deadlineScheduledFor, competition.name, exceptionUntil);
+    const voidAt = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name, exceptionUntil);
     if (!originalDeadline || !deadline || !voidAt) return [];
     const reschedule = latestRescheduleByMatch.get(match.id) ?? null;
     const overdue = deadline.getTime() < now;
@@ -93,6 +99,7 @@ export async function GET() {
       status: match.status,
       overdue,
       graceApplied: hasLeagueFixtureTransitionGrace(deadlineScheduledFor, competition.name),
+      deadlineException: deadlineExceptionDetailsByMatch.get(match.id) ?? null,
       originalScheduledFor: reschedule?.original_scheduled_for ?? null,
       rescheduledTo: reschedule?.requested_scheduled_for ?? null,
     }];

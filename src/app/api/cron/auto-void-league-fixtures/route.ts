@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, buildLeagueFixtureDeadlineExceptionMap, getLeagueFixtureEffectiveFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 import { voidDeadlineFixture } from "@/lib/fixture-deadline-award";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -27,12 +27,13 @@ export async function GET(req: NextRequest) {
   if (!matches.length) return NextResponse.json({ ok: true, opened: [], voided: [] });
 
   const matchIds = matches.map((match) => match.id);
-  const [submissionsResult, reschedulesResult, deadlineEventsResult] = await Promise.all([
+  const [submissionsResult, reschedulesResult, deadlineEventsResult, exceptionsResult] = await Promise.all([
     client.from("result_submissions").select("match_id,status").in("match_id", matchIds).in("status", ["pending", "approved"]),
     client.from("league_reschedule_requests").select("match_id,status,original_scheduled_for,created_at").in("match_id", matchIds).in("status", ["pending", "approved"]).order("created_at", { ascending: true }),
     client.from("audit_logs").select("entity_id,action,created_at").eq("entity_type", "match").in("entity_id", matchIds).in("action", ["fixture_deadline_review_opened", "fixture_deadline_decision_due", "fixture_deadline_walkover_awarded", "fixture_deadline_voided"]),
+    client.from("league_fixture_deadline_exceptions").select("match_id,extended_until,is_active").in("match_id", matchIds).eq("is_active", true),
   ]);
-  if (submissionsResult.error || reschedulesResult.error || deadlineEventsResult.error) return NextResponse.json({ error: submissionsResult.error?.message ?? reschedulesResult.error?.message ?? deadlineEventsResult.error?.message }, { status: 400 });
+  if (submissionsResult.error || reschedulesResult.error || deadlineEventsResult.error || exceptionsResult.error) return NextResponse.json({ error: submissionsResult.error?.message ?? reschedulesResult.error?.message ?? deadlineEventsResult.error?.message ?? exceptionsResult.error?.message }, { status: 400 });
   const protectedMatchIds = new Set([
     ...(submissionsResult.data ?? []).map((row) => row.match_id as string),
     ...(reschedulesResult.data ?? []).filter((row) => row.status === "pending").map((row) => row.match_id as string),
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
   const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap(
     (reschedulesResult.data ?? []).filter((row) => row.status === "approved")
   );
+  const deadlineExceptionByMatch = buildLeagueFixtureDeadlineExceptionMap(exceptionsResult.data ?? []);
   const actionsByMatch = new Map<string, Set<string>>();
   for (const event of deadlineEventsResult.data ?? []) {
     const matchId = String(event.entity_id ?? "");
@@ -70,8 +72,9 @@ export async function GET(req: NextRequest) {
         meta: { competition_id: match.competition_id, original_scheduled_for: deadlineScheduledFor, rescheduled_display_date: match.scheduled_for },
       });
     }
-    const finalDeadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competition.name);
-    const reviewUntil = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name);
+    const exceptionUntil = deadlineExceptionByMatch.get(match.id) ?? null;
+    const finalDeadline = getLeagueFixtureEffectiveFinalDeadline(deadlineScheduledFor, competition.name, exceptionUntil);
+    const reviewUntil = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name, exceptionUntil);
     if (!finalDeadline || !reviewUntil || now <= finalDeadline) continue;
     const deadlineActions = actionsByMatch.get(match.id) ?? new Set<string>();
     if (!deadlineActions.has("fixture_deadline_review_opened")) {

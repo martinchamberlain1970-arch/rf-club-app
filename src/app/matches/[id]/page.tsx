@@ -12,7 +12,7 @@ import { calculateSnookerHandicapStarts, MAX_SNOOKER_START } from "@/lib/snooker
 import {
   getLeagueFixtureDeadline,
   getLeagueFixtureDeadlineTime,
-  getLeagueFixtureFinalDeadline,
+  getLeagueFixtureEffectiveFinalDeadline,
 } from "@/lib/league-deadline";
 import ConfirmModal from "@/components/ConfirmModal";
 import InfoModal from "@/components/InfoModal";
@@ -176,6 +176,8 @@ type PlayingWindowException = {
   expires_on: string;
   note: string;
 };
+
+type FixtureDeadlineException = { extended_until: string; reason: string };
 
 const RESCHEDULE_REASONS = [
   "Holiday",
@@ -464,6 +466,7 @@ export default function MatchPage() {
   const [deadlineCase, setDeadlineCase] = useState<FixtureDeadlineCase | null>(null);
   const [deadlinePolicy, setDeadlinePolicy] = useState<FixtureDeadlinePolicy | null>(null);
   const [playingWindowException, setPlayingWindowException] = useState<PlayingWindowException | null>(null);
+  const [fixtureDeadlineException, setFixtureDeadlineException] = useState<FixtureDeadlineException | null>(null);
 
   const openDisplay = () => {
     if (!matchId) return;
@@ -532,7 +535,7 @@ export default function MatchPage() {
         loadedMatch.team2_player1_id,
         loadedMatch.team2_player2_id,
       ].filter(Boolean) as string[])];
-      const [adminLocRes, playersRes, competitionRes, framesRes, submissionsRes, bookingsRes, playingExceptionsRes] = await Promise.all([
+      const [adminLocRes, playersRes, competitionRes, framesRes, submissionsRes, bookingsRes, playingExceptionsRes, deadlineExceptionRes] = await Promise.all([
         (async () => {
           if (!signedInUserId || admin.isSuper || !admin.isAdmin) return null;
           const linked = linkedPlayerId;
@@ -576,10 +579,16 @@ export default function MatchPage() {
               .eq("competition_id", loadedMatch.competition_id)
               .in("player_id", matchPlayerIds)
           : Promise.resolve({ data: [], error: null }),
+        client
+          .from("league_fixture_deadline_exceptions")
+          .select("extended_until,reason")
+          .eq("match_id", matchId)
+          .eq("is_active", true)
+          .maybeSingle(),
       ]);
 
       if (!active) return;
-      if (playersRes.error || competitionRes.error || framesRes.error || submissionsRes.error || playingExceptionsRes.error || !playersRes.data || !competitionRes.data || !framesRes.data) {
+      if (playersRes.error || competitionRes.error || framesRes.error || submissionsRes.error || playingExceptionsRes.error || deadlineExceptionRes.error || !playersRes.data || !competitionRes.data || !framesRes.data) {
         finishLoading();
         setLoadError(
           [
@@ -588,6 +597,7 @@ export default function MatchPage() {
             framesRes.error?.message && `Frames: ${framesRes.error.message}`,
             submissionsRes.error?.message && `Submissions: ${submissionsRes.error.message}`,
             playingExceptionsRes.error?.message && `Early-play exception: ${playingExceptionsRes.error.message}`,
+            deadlineExceptionRes.error?.message && `Deadline exception: ${deadlineExceptionRes.error.message}`,
             !playersRes.data && "Players: missing data",
             !competitionRes.data && "Competition: missing data",
             !framesRes.data && "Frames: missing data",
@@ -703,6 +713,7 @@ export default function MatchPage() {
       const activePlayingException = (((playingExceptionsRes.data ?? []) as unknown) as PlayingWindowException[])
         .find((exception) => exception.active_from <= londonToday && exception.expires_on >= londonToday) ?? null;
       setPlayingWindowException(activePlayingException);
+      setFixtureDeadlineException((deadlineExceptionRes.data as FixtureDeadlineException | null) ?? null);
       const loadedBookings = bookingsRes.error ? [] : (((bookingsRes.data ?? []) as unknown) as FixtureBooking[]);
       setFixtureBooking(assignFixtureBookings([loadedMatch], loadedBookings).get(loadedMatch.id) ?? null);
       setFrames(
@@ -822,9 +833,9 @@ export default function MatchPage() {
     if (!normalWindow || competition.league_schedule_mode === "one_day") return normalWindow;
     return {
       opensAt: new Date(normalWindow.opensAt.getTime() - 7 * 24 * 60 * 60 * 1000),
-      dueAt: getLeagueFixtureFinalDeadline(deadlineScheduledFor, competition.name) ?? normalWindow.dueAt,
+      dueAt: getLeagueFixtureEffectiveFinalDeadline(deadlineScheduledFor, competition.name, fixtureDeadlineException?.extended_until) ?? normalWindow.dueAt,
     };
-  }, [competition, deadlineScheduledFor, match]);
+  }, [competition, deadlineScheduledFor, fixtureDeadlineException?.extended_until, match]);
   const playerLeagueWindowOpen = useMemo(() => {
     if (!leagueFixtureWindow) return true;
     const now = new Date();
@@ -3183,6 +3194,12 @@ export default function MatchPage() {
                     <div className="rounded-xl border border-cyan-300 bg-cyan-50 px-3 py-2 text-sm text-cyan-950">
                       <p className="font-semibold">Early play permitted until {new Date(`${playingWindowException.expires_on}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}.</p>
                       <p className="mt-1">{playingWindowException.note} This exception opens result entry early but does not move the fixture or extend its final deadline.</p>
+                    </div>
+                  ) : null}
+                  {fixtureDeadlineException ? (
+                    <div className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm text-indigo-950">
+                      <p className="font-semibold">Exceptional deadline granted until {new Date(`${fixtureDeadlineException.extended_until}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}.</p>
+                      <p className="mt-1">{fixtureDeadlineException.reason} Result entry and reminders remain active until the revised deadline.</p>
                     </div>
                   ) : null}
                   {deadlinePolicy?.finalDeadline ? (

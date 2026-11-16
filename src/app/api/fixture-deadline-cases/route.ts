@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, getLeagueFixtureEffectiveFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -69,10 +69,11 @@ export async function GET(request: NextRequest) {
   if (eventsResult.error) return NextResponse.json({ error: eventsResult.error.message }, { status: 400 });
   const openedEvent = (eventsResult.data ?? []).find((event) => event.action === "fixture_deadline_review_opened");
   const approvedReschedules = await auth.admin.from("league_reschedule_requests").select("match_id,original_scheduled_for,created_at").eq("match_id", matchId).eq("status", "approved").order("created_at", { ascending: true });
-  if (approvedReschedules.error) return NextResponse.json({ error: approvedReschedules.error.message }, { status: 400 });
+  const deadlineException = await auth.admin.from("league_fixture_deadline_exceptions").select("extended_until").eq("match_id", matchId).eq("is_active", true).maybeSingle();
+  if (approvedReschedules.error || deadlineException.error) return NextResponse.json({ error: approvedReschedules.error?.message ?? deadlineException.error?.message }, { status: 400 });
   const deadlineScheduledFor = buildLeagueFixtureAnchorMap(approvedReschedules.data ?? []).get(matchId) ?? match.scheduled_for;
-  const finalDeadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competition.name)?.toISOString() ?? null;
-  const reviewUntil = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name)?.toISOString() ?? null;
+  const finalDeadline = getLeagueFixtureEffectiveFinalDeadline(deadlineScheduledFor, competition.name, deadlineException.data?.extended_until ?? null)?.toISOString() ?? null;
+  const reviewUntil = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name, deadlineException.data?.extended_until ?? null)?.toISOString() ?? null;
   const deadlineCase = openedEvent
     ? { id: openedEvent.id, status: "pending_evidence", final_deadline: finalDeadline, review_until: reviewUntil, evidence_note: null, evidence_submitted_at: null }
     : null;

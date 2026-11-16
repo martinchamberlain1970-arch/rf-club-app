@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { brandedEmail, escapeEmailHtml } from "@/lib/email-template";
-import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
+import { getLeagueFixtureDeadline, getLeagueFixtureEffectiveFinalDeadline } from "@/lib/league-deadline";
 import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 import { sendPushToUserIds } from "@/lib/push-server";
 
@@ -72,14 +72,15 @@ export async function POST(request: NextRequest) {
   }
 
   const participantIds = [match.player1_id, match.player2_id];
-  const [competitionResult, playersResult, entriesResult, linkedUsersResult, rescheduleResult] = await Promise.all([
+  const [competitionResult, playersResult, entriesResult, linkedUsersResult, rescheduleResult, exceptionResult] = await Promise.all([
     auth.client.from("competitions").select("id,name").eq("id", match.competition_id).maybeSingle(),
     auth.client.from("players").select("id,display_name,full_name").in("id", participantIds),
     auth.client.from("competition_entries").select("id,player_id,public_signup_id,fixture_access_token").eq("competition_id", match.competition_id).eq("status", "approved").in("player_id", participantIds),
     auth.client.from("app_users").select("id,linked_player_id,email").in("linked_player_id", participantIds),
     auth.client.from("league_reschedule_requests").select("original_scheduled_for,requested_scheduled_for,status,created_at").eq("match_id", matchId).eq("status", "approved").order("created_at", { ascending: true }),
+    auth.client.from("league_fixture_deadline_exceptions").select("extended_until").eq("match_id", matchId).eq("is_active", true).maybeSingle(),
   ]);
-  const firstError = competitionResult.error || playersResult.error || entriesResult.error || linkedUsersResult.error || rescheduleResult.error;
+  const firstError = competitionResult.error || playersResult.error || entriesResult.error || linkedUsersResult.error || rescheduleResult.error || exceptionResult.error;
   if (firstError || !competitionResult.data) {
     return NextResponse.json({ error: firstError?.message || "Fixture details could not be loaded." }, { status: 400 });
   }
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
   }));
   const deadlineScheduledFor = rescheduleResult.data?.[0]?.original_scheduled_for ?? match.scheduled_for;
   const originalDeadline = getLeagueFixtureDeadline(deadlineScheduledFor, competitionName);
-  const finalDeadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competitionName);
+  const finalDeadline = getLeagueFixtureEffectiveFinalDeadline(deadlineScheduledFor, competitionName, exceptionResult.data?.extended_until ?? null);
   if (!originalDeadline || !finalDeadline) return NextResponse.json({ error: "This fixture does not have a playing deadline." }, { status: 400 });
   const originalWeekPassed = originalDeadline.getTime() < Date.now();
   const overdue = finalDeadline.getTime() < Date.now();

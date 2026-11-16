@@ -17,6 +17,7 @@ type PublicFixture = {
   status: string;
   overdue: boolean;
   graceApplied: boolean;
+  deadlineException: { extended_until: string; reason: string } | null;
   originalScheduledFor: string | null;
   rescheduledTo: string | null;
 };
@@ -123,6 +124,7 @@ export default function PublicOutstandingFixturesPage() {
                 <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Final playing deadline: {displayDeadline(fixture.deadline)}</p>
                 <p className="mt-1 text-sm font-semibold text-slate-700">If no result or valid reschedule is recorded, this fixture will be voided with no points to either player after {displayDeadline(fixture.voidAt)}.</p>
                 {fixture.graceApplied ? <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">Exceptional one-week grace period: this fixture remains playable until Sunday 22 November at 10:30pm. Normal enforcement begins Monday 23 November.</p> : null}
+                {fixture.deadlineException ? <p className="mt-2 rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-950"><strong>Club exception:</strong> {fixture.deadlineException.reason} Revised final deadline: {displayDeadline(fixture.deadline)}.</p> : null}
                 <Link href={`/league/${fixture.competitionId}`} className="mt-4 inline-flex rounded-xl border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-50">View all competition fixtures</Link>
               </article>
             ))}

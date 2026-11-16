@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { voidDeadlineFixture } from "@/lib/fixture-deadline-award";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, buildLeagueFixtureDeadlineExceptionMap, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -31,14 +31,16 @@ export async function GET(request: NextRequest) {
   const matchesResult = await auth.client.from("matches").select("id,competition_id,scheduled_for,player1_id,player2_id").in("competition_id", [...competitions.keys()]).eq("is_archived", false).in("status", ["pending", "in_progress"]);
   if (matchesResult.error) return NextResponse.json({ error: matchesResult.error.message }, { status: 400 });
   const allMatchIds = (matchesResult.data ?? []).map((match) => match.id);
-  const rescheduleAnchorsResult = allMatchIds.length
-    ? await auth.client.from("league_reschedule_requests").select("match_id,original_scheduled_for,created_at").in("match_id", allMatchIds).eq("status", "approved").order("created_at", { ascending: true })
-    : { data: [], error: null };
-  if (rescheduleAnchorsResult.error) return NextResponse.json({ error: rescheduleAnchorsResult.error.message }, { status: 400 });
+  const [rescheduleAnchorsResult, exceptionResult] = allMatchIds.length ? await Promise.all([
+    auth.client.from("league_reschedule_requests").select("match_id,original_scheduled_for,created_at").in("match_id", allMatchIds).eq("status", "approved").order("created_at", { ascending: true }),
+    auth.client.from("league_fixture_deadline_exceptions").select("match_id,extended_until,is_active").in("match_id", allMatchIds).eq("is_active", true),
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
+  if (rescheduleAnchorsResult.error || exceptionResult.error) return NextResponse.json({ error: rescheduleAnchorsResult.error?.message ?? exceptionResult.error?.message }, { status: 400 });
   const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap(rescheduleAnchorsResult.data ?? []);
+  const deadlineExceptionByMatch = buildLeagueFixtureDeadlineExceptionMap(exceptionResult.data ?? []);
   const now = new Date();
   const due = (matchesResult.data ?? []).filter((match) => {
-    const reviewUntil = getLeagueFixtureWalkoverReviewUntil(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitions.get(match.competition_id));
+    const reviewUntil = getLeagueFixtureWalkoverReviewUntil(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitions.get(match.competition_id), deadlineExceptionByMatch.get(match.id) ?? null);
     return Boolean(match.player1_id && match.player2_id && match.player1_id !== match.player2_id && reviewUntil && reviewUntil < now);
   });
   if (!due.length) return NextResponse.json({ fixtures: [] });
@@ -57,7 +59,7 @@ export async function GET(request: NextRequest) {
     competitionName: competitions.get(match.competition_id) || "League",
     playerOne: names.get(match.player1_id ?? "") || "First-named player",
     playerTwo: names.get(match.player2_id ?? "") || "Second-named player",
-    reviewUntil: getLeagueFixtureWalkoverReviewUntil(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitions.get(match.competition_id))?.toISOString() ?? null,
+    reviewUntil: getLeagueFixtureWalkoverReviewUntil(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitions.get(match.competition_id), deadlineExceptionByMatch.get(match.id) ?? null)?.toISOString() ?? null,
   })) });
 }
 
@@ -73,10 +75,13 @@ export async function POST(request: NextRequest) {
   if (competitionResult.error || !competitionResult.data || competitionResult.data.competition_format !== "league" || competitionResult.data.league_schedule_mode === "one_day" || competitionResult.data.is_archived || competitionResult.data.is_completed) {
     return NextResponse.json({ error: competitionResult.error?.message || "This fixture does not use the weekly deadline workflow." }, { status: 400 });
   }
-  const approvedReschedules = await auth.client.from("league_reschedule_requests").select("match_id,original_scheduled_for,created_at").eq("match_id", matchId).eq("status", "approved").order("created_at", { ascending: true });
-  if (approvedReschedules.error) return NextResponse.json({ error: approvedReschedules.error.message }, { status: 400 });
+  const [approvedReschedules, deadlineException] = await Promise.all([
+    auth.client.from("league_reschedule_requests").select("match_id,original_scheduled_for,created_at").eq("match_id", matchId).eq("status", "approved").order("created_at", { ascending: true }),
+    auth.client.from("league_fixture_deadline_exceptions").select("extended_until").eq("match_id", matchId).eq("is_active", true).maybeSingle(),
+  ]);
+  if (approvedReschedules.error || deadlineException.error) return NextResponse.json({ error: approvedReschedules.error?.message ?? deadlineException.error?.message }, { status: 400 });
   const deadlineScheduledFor = buildLeagueFixtureAnchorMap(approvedReschedules.data ?? []).get(matchId) ?? matchResult.data.scheduled_for;
-  const reviewUntil = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competitionResult.data?.name);
+  const reviewUntil = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competitionResult.data?.name, deadlineException.data?.extended_until ?? null);
   if (!reviewUntil || reviewUntil > new Date()) return NextResponse.json({ error: "The fixture's final playing deadline has not passed yet." }, { status: 409 });
   const [submission, reschedule] = await Promise.all([
     auth.client.from("result_submissions").select("id").eq("match_id", matchId).in("status", ["pending", "approved"]).limit(1).maybeSingle(),

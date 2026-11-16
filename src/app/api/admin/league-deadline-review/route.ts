@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, buildLeagueFixtureDeadlineExceptionMap, getLeagueFixtureDeadline, getLeagueFixtureEffectiveFinalDeadline } from "@/lib/league-deadline";
 import { sendPushToUserIds } from "@/lib/push-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -47,14 +47,16 @@ export async function GET(request: NextRequest) {
     .order("scheduled_for");
   if (matchesResult.error) return NextResponse.json({ error: matchesResult.error.message }, { status: 400 });
   const allMatchIds = (matchesResult.data ?? []).map((match) => match.id);
-  const rescheduleAnchorsResult = allMatchIds.length
-    ? await client.from("league_reschedule_requests").select("match_id,original_scheduled_for,created_at").in("match_id", allMatchIds).eq("status", "approved").order("created_at", { ascending: true })
-    : { data: [], error: null };
-  if (rescheduleAnchorsResult.error) return NextResponse.json({ error: rescheduleAnchorsResult.error.message }, { status: 400 });
+  const [rescheduleAnchorsResult, exceptionResult] = allMatchIds.length ? await Promise.all([
+    client.from("league_reschedule_requests").select("match_id,original_scheduled_for,created_at").in("match_id", allMatchIds).eq("status", "approved").order("created_at", { ascending: true }),
+    client.from("league_fixture_deadline_exceptions").select("match_id,extended_until,is_active").in("match_id", allMatchIds).eq("is_active", true),
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
+  if (rescheduleAnchorsResult.error || exceptionResult.error) return NextResponse.json({ error: rescheduleAnchorsResult.error?.message ?? exceptionResult.error?.message }, { status: 400 });
   const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap(rescheduleAnchorsResult.data ?? []);
+  const deadlineExceptionByMatch = buildLeagueFixtureDeadlineExceptionMap(exceptionResult.data ?? []);
   const now = new Date();
   const overdueMatches = (matchesResult.data ?? []).filter((match) => {
-    const deadline = getLeagueFixtureFinalDeadline(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitionNames.get(match.competition_id));
+    const deadline = getLeagueFixtureEffectiveFinalDeadline(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitionNames.get(match.competition_id), deadlineExceptionByMatch.get(match.id) ?? null);
     return Boolean(deadline && now > deadline);
   });
   if (!overdueMatches.length) return NextResponse.json({ fixtures: [] });
@@ -89,7 +91,7 @@ export async function GET(request: NextRequest) {
       competitionName: competitionNames.get(match.competition_id) || "League",
       week: match.round_no ?? 1,
       scheduledFor: match.scheduled_for,
-      deadline: getLeagueFixtureFinalDeadline(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitionNames.get(match.competition_id))?.toISOString() ?? null,
+      deadline: getLeagueFixtureEffectiveFinalDeadline(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitionNames.get(match.competition_id), deadlineExceptionByMatch.get(match.id) ?? null)?.toISOString() ?? null,
       player1: playerNames.get(match.player1_id ?? "") || "TBC",
       player2: playerNames.get(match.player2_id ?? "") || "TBC",
       bestOf: match.best_of,

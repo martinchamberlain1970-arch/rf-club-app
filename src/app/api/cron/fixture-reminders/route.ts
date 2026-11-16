@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { brandedEmail, escapeEmailHtml } from "@/lib/email-template";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, buildLeagueFixtureDeadlineExceptionMap, getLeagueFixtureDeadline, getLeagueFixtureEffectiveFinalDeadline } from "@/lib/league-deadline";
 import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 import { sendPushToUserIds } from "@/lib/push-server";
 
@@ -35,9 +35,9 @@ function phaseAction(phase: ReminderPhase) {
   return `fixture_reminder_auto_${phase}`;
 }
 
-function choosePhase(now: Date, match: MatchRow, competitionName: string): ReminderPhase | null {
+function choosePhase(now: Date, match: MatchRow, competitionName: string, effectiveFinalDeadline?: Date | null): ReminderPhase | null {
   const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competitionName);
-  const finalDeadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competitionName);
+  const finalDeadline = effectiveFinalDeadline ?? getLeagueFixtureEffectiveFinalDeadline(match.scheduled_for, competitionName);
   if (!originalDeadline || !finalDeadline || now >= finalDeadline) return null;
   if (now >= new Date(finalDeadline.getTime() - 7 * DAY_MS)) return "final";
   if (now > originalDeadline) return "overdue";
@@ -152,14 +152,16 @@ export async function GET(request: NextRequest) {
   const matches = (matchesResult.data ?? []).filter((match) => match.player1_id && match.player2_id && match.player1_id !== match.player2_id && match.scheduled_for) as MatchRow[];
   if (!matches.length) return NextResponse.json({ ok: true, processed: [], sent: 0, failed: 0 });
   const matchIds = matches.map((match) => match.id);
-  const [submissionResult, rescheduleResult, auditResult] = await Promise.all([
+  const [submissionResult, rescheduleResult, auditResult, exceptionResult] = await Promise.all([
     client.from("result_submissions").select("match_id").in("match_id", matchIds).in("status", ["pending", "approved"]),
     client.from("league_reschedule_requests").select("match_id,status,original_scheduled_for,created_at").in("match_id", matchIds).in("status", ["pending", "approved"]).order("created_at", { ascending: true }),
     client.from("audit_logs").select("entity_id,action").eq("entity_type", "match").in("entity_id", matchIds).in("action", [phaseAction("overdue"), phaseAction("final")]),
+    client.from("league_fixture_deadline_exceptions").select("match_id,extended_until,is_active").in("match_id", matchIds).eq("is_active", true),
   ]);
-  if (submissionResult.error || rescheduleResult.error || auditResult.error) return NextResponse.json({ error: submissionResult.error?.message ?? rescheduleResult.error?.message ?? auditResult.error?.message }, { status: 400 });
+  if (submissionResult.error || rescheduleResult.error || auditResult.error || exceptionResult.error) return NextResponse.json({ error: submissionResult.error?.message ?? rescheduleResult.error?.message ?? auditResult.error?.message ?? exceptionResult.error?.message }, { status: 400 });
   const protectedMatches = new Set([...(submissionResult.data ?? []).map((row) => row.match_id), ...(rescheduleResult.data ?? []).filter((row) => row.status === "pending").map((row) => row.match_id)]);
   const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap((rescheduleResult.data ?? []).filter((row) => row.status === "approved"));
+  const deadlineExceptionByMatch = buildLeagueFixtureDeadlineExceptionMap(exceptionResult.data ?? []);
   const sentActions = new Set((auditResult.data ?? []).map((row) => `${row.entity_id}:${row.action}`));
   const processed: Array<{ matchId: string; phase: ReminderPhase }> = [];
   let sent = 0;
@@ -171,10 +173,11 @@ export async function GET(request: NextRequest) {
     const competitionName = competitions.get(match.competition_id);
     if (!competitionName) continue;
     const deadlineMatch = { ...match, scheduled_for: deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for };
-    const phase = choosePhase(now, deadlineMatch, competitionName);
+    const exceptionUntil = deadlineExceptionByMatch.get(match.id) ?? null;
+    const finalDeadline = getLeagueFixtureEffectiveFinalDeadline(deadlineMatch.scheduled_for, competitionName, exceptionUntil);
+    const phase = choosePhase(now, { ...deadlineMatch, scheduled_for: deadlineMatch.scheduled_for }, competitionName, finalDeadline);
     if (!phase || sentActions.has(`${match.id}:${phaseAction(phase)}`)) continue;
     const originalDeadline = getLeagueFixtureDeadline(deadlineMatch.scheduled_for, competitionName);
-    const finalDeadline = getLeagueFixtureFinalDeadline(deadlineMatch.scheduled_for, competitionName);
     if (!originalDeadline || !finalDeadline) continue;
     const result = await sendFixtureReminder(client, match, competitionName, phase, originalDeadline, finalDeadline);
     sent += result.sent;
