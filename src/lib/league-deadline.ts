@@ -3,6 +3,26 @@ import { isLegionMastersLeague } from "@/lib/legion-masters";
 const LONDON_TIME_ZONE = "Europe/London";
 const NEW_DEADLINE_RULE_START = new Date("2026-10-26T00:00:00Z");
 
+type ApprovedRescheduleAnchor = {
+  match_id: string;
+  original_scheduled_for: string | null;
+  created_at?: string | null;
+};
+
+/** Keep deadlines tied to the first approved reschedule's original fixture week. */
+export function buildLeagueFixtureAnchorMap(rows: ApprovedRescheduleAnchor[]) {
+  const anchors = new Map<string, { date: string; createdAt: string }>();
+  for (const row of rows) {
+    if (!row.match_id || !row.original_scheduled_for) continue;
+    const createdAt = row.created_at ?? "";
+    const current = anchors.get(row.match_id);
+    if (!current || createdAt < current.createdAt) {
+      anchors.set(row.match_id, { date: row.original_scheduled_for, createdAt });
+    }
+  }
+  return new Map([...anchors].map(([matchId, value]) => [matchId, value.date]));
+}
+
 function londonOffsetMs(at: Date) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: LONDON_TIME_ZONE,

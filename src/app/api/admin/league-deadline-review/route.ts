@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
 import { sendPushToUserIds } from "@/lib/push-server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -46,9 +46,15 @@ export async function GET(request: NextRequest) {
     .in("status", ["pending", "in_progress"])
     .order("scheduled_for");
   if (matchesResult.error) return NextResponse.json({ error: matchesResult.error.message }, { status: 400 });
+  const allMatchIds = (matchesResult.data ?? []).map((match) => match.id);
+  const rescheduleAnchorsResult = allMatchIds.length
+    ? await client.from("league_reschedule_requests").select("match_id,original_scheduled_for,created_at").in("match_id", allMatchIds).eq("status", "approved").order("created_at", { ascending: true })
+    : { data: [], error: null };
+  if (rescheduleAnchorsResult.error) return NextResponse.json({ error: rescheduleAnchorsResult.error.message }, { status: 400 });
+  const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap(rescheduleAnchorsResult.data ?? []);
   const now = new Date();
   const overdueMatches = (matchesResult.data ?? []).filter((match) => {
-    const deadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competitionNames.get(match.competition_id));
+    const deadline = getLeagueFixtureFinalDeadline(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitionNames.get(match.competition_id));
     return Boolean(deadline && now > deadline);
   });
   if (!overdueMatches.length) return NextResponse.json({ fixtures: [] });
@@ -83,7 +89,7 @@ export async function GET(request: NextRequest) {
       competitionName: competitionNames.get(match.competition_id) || "League",
       week: match.round_no ?? 1,
       scheduledFor: match.scheduled_for,
-      deadline: getLeagueFixtureFinalDeadline(match.scheduled_for, competitionNames.get(match.competition_id))?.toISOString() ?? null,
+      deadline: getLeagueFixtureFinalDeadline(deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for, competitionNames.get(match.competition_id))?.toISOString() ?? null,
       player1: playerNames.get(match.player1_id ?? "") || "TBC",
       player2: playerNames.get(match.player2_id ?? "") || "TBC",
       bestOf: match.best_of,
@@ -148,6 +154,12 @@ export async function POST(request: NextRequest) {
   if (!targetWeekResult.data || !targetDeadline || targetDeadline <= new Date()) {
     return NextResponse.json({ error: "Choose a future game week from this competition." }, { status: 400 });
   }
+  const originalDate = new Date(`${match.scheduled_for}T12:00:00Z`);
+  const requestedDate = new Date(`${requestedScheduledFor}T12:00:00Z`);
+  const offsetDays = Math.round((requestedDate.getTime() - originalDate.getTime()) / 86_400_000);
+  if (![-7, 7, 14].includes(offsetDays)) {
+    return NextResponse.json({ error: "A fixture can only move one week earlier, one week later, or two weeks later than its original week." }, { status: 400 });
+  }
 
   const approvedSubmission = await auth.client
     .from("result_submissions")
@@ -192,7 +204,7 @@ export async function POST(request: NextRequest) {
 
   const matchUpdate = await auth.client
     .from("matches")
-    .update({ scheduled_for: requestedScheduledFor, status: "pending", winner_player_id: null })
+    .update({ status: "pending", winner_player_id: null })
     .eq("id", matchId);
   if (matchUpdate.error) {
     await auth.client.from("league_reschedule_requests").delete().eq("id", requestResult.data.id);

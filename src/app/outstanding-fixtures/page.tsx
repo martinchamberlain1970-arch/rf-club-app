@@ -6,7 +6,7 @@ import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
 import useAdminStatus from "@/components/useAdminStatus";
 import { logAudit } from "@/lib/audit";
-import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 import { resultSubmittedRescheduleNote } from "@/lib/reschedule-result-guard";
 import { supabase } from "@/lib/supabase";
 
@@ -152,6 +152,10 @@ export default function OutstandingFixturesPage() {
     for (const request of reschedules) map.set(request.match_id, request);
     return map;
   }, [reschedules]);
+  const deadlineAnchorByMatch = useMemo(
+    () => buildLeagueFixtureAnchorMap(reschedules.filter((request) => request.status === "approved")),
+    [reschedules]
+  );
 
   const outstanding = useMemo(() => {
     const now = new Date();
@@ -159,9 +163,10 @@ export default function OutstandingFixturesPage() {
       const competition = competitionById.get(match.competition_id);
       if (!competition || competition.is_archived || submittedMatchIds.has(match.id)) return [];
       if (!match.player1_id || !match.player2_id || match.player1_id === match.player2_id || !match.scheduled_for) return [];
-      const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
-      const deadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name);
-      const awardAt = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competition.name);
+      const deadlineScheduledFor = deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for;
+      const originalDeadline = getLeagueFixtureDeadline(deadlineScheduledFor, competition.name);
+      const deadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competition.name);
+      const awardAt = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name);
       if (!originalDeadline || !deadline || !awardAt) return [];
       const reschedule = latestRescheduleByMatch.get(match.id) ?? null;
       const overdue = deadline.getTime() < now.getTime();
@@ -178,7 +183,7 @@ export default function OutstandingFixturesPage() {
         decisionDue: awardAt.getTime() < now.getTime(),
       }];
     }).sort((a, b) => a.deadline.getTime() - b.deadline.getTime() || a.competition.name.localeCompare(b.competition.name));
-  }, [competitionById, latestRescheduleByMatch, matches, playerNameById, submittedMatchIds]);
+  }, [competitionById, deadlineAnchorByMatch, latestRescheduleByMatch, matches, playerNameById, submittedMatchIds]);
 
   const visibleFixtures = outstanding.filter((fixture) => {
     if (competitionFilter !== "all" && fixture.competition.id !== competitionFilter) return false;
@@ -326,7 +331,7 @@ export default function OutstandingFixturesPage() {
         return;
       }
       const submissionUpdate = await client.from("result_submissions").update({ status: "rejected", reviewed_by_user_id: admin.userId, reviewed_at: new Date().toISOString(), note: "Fixture rescheduled by Super User." }).eq("match_id", fixture.match.id).neq("status", "rejected");
-      const matchUpdate = await client.from("matches").update({ scheduled_for: request.requested_scheduled_for, status: "pending", winner_player_id: null }).eq("id", fixture.match.id);
+      const matchUpdate = await client.from("matches").update({ status: "pending", winner_player_id: null }).eq("id", fixture.match.id);
       if (submissionUpdate.error || matchUpdate.error) {
         setRescheduleBusyId(null);
         setNotice(submissionUpdate.error?.message || matchUpdate.error?.message || "The fixture could not be rescheduled.");

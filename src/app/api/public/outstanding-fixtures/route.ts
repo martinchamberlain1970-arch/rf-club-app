@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -64,15 +64,17 @@ export async function GET() {
   for (const request of rescheduleResult.data ?? []) {
     latestRescheduleByMatch.set(request.match_id, request);
   }
+  const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap(rescheduleResult.data ?? []);
   const submittedMatchIds = new Set((submissionResult.data ?? []).map((submission) => submission.match_id));
   const now = Date.now();
 
   const fixtures = matches.flatMap((match) => {
     const competition = competitionById.get(match.competition_id);
     if (!competition || submittedMatchIds.has(match.id) || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id || !match.scheduled_for) return [];
-    const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
-    const deadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name);
-    const voidAt = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competition.name);
+    const deadlineScheduledFor = deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for;
+    const originalDeadline = getLeagueFixtureDeadline(deadlineScheduledFor, competition.name);
+    const deadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competition.name);
+    const voidAt = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competition.name);
     if (!originalDeadline || !deadline || !voidAt) return [];
     const reschedule = latestRescheduleByMatch.get(match.id) ?? null;
     const overdue = deadline.getTime() < now;
@@ -83,7 +85,7 @@ export async function GET() {
       sportType: competition.sport_type,
       playerOne: playerNameById.get(match.player1_id) || "Player",
       playerTwo: playerNameById.get(match.player2_id) || "Player",
-      scheduledFor: match.scheduled_for,
+      scheduledFor: reschedule?.requested_scheduled_for ?? match.scheduled_for,
       deadline: deadline.toISOString(),
       voidAt: voidAt.toISOString(),
       week: match.round_no ?? null,

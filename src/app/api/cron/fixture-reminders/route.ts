@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { brandedEmail, escapeEmailHtml } from "@/lib/email-template";
-import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline } from "@/lib/league-deadline";
 import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 import { sendPushToUserIds } from "@/lib/push-server";
 
@@ -154,11 +154,12 @@ export async function GET(request: NextRequest) {
   const matchIds = matches.map((match) => match.id);
   const [submissionResult, rescheduleResult, auditResult] = await Promise.all([
     client.from("result_submissions").select("match_id").in("match_id", matchIds).in("status", ["pending", "approved"]),
-    client.from("league_reschedule_requests").select("match_id").in("match_id", matchIds).eq("status", "pending"),
+    client.from("league_reschedule_requests").select("match_id,status,original_scheduled_for,created_at").in("match_id", matchIds).in("status", ["pending", "approved"]).order("created_at", { ascending: true }),
     client.from("audit_logs").select("entity_id,action").eq("entity_type", "match").in("entity_id", matchIds).in("action", [phaseAction("overdue"), phaseAction("final")]),
   ]);
   if (submissionResult.error || rescheduleResult.error || auditResult.error) return NextResponse.json({ error: submissionResult.error?.message ?? rescheduleResult.error?.message ?? auditResult.error?.message }, { status: 400 });
-  const protectedMatches = new Set([...(submissionResult.data ?? []).map((row) => row.match_id), ...(rescheduleResult.data ?? []).map((row) => row.match_id)]);
+  const protectedMatches = new Set([...(submissionResult.data ?? []).map((row) => row.match_id), ...(rescheduleResult.data ?? []).filter((row) => row.status === "pending").map((row) => row.match_id)]);
+  const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap((rescheduleResult.data ?? []).filter((row) => row.status === "approved"));
   const sentActions = new Set((auditResult.data ?? []).map((row) => `${row.entity_id}:${row.action}`));
   const processed: Array<{ matchId: string; phase: ReminderPhase }> = [];
   let sent = 0;
@@ -169,10 +170,11 @@ export async function GET(request: NextRequest) {
     if (protectedMatches.has(match.id)) continue;
     const competitionName = competitions.get(match.competition_id);
     if (!competitionName) continue;
-    const phase = choosePhase(now, match, competitionName);
+    const deadlineMatch = { ...match, scheduled_for: deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for };
+    const phase = choosePhase(now, deadlineMatch, competitionName);
     if (!phase || sentActions.has(`${match.id}:${phaseAction(phase)}`)) continue;
-    const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competitionName);
-    const finalDeadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competitionName);
+    const originalDeadline = getLeagueFixtureDeadline(deadlineMatch.scheduled_for, competitionName);
+    const finalDeadline = getLeagueFixtureFinalDeadline(deadlineMatch.scheduled_for, competitionName);
     if (!originalDeadline || !finalDeadline) continue;
     const result = await sendFixtureReminder(client, match, competitionName, phase, originalDeadline, finalDeadline);
     sent += result.sent;

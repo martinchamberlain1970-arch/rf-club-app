@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     auth.client.from("players").select("id,display_name,full_name").in("id", participantIds),
     auth.client.from("competition_entries").select("id,player_id,public_signup_id,fixture_access_token").eq("competition_id", match.competition_id).eq("status", "approved").in("player_id", participantIds),
     auth.client.from("app_users").select("id,linked_player_id,email").in("linked_player_id", participantIds),
-    auth.client.from("league_reschedule_requests").select("original_scheduled_for,requested_scheduled_for,status,created_at").eq("match_id", matchId).eq("status", "approved").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    auth.client.from("league_reschedule_requests").select("original_scheduled_for,requested_scheduled_for,status,created_at").eq("match_id", matchId).eq("status", "approved").order("created_at", { ascending: true }),
   ]);
   const firstError = competitionResult.error || playersResult.error || entriesResult.error || linkedUsersResult.error || rescheduleResult.error;
   if (firstError || !competitionResult.data) {
@@ -108,12 +108,13 @@ export async function POST(request: NextRequest) {
     const player = playerById.get(playerId);
     return [playerId, player?.full_name?.trim() || player?.display_name || "Player"];
   }));
-  const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competitionName);
-  const finalDeadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competitionName);
+  const deadlineScheduledFor = rescheduleResult.data?.[0]?.original_scheduled_for ?? match.scheduled_for;
+  const originalDeadline = getLeagueFixtureDeadline(deadlineScheduledFor, competitionName);
+  const finalDeadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competitionName);
   if (!originalDeadline || !finalDeadline) return NextResponse.json({ error: "This fixture does not have a playing deadline." }, { status: 400 });
   const originalWeekPassed = originalDeadline.getTime() < Date.now();
   const overdue = finalDeadline.getTime() < Date.now();
-  const rescheduled = Boolean(rescheduleResult.data);
+  const rescheduled = Boolean(rescheduleResult.data?.length);
   const statusText = overdue
     ? "This fixture has passed its final four-week playing deadline."
     : rescheduled

@@ -260,7 +260,7 @@ export default function MyFixturesPage() {
           opponentLabel: opponentIds.filter(Boolean).map((id) => playerNameById.get(id as string) ?? "TBC").join(" & ") || "BYE",
           opponentIds: opponentIds.filter(Boolean) as string[],
           scoreLabel: !isBye && match.status === "complete" ? (!match.winner_player_id ? "VOID" : onTeamOne ? `${teamOneScore} – ${teamTwoScore}` : `${teamTwoScore} – ${teamOneScore}`) : null,
-          displayScheduledFor: match.scheduled_for,
+          displayScheduledFor: publishedFixture?.rescheduledTo ?? match.scheduled_for,
           displayWeek: publishedFixture?.week ?? match.round_no ?? 1,
           isBye,
           isReschedulePlaceholder: false,
@@ -291,7 +291,7 @@ export default function MyFixturesPage() {
     const now = new Date();
     return allFixtureRows.filter(({ match, competition, displayScheduledFor, isBye, isReschedulePlaceholder, rescheduledFrom }) => {
       if (isReschedulePlaceholder || isBye || !["pending", "in_progress"].includes(match.status) || !displayScheduledFor) return false;
-      const deadline = getLeagueFixtureDeadline(displayScheduledFor, competition?.name);
+      const deadline = getLeagueFixtureDeadline(rescheduledFrom ?? displayScheduledFor, competition?.name);
       return Boolean(rescheduledFrom || (deadline && deadline < now));
     });
   }, [allFixtureRows]);

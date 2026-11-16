@@ -166,7 +166,6 @@ export default function ReschedulesPage() {
       const matchUpdate = await client
         .from("matches")
         .update({
-          scheduled_for: request.requested_scheduled_for,
           status: "pending",
           winner_player_id: null,
         })

@@ -810,15 +810,21 @@ export default function MatchPage() {
       match.team2_player2_id,
     ].includes(viewerLinkedPlayerId);
   }, [match, viewerLinkedPlayerId]);
+  const deadlineScheduledFor = useMemo(() => {
+    const approved = rescheduleRequests
+      .filter((request) => request.status === "approved")
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    return approved[0]?.original_scheduled_for ?? match?.scheduled_for ?? null;
+  }, [match?.scheduled_for, rescheduleRequests]);
   const leagueFixtureWindow = useMemo(() => {
     if (!match || competition?.competition_format !== "league") return null;
-    const normalWindow = getLeagueFixtureWindow(match.scheduled_for, competition.league_schedule_mode ?? "weekly", competition.name);
+    const normalWindow = getLeagueFixtureWindow(deadlineScheduledFor, competition.league_schedule_mode ?? "weekly", competition.name);
     if (!normalWindow || competition.league_schedule_mode === "one_day") return normalWindow;
     return {
       opensAt: new Date(normalWindow.opensAt.getTime() - 7 * 24 * 60 * 60 * 1000),
-      dueAt: getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name) ?? normalWindow.dueAt,
+      dueAt: getLeagueFixtureFinalDeadline(deadlineScheduledFor, competition.name) ?? normalWindow.dueAt,
     };
-  }, [competition, match]);
+  }, [competition, deadlineScheduledFor, match]);
   const playerLeagueWindowOpen = useMemo(() => {
     if (!leagueFixtureWindow) return true;
     const now = new Date();

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { brandedEmail, escapeEmailHtml } from "@/lib/email-template";
-import { getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
     client.from("competition_entries").select("id,competition_id,player_id,public_signup_id,fixture_access_token").in("competition_id", [...competitions.keys()]).eq("status", "approved").in("player_id", playerIds),
     client.from("app_users").select("id,linked_player_id,email").in("linked_player_id", playerIds),
     client.from("result_submissions").select("match_id").in("match_id", matchIds).in("status", ["pending", "approved"]),
-    client.from("league_reschedule_requests").select("match_id").in("match_id", matchIds).eq("status", "pending"),
+    client.from("league_reschedule_requests").select("match_id,status,original_scheduled_for,requested_scheduled_for,created_at").in("match_id", matchIds).in("status", ["pending", "approved"]).order("created_at", { ascending: true }),
     client.from("audit_logs").select("entity_id").eq("entity_type", "player").eq("action", "fixture_weekly_digest_sent").gte("created_at", `${today}T00:00:00Z`),
   ]);
   if (playersResult.error || entriesResult.error || linkedUsersResult.error || submissionResult.error || rescheduleResult.error || priorDigestResult.error) {
@@ -109,7 +109,10 @@ export async function GET(request: NextRequest) {
   const entryByCompetitionPlayer = new Map(entries.map((entry) => [`${entry.competition_id}:${entry.player_id}`, entry]));
   const signupById = new Map((signupResult.data ?? []).map((signup) => [signup.id, signup]));
   const contactByEntry = new Map((contactsResult.data ?? []).map((contact) => [contact.competition_entry_id, contact]));
-  const protectedMatches = new Set([...(submissionResult.data ?? []).map((row) => row.match_id), ...(rescheduleResult.data ?? []).map((row) => row.match_id)]);
+  const protectedMatches = new Set([...(submissionResult.data ?? []).map((row) => row.match_id), ...(rescheduleResult.data ?? []).filter((row) => row.status === "pending").map((row) => row.match_id)]);
+  const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap((rescheduleResult.data ?? []).filter((row) => row.status === "approved"));
+  const latestApprovedRescheduleByMatch = new Map<string, { requested_scheduled_for: string }>();
+  for (const row of rescheduleResult.data ?? []) if (row.status === "approved") latestApprovedRescheduleByMatch.set(row.match_id, row);
   const alreadySent = new Set((priorDigestResult.data ?? []).map((row) => row.entity_id));
   const now = new Date();
   let sent = 0;
@@ -123,9 +126,11 @@ export async function GET(request: NextRequest) {
     for (const match of playerMatches) {
       const competitionName = competitions.get(match.competition_id);
       if (!competitionName) continue;
-      const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competitionName);
-      const finalDeadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competitionName);
-      const voidAt = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competitionName);
+      const deadlineScheduledFor = deadlineAnchorByMatch.get(match.id) ?? match.scheduled_for;
+      const displayScheduledFor = latestApprovedRescheduleByMatch.get(match.id)?.requested_scheduled_for ?? match.scheduled_for;
+      const originalDeadline = getLeagueFixtureDeadline(deadlineScheduledFor, competitionName);
+      const finalDeadline = getLeagueFixtureFinalDeadline(deadlineScheduledFor, competitionName);
+      const voidAt = getLeagueFixtureWalkoverReviewUntil(deadlineScheduledFor, competitionName);
       if (!originalDeadline || !finalDeadline || !voidAt) continue;
       const entry = entryByCompetitionPlayer.get(`${match.competition_id}:${playerId}`);
       const signup = signupById.get(entry?.public_signup_id ?? "");
@@ -134,13 +139,13 @@ export async function GET(request: NextRequest) {
         matchId: match.id,
         competitionName,
         opponentName: names.get(match.player1_id === playerId ? match.player2_id : match.player1_id) || "Opponent",
-        weekBeginning: match.scheduled_for,
+        weekBeginning: displayScheduledFor,
         finalDeadline,
         voidAt,
         fixtureUrl: tokenValue ? `${siteUrl}/entrant/${tokenValue}` : `${siteUrl}/matches/${match.id}`,
         firstNamed: match.player1_id === playerId,
       };
-      if (match.scheduled_for >= nextMonday && match.scheduled_for < followingWindowEnd) upcoming.push(item);
+      if (displayScheduledFor >= nextMonday && displayScheduledFor < followingWindowEnd) upcoming.push(item);
       if (originalDeadline < now) outstanding.push(item);
     }
     if (!upcoming.length && !outstanding.length) { skipped += 1; continue; }

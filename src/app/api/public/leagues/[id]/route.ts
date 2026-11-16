@@ -145,7 +145,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       matchNo: match.match_no ?? 1,
       bestOf: match.best_of,
       status: match.status,
-      scheduledFor: match.scheduled_for,
+      scheduledFor: reschedule?.requested_scheduled_for ?? match.scheduled_for,
       player1Id: match.player1_id,
       player2Id: isBye ? null : match.player2_id,
       player1: nameById.get(match.player1_id ?? "") || "TBC",
