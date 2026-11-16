@@ -155,7 +155,7 @@ type CompetitionGameWeek = {
 
 type FixtureDeadlineCase = {
   id: string;
-  status: "pending_evidence" | "evidence_submitted" | "awarded_second" | "awarded_first" | "dismissed";
+  status: "pending_evidence" | "awarded_second" | "awarded_first" | "dismissed";
   final_deadline: string;
   review_until: string;
   evidence_note: string | null;
@@ -463,8 +463,6 @@ export default function MatchPage() {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [deadlineCase, setDeadlineCase] = useState<FixtureDeadlineCase | null>(null);
   const [deadlinePolicy, setDeadlinePolicy] = useState<FixtureDeadlinePolicy | null>(null);
-  const [deadlineEvidence, setDeadlineEvidence] = useState("");
-  const [submittingDeadlineEvidence, setSubmittingDeadlineEvidence] = useState(false);
   const [playingWindowException, setPlayingWindowException] = useState<PlayingWindowException | null>(null);
 
   const openDisplay = () => {
@@ -876,19 +874,6 @@ export default function MatchPage() {
       !pendingRescheduleForMatch &&
       !approvedRescheduleForMatch
   );
-  const canSubmitDeadlineEvidence = Boolean(
-    match?.status !== "complete" &&
-      !isArchived &&
-      !isByeMatch &&
-      viewerLinkedPlayerId &&
-      viewerLinkedPlayerId === deadlinePolicy?.firstNamedPlayerId &&
-      deadlinePolicy?.claimWindowOpens &&
-      deadlinePolicy?.reviewUntil &&
-      Date.now() >= Date.parse(deadlinePolicy.claimWindowOpens) &&
-      Date.now() <= Date.parse(deadlinePolicy.reviewUntil) &&
-      deadlineCase?.status !== "evidence_submitted"
-  );
-
   useEffect(() => {
     if (loading || !match || !competition || !viewerCanEditThisMatch || window.location.hash !== "#reschedule-fixture") return;
     setRescheduleJourney(true);
@@ -1030,51 +1015,6 @@ export default function MatchPage() {
         await requestLeagueReschedule(timing);
       },
     });
-  };
-
-  const submitDeadlineEvidence = async () => {
-    const client = supabase;
-    if (!client || !match || !canSubmitDeadlineEvidence) return;
-    const note = deadlineEvidence.trim();
-    if (note.length < 10) {
-      setMessage("Briefly explain when and how you tried to arrange the fixture.");
-      return;
-    }
-    setSubmittingDeadlineEvidence(true);
-    try {
-      const sessionResult = await withOperationTimeout(client.auth.getSession(), "Checking your session", 12_000);
-      const accessToken = sessionResult.data.session?.access_token;
-      if (!accessToken) {
-        setMessage("Your session has expired. Please sign in again.");
-        return;
-      }
-      const response = await withOperationTimeout(fetch("/api/fixture-deadline-cases", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ matchId: match.id, evidenceNote: note }),
-      }), "Submitting your evidence", 20_000);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setMessage(payload?.error || "Your evidence could not be submitted. Please try again.");
-        return;
-      }
-      setDeadlineCase((current) => ({
-        id: payload?.case?.id ?? current?.id ?? match.id,
-        status: "evidence_submitted",
-        final_deadline: current?.final_deadline ?? deadlinePolicy?.finalDeadline ?? "",
-        review_until: current?.review_until ?? deadlinePolicy?.reviewUntil ?? "",
-        evidence_note: note,
-        evidence_submitted_at: payload?.case?.evidence_submitted_at ?? new Date().toISOString(),
-      }));
-      setInfoModal({
-        title: "Evidence submitted",
-        description: "Your scheduling evidence has been recorded and the automatic walkover is paused for organiser review. Keep any messages or screenshots in case the organiser asks to see them.",
-      });
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Your evidence could not be submitted. Please try again.");
-    } finally {
-      setSubmittingDeadlineEvidence(false);
-    }
   };
 
   const rescheduleAsDeadlineDecision = async () => {
@@ -3231,7 +3171,7 @@ export default function MatchPage() {
                     <h3 className="mt-1 text-xl font-semibold text-slate-900">Four-week playing window</h3>
                   </div>
                   <p className="text-sm text-slate-700">
-                    This fixture may be played in the week before it is due, its due week, or either of the following two weeks. The first-named player is responsible for arranging the game and ensuring the result or an approved reschedule is recorded.
+                    This fixture may be played in the week before it is due, its due week, or either of the following two weeks. Both players should arrange the game and ensure the result or an approved reschedule is recorded.
                   </p>
                   {playingWindowException ? (
                     <div className="rounded-xl border border-cyan-300 bg-cyan-50 px-3 py-2 text-sm text-cyan-950">
@@ -3241,39 +3181,13 @@ export default function MatchPage() {
                   ) : null}
                   {deadlinePolicy?.finalDeadline ? (
                     <p className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-800">
-                      Playing window closes <strong>{new Date(deadlinePolicy.finalDeadline).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" })}</strong>. If it remains unplayed, the default walkover is to the second-named player after a 24-hour review period.
+                      Playing window closes <strong>{new Date(deadlinePolicy.finalDeadline).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" })}</strong>. If no result or valid reschedule is recorded by then, the fixture is voided and neither player receives points.
                     </p>
                   ) : null}
                   {deadlineCase?.status === "pending_evidence" ? (
                     <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
-                      Walkover review is open until {new Date(deadlineCase.review_until).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })}. The first-named player may record evidence below.
+                      This fixture has reached its final deadline. If a result or valid reschedule has just been recorded, refresh this page; otherwise it will be voided with no points.
                     </p>
-                  ) : null}
-                  {deadlineCase?.status === "evidence_submitted" ? (
-                    <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
-                      <p className="font-semibold">Scheduling evidence submitted — automatic award paused.</p>
-                      {deadlineCase.evidence_note && canAdminManageMatch ? <p className="mt-1">{deadlineCase.evidence_note}</p> : null}
-                      <p className="mt-1">The organiser will review the evidence before deciding the fixture.</p>
-                    </div>
-                  ) : null}
-                  {canSubmitDeadlineEvidence ? (
-                    <div className="space-y-2 rounded-xl border border-amber-300 bg-white p-3">
-                      <label className="block text-sm font-semibold text-slate-900" htmlFor="deadline-evidence">
-                        First-named player: record your attempts to arrange the game
-                      </label>
-                      <textarea
-                        id="deadline-evidence"
-                        value={deadlineEvidence}
-                        onChange={(event) => setDeadlineEvidence(event.target.value)}
-                        rows={3}
-                        maxLength={1000}
-                        placeholder="For example: I messaged my opponent on 12 and 18 October and offered three dates. Keep any screenshots in case the organiser asks for them."
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                      />
-                      <button type="button" onClick={submitDeadlineEvidence} disabled={submittingDeadlineEvidence || deadlineEvidence.trim().length < 10} className={buttonSuccessClass}>
-                        {submittingDeadlineEvidence ? "Submitting…" : "Submit scheduling evidence"}
-                      </button>
-                    </div>
                   ) : null}
                 </section>
               ) : null}

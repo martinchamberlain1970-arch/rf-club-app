@@ -399,11 +399,11 @@ export default function NotificationsPage() {
           const deadlineResponse = await fetch("/api/admin/fixture-deadline-decisions", { headers: { Authorization: `Bearer ${accessToken}` } });
           const deadlineBody = await deadlineResponse.json().catch(() => ({}));
           if (deadlineResponse.ok && Array.isArray(deadlineBody.fixtures)) {
-            deadlineBody.fixtures.forEach((fixture: { id: string; competitionName: string; playerOne: string; playerTwo: string; reviewUntil: string | null; evidenceSubmitted: boolean }) => {
+            deadlineBody.fixtures.forEach((fixture: { id: string; competitionName: string; playerOne: string; playerTwo: string; reviewUntil: string | null }) => {
               out.push({
                 key: `fixture-deadline-decision:${fixture.id}`,
-                title: fixture.evidenceSubmitted ? "Fixture evidence needs review" : "Overdue fixture decision due",
-                detail: `${fixture.competitionName}: ${fixture.playerOne} vs ${fixture.playerTwo}${fixture.evidenceSubmitted ? " · arranging evidence recorded" : ` · default award to ${fixture.playerTwo}`}`,
+                title: "Overdue fixture ready to void",
+                detail: `${fixture.competitionName}: ${fixture.playerOne} vs ${fixture.playerTwo} · no result or valid reschedule recorded · no points to either player`,
                 created_at: fixture.reviewUntil ?? new Date().toISOString(),
                 href: "/outstanding-fixtures?status=decision_due",
                 status: "pending",

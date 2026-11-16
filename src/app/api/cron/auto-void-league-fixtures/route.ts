@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
-import { sendPushToUserIds } from "@/lib/push-server";
+import { voidDeadlineFixture } from "@/lib/fixture-deadline-award";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -19,20 +19,24 @@ export async function GET(req: NextRequest) {
   const competitionsResult = await client.from("competitions").select("id,name,sport_type").eq("competition_format", "league").neq("league_schedule_mode", "one_day").eq("is_archived", false).eq("is_completed", false);
   if (competitionsResult.error) return NextResponse.json({ error: competitionsResult.error.message }, { status: 400 });
   const competitions = new Map((competitionsResult.data ?? []).map((row) => [row.id as string, row]));
-  if (!competitions.size) return NextResponse.json({ ok: true, opened: [], awarded: [] });
+  if (!competitions.size) return NextResponse.json({ ok: true, opened: [], voided: [] });
 
   const matchesResult = await client.from("matches").select("id,competition_id,scheduled_for,status,player1_id,player2_id,best_of,owner_user_id").in("competition_id", [...competitions.keys()]).eq("is_archived", false).in("status", ["pending", "in_progress"]);
   if (matchesResult.error) return NextResponse.json({ error: matchesResult.error.message }, { status: 400 });
   const matches = (matchesResult.data ?? []) as MatchRow[];
-  if (!matches.length) return NextResponse.json({ ok: true, opened: [], awarded: [] });
+  if (!matches.length) return NextResponse.json({ ok: true, opened: [], voided: [] });
 
   const matchIds = matches.map((match) => match.id);
-  const [submissionsResult, deadlineEventsResult] = await Promise.all([
+  const [submissionsResult, reschedulesResult, deadlineEventsResult] = await Promise.all([
     client.from("result_submissions").select("match_id,status").in("match_id", matchIds).in("status", ["pending", "approved"]),
-    client.from("audit_logs").select("entity_id,action,created_at").eq("entity_type", "match").in("entity_id", matchIds).in("action", ["fixture_deadline_review_opened", "fixture_deadline_evidence_submitted", "fixture_deadline_decision_due", "fixture_deadline_walkover_awarded"]),
+    client.from("league_reschedule_requests").select("match_id,status").in("match_id", matchIds).eq("status", "pending"),
+    client.from("audit_logs").select("entity_id,action,created_at").eq("entity_type", "match").in("entity_id", matchIds).in("action", ["fixture_deadline_review_opened", "fixture_deadline_decision_due", "fixture_deadline_walkover_awarded", "fixture_deadline_voided"]),
   ]);
-  if (submissionsResult.error || deadlineEventsResult.error) return NextResponse.json({ error: submissionsResult.error?.message ?? deadlineEventsResult.error?.message }, { status: 400 });
-  const protectedMatchIds = new Set((submissionsResult.data ?? []).map((row) => row.match_id as string));
+  if (submissionsResult.error || reschedulesResult.error || deadlineEventsResult.error) return NextResponse.json({ error: submissionsResult.error?.message ?? reschedulesResult.error?.message ?? deadlineEventsResult.error?.message }, { status: 400 });
+  const protectedMatchIds = new Set([
+    ...(submissionsResult.data ?? []).map((row) => row.match_id as string),
+    ...(reschedulesResult.data ?? []).map((row) => row.match_id as string),
+  ]);
   const actionsByMatch = new Map<string, Set<string>>();
   for (const event of deadlineEventsResult.data ?? []) {
     const matchId = String(event.entity_id ?? "");
@@ -42,7 +46,7 @@ export async function GET(req: NextRequest) {
   }
   const now = new Date();
   const opened: string[] = [];
-  const awarded: string[] = [];
+  const voided: string[] = [];
 
   for (const match of matches) {
     if (!match.player1_id || !match.player2_id || match.player1_id === match.player2_id || protectedMatchIds.has(match.id)) continue;
@@ -60,38 +64,23 @@ export async function GET(req: NextRequest) {
         action: "fixture_deadline_review_opened",
         entity_type: "match",
         entity_id: match.id,
-        summary: "The four-week playing window closed and the 24-hour walkover review opened.",
-        meta: { competition_id: match.competition_id, final_deadline: finalDeadline.toISOString(), review_until: reviewUntil.toISOString(), default_winner_player_id: match.player2_id },
+        summary: "The four-week playing window closed without a result or valid reschedule.",
+        meta: { competition_id: match.competition_id, final_deadline: finalDeadline.toISOString(), review_until: reviewUntil.toISOString(), default_outcome: "void" },
       });
       if (insert.error) continue;
       deadlineActions.add("fixture_deadline_review_opened");
       actionsByMatch.set(match.id, deadlineActions);
       opened.push(match.id);
-      const participants = await client.from("app_users").select("id").in("linked_player_id", [match.player1_id, match.player2_id]);
-      if (!participants.error) await sendPushToUserIds(client, (participants.data ?? []).map((row) => row.id), { title: "Fixture walkover review", body: `${competition.name}: the playing window has closed. The first-named player has 24 hours to ensure any scheduling evidence is recorded before the default walkover is confirmed.`, url: `/matches/${match.id}`, tag: `fixture-deadline-${match.id}` });
     }
-    if (deadlineActions.has("fixture_deadline_evidence_submitted") || deadlineActions.has("fixture_deadline_walkover_awarded") || now <= reviewUntil) continue;
-
-    if (deadlineActions.has("fixture_deadline_decision_due")) continue;
-    const decisionEvent = await client.from("audit_logs").insert({
-      actor_user_id: null,
-      actor_email: null,
-      actor_role: "system",
-      action: "fixture_deadline_decision_due",
-      entity_type: "match",
-      entity_id: match.id,
-      summary: "The 24-hour review period closed and the overdue fixture now needs a Club Manager decision.",
-      meta: { competition_id: match.competition_id, default_winner_player_id: match.player2_id, review_until: reviewUntil.toISOString() },
-    });
-    if (decisionEvent.error) continue;
-    const managers = await client.from("app_users").select("id").in("role", ["owner", "admin"]);
-    if (!managers.error) await sendPushToUserIds(client, (managers.data ?? []).map((row) => row.id), {
-      title: "Overdue fixture decision due",
-      body: `${competition.name}: the 24-hour review has closed. Review the fixture or award the default win now.`,
-      url: "/outstanding-fixtures",
-      tag: `fixture-decision-${match.id}`,
-    });
+    if (deadlineActions.has("fixture_deadline_walkover_awarded") || deadlineActions.has("fixture_deadline_voided") || now <= reviewUntil) continue;
+    try {
+      await voidDeadlineFixture(client, match.id, { user: { id: null, email: null }, role: "system" });
+      voided.push(match.id);
+    } catch {
+      // A concurrent result or reschedule may have changed the fixture. It will
+      // be considered again on the next cron run if it still qualifies.
+    }
   }
 
-  return NextResponse.json({ ok: true, opened, awarded });
+  return NextResponse.json({ ok: true, opened, voided });
 }

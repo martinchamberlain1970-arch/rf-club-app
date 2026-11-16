@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
         ? "The original fixture week has passed, but the match remains inside its four-week playing window."
         : "This fixture is still waiting to be played.";
   const actionText = overdue
-    ? "Please open the fixture now. The normal outcome is a walkover to the second-named player after the 24-hour review unless scheduling evidence has been submitted for organiser review."
+    ? "Please open the fixture now. If no result or valid reschedule is recorded by the final playing deadline, the fixture will be voided and neither player will receive points."
     : `Please arrange and complete the fixture by ${formatDeadline(finalDeadline)}. If you agree a permitted different week, submit the reschedule request in Rack & Frame so the organiser can approve it.`;
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").replace(/\/$/, "");
   const sent: string[] = [];

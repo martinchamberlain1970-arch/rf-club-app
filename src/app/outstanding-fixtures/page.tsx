@@ -209,14 +209,14 @@ export default function OutstandingFixturesPage() {
     const fixtureLines = sportFixtures.flatMap((fixture) => [
       `• ${fixture.playerOne} vs ${fixture.playerTwo} (${fixture.competition.name})`,
       `  Final playing deadline: ${displayDeadline(fixture.deadline)}`,
-      `  If unresolved and no arranging evidence is recorded, the fixture will be awarded to ${fixture.playerTwo} after ${displayDeadline(fixture.awardAt)}.`,
+      `  If no result or valid reschedule is recorded, the fixture will be voided with no points to either player after ${displayDeadline(fixture.awardAt)}.`,
     ]);
     const text = [
       heading,
       "",
       ...fixtureLines,
       "",
-      "The first-named player is responsible for arranging and recording the fixture. If they have made genuine attempts to arrange it, they must record that evidence in the app before the review closes.",
+      "Both players should arrange the match and ensure either the result or a valid reschedule is recorded before the deadline.",
       "",
       `Live list: ${appOrigin}/fixtures/outstanding`,
     ].join("\n");
@@ -272,10 +272,10 @@ export default function OutstandingFixturesPage() {
     setNotice(`Reminder sent to ${sent}.${missing}${failed}`);
   };
 
-  const awardDefaultWin = async (fixture: OutstandingFixture) => {
+  const voidExpiredFixture = async (fixture: OutstandingFixture) => {
     const client = supabase;
     if (!client || !canManage) return;
-    const confirmed = window.confirm(`Award this overdue fixture to ${fixture.playerTwo}? Both players will be emailed the confirmed outcome where an email address is held.`);
+    const confirmed = window.confirm("Void this overdue fixture with no points to either player? Both players will be emailed the confirmed outcome where an email address is held.");
     if (!confirmed) return;
     setDecisionBusyId(fixture.match.id);
     const sessionResult = await client.auth.getSession();
@@ -292,7 +292,7 @@ export default function OutstandingFixturesPage() {
       return;
     }
     const sentCount = Array.isArray(body.emailResults) ? body.emailResults.filter((result: { status?: string }) => result.status === "sent").length : 0;
-    setNotice(`${fixture.playerTwo} has been awarded the win. Outcome email${sentCount === 1 ? "" : "s"} sent to ${sentCount} player${sentCount === 1 ? "" : "s"}.`);
+    setNotice(`The fixture has been voided with no points awarded. Outcome email${sentCount === 1 ? "" : "s"} sent to ${sentCount} player${sentCount === 1 ? "" : "s"}.`);
     setRefreshKey((value) => value + 1);
   };
 
@@ -373,7 +373,7 @@ export default function OutstandingFixturesPage() {
 
               <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800">Share outstanding fixtures</p>
-                <p className="mt-1 text-sm text-emerald-950">Each WhatsApp summary includes the final playing deadline, the second-named player who receives the default walkover, and the time the 24-hour evidence review closes.</p>
+                <p className="mt-1 text-sm text-emerald-950">Each WhatsApp summary includes the final playing deadline and explains that unresolved fixtures are voided with no points when that deadline passes.</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button type="button" onClick={() => shareOutstandingFixtures("pool")} className="rounded-xl bg-[#25D366] px-4 py-2 text-sm font-bold text-white hover:bg-[#1faf54]">Share Pool on WhatsApp ({outstanding.filter((fixture) => fixture.competition.sport_type !== "snooker").length})</button>
                   <button type="button" onClick={() => shareOutstandingFixtures("snooker")} className="rounded-xl bg-[#25D366] px-4 py-2 text-sm font-bold text-white hover:bg-[#1faf54]">Share Snooker on WhatsApp ({outstanding.filter((fixture) => fixture.competition.sport_type === "snooker").length})</button>
@@ -410,7 +410,7 @@ export default function OutstandingFixturesPage() {
                     const pendingReschedule = fixture.reschedule?.status === "pending";
                     const approvedReschedule = fixture.reschedule?.status === "approved";
                     const workflowLabel = decisionDue
-                      ? "Decision due · review period closed"
+                      ? "Deadline passed · ready to void"
                       : pendingReschedule
                       ? "Reschedule requested · awaiting approval"
                       : approvedReschedule && fixture.overdue
@@ -433,10 +433,10 @@ export default function OutstandingFixturesPage() {
                           <h2 className="mt-1 text-xl font-black text-slate-950">{fixture.playerOne} vs {fixture.playerTwo}</h2>
                           <p className="mt-1 text-sm text-slate-600">Week {fixture.match.round_no ?? "—"} · Match {fixture.match.match_no ?? "—"} · Week beginning {displayDate(fixture.match.scheduled_for)}</p>
                           <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Final playing deadline: {displayDeadline(fixture.deadline)}</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-700">Default outcome: awarded to {fixture.playerTwo} after {displayDeadline(fixture.awardAt)}, unless the result, a valid reschedule, or the first-named player&apos;s arranging evidence is recorded.</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-700">Default outcome: void with no points to either player after {displayDeadline(fixture.awardAt)}, unless a result or valid reschedule is recorded.</p>
                           {fixture.reschedule ? <p className={`mt-2 rounded-xl border px-3 py-2 text-sm ${pendingReschedule ? "border-violet-200 bg-violet-50 text-violet-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>{pendingReschedule ? "Requested move" : "Moved"} from the week beginning <strong>{displayDate(fixture.reschedule.original_scheduled_for)}</strong> to <strong>{displayDate(fixture.reschedule.requested_scheduled_for)}</strong>{pendingReschedule ? "; this still needs approval." : "."}</p> : null}
                           <div className="mt-4 flex flex-wrap gap-2">
-                            {decisionDue ? <button type="button" disabled={decisionBusyId === fixture.match.id} onClick={() => void awardDefaultWin(fixture)} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-800 disabled:opacity-50">{decisionBusyId === fixture.match.id ? "Awarding & emailing…" : `Award win to ${fixture.playerTwo}`}</button> : null}
+                            {decisionDue ? <button type="button" disabled={decisionBusyId === fixture.match.id} onClick={() => void voidExpiredFixture(fixture)} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-800 disabled:opacity-50">{decisionBusyId === fixture.match.id ? "Voiding & emailing…" : "Void fixture — no points"}</button> : null}
                             <Link href={`/matches/${fixture.match.id}`} className="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-teal-800">{fixture.overdue ? "Review, reschedule or decide" : "Open fixture"}</Link>
                             {pendingReschedule && admin.isSuper ? <><button type="button" disabled={rescheduleBusyId === fixture.reschedule?.id} onClick={() => void reviewReschedule(fixture, "approved")} className="rounded-xl border border-violet-700 bg-violet-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Approve new week</button><button type="button" disabled={rescheduleBusyId === fixture.reschedule?.id} onClick={() => void reviewReschedule(fixture, "rejected")} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-900 disabled:opacity-50">Reject request</button></> : null}
                             <button type="button" disabled={reminderBusyId === fixture.match.id} onClick={() => void sendEmailReminders(fixture.match.id)} className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-bold text-sky-900 disabled:opacity-50">{reminderBusyId === fixture.match.id ? "Sending…" : "Email both players"}</button>
@@ -445,7 +445,7 @@ export default function OutstandingFixturesPage() {
                           {contacts ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{contacts.map((contact) => {
                             const number = contact.phone ? whatsappNumber(contact.phone) : "";
                             const opponent = contact.playerId === fixture.match.player1_id ? fixture.playerTwo : fixture.playerOne;
-                            const reminderText = `Hi ${contact.name.split(/\s+/)[0]}, just a reminder about your ${fixture.competition.name} fixture against ${opponent}. ${workflowLabel}. The final playing deadline is ${displayDeadline(fixture.deadline)}. If it remains unresolved and no arranging evidence is recorded, it will be awarded to ${fixture.playerTwo} after ${displayDeadline(fixture.awardAt)}. Please arrange the match and update Rack & Frame. ${appOrigin}/my-fixtures`;
+                            const reminderText = `Hi ${contact.name.split(/\s+/)[0]}, just a reminder about your ${fixture.competition.name} fixture against ${opponent}. ${workflowLabel}. The final playing deadline is ${displayDeadline(fixture.deadline)}. If no result or valid reschedule is recorded, it will be voided with no points to either player after ${displayDeadline(fixture.awardAt)}. Please arrange the match and update Rack & Frame. ${appOrigin}/my-fixtures`;
                             return <div key={contact.playerId} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><p className="font-bold text-slate-900">{contact.name}</p>{number ? <a href={`https://wa.me/${number}?text=${encodeURIComponent(reminderText)}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded-lg bg-[#25D366] px-3 py-2 text-sm font-bold text-white">Open WhatsApp</a> : <p className="mt-2 text-xs text-slate-500">No mobile number recorded.</p>}</div>;
                           })}</div> : null}
                         </div>

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { getLeagueFixtureClaimWindowOpens, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
-import { sendPushToUserIds } from "@/lib/push-server";
+import { getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -65,30 +64,20 @@ export async function GET(request: NextRequest) {
     .select("id,action,meta,created_at")
     .eq("entity_type", "match")
     .eq("entity_id", matchId)
-    .in("action", ["fixture_deadline_review_opened", "fixture_deadline_evidence_submitted"])
+    .eq("action", "fixture_deadline_review_opened")
     .order("created_at", { ascending: false });
   if (eventsResult.error) return NextResponse.json({ error: eventsResult.error.message }, { status: 400 });
-  const evidenceEvent = (eventsResult.data ?? []).find((event) => event.action === "fixture_deadline_evidence_submitted");
   const openedEvent = (eventsResult.data ?? []).find((event) => event.action === "fixture_deadline_review_opened");
   const finalDeadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name)?.toISOString() ?? null;
   const reviewUntil = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competition.name)?.toISOString() ?? null;
-  const deadlineCase = evidenceEvent
-    ? {
-        id: evidenceEvent.id,
-        status: "evidence_submitted",
-        final_deadline: finalDeadline,
-        review_until: reviewUntil,
-        evidence_note: typeof evidenceEvent.meta?.evidence_note === "string" ? evidenceEvent.meta.evidence_note : null,
-        evidence_submitted_at: evidenceEvent.created_at,
-      }
-    : openedEvent
-      ? { id: openedEvent.id, status: "pending_evidence", final_deadline: finalDeadline, review_until: reviewUntil, evidence_note: null, evidence_submitted_at: null }
-      : null;
+  const deadlineCase = openedEvent
+    ? { id: openedEvent.id, status: "pending_evidence", final_deadline: finalDeadline, review_until: reviewUntil, evidence_note: null, evidence_submitted_at: null }
+    : null;
   return NextResponse.json({
     case: deadlineCase,
     firstNamedPlayerId: match.player1_id,
     finalDeadline,
-    claimWindowOpens: getLeagueFixtureClaimWindowOpens(match.scheduled_for, competition.name)?.toISOString() ?? null,
+    claimWindowOpens: finalDeadline,
     reviewUntil: getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competition.name)?.toISOString() ?? null,
   });
 }
@@ -96,52 +85,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authorize(request);
   if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const body = await request.json().catch(() => ({}));
-  const matchId = String(body?.matchId ?? "").trim();
-  const evidenceNote = String(body?.evidenceNote ?? "").trim();
-  if (!UUID_PATTERN.test(matchId) || evidenceNote.length < 10 || evidenceNote.length > 1000) {
-    return NextResponse.json({ error: "Explain your attempts to arrange the fixture in between 10 and 1,000 characters." }, { status: 400 });
-  }
-  const context = await loadContext(auth.admin, matchId);
-  if ("error" in context) return NextResponse.json({ error: context.error }, { status: 404 });
-  const { match, competition } = context;
-  if (competition.competition_format !== "league" || competition.league_schedule_mode === "one_day" || match.is_archived || match.status === "complete" || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id) {
-    return NextResponse.json({ error: "This fixture is not eligible for an overdue-fixture claim." }, { status: 409 });
-  }
-  if (auth.appUser.linked_player_id !== match.player1_id) {
-    return NextResponse.json({ error: "Only the first-named player can lodge evidence under this rule." }, { status: 403 });
-  }
-  const claimWindowOpens = getLeagueFixtureClaimWindowOpens(match.scheduled_for, competition.name);
-  const finalDeadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name);
-  const reviewUntil = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competition.name);
-  if (!claimWindowOpens || !finalDeadline || !reviewUntil || new Date() < claimWindowOpens || new Date() > reviewUntil) {
-    return NextResponse.json({ error: "Evidence can be lodged from the Sunday before the fixture becomes overdue until the 24-hour review period closes." }, { status: 409 });
-  }
-  const now = new Date().toISOString();
-  const existingEvidence = await auth.admin.from("audit_logs").select("id,created_at").eq("entity_type", "match").eq("entity_id", match.id).eq("action", "fixture_deadline_evidence_submitted").order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (existingEvidence.error) return NextResponse.json({ error: existingEvidence.error.message }, { status: 400 });
-
-  const managers = await auth.admin.from("app_users").select("id").in("role", ["admin", "owner"]);
-  if (!managers.error) await sendPushToUserIds(auth.admin, (managers.data ?? []).map((row) => row.id), {
-    title: "Overdue fixture evidence submitted",
-    body: `${competition.name}: the first-named player has submitted evidence for organiser review.`,
-    url: `/matches/${match.id}`,
-    tag: `fixture-evidence-${match.id}`,
-  });
-  let savedEvidence = existingEvidence.data;
-  if (!savedEvidence) {
-    const insert = await auth.admin.from("audit_logs").insert({
-      actor_user_id: auth.user.id,
-      actor_email: auth.user.email ?? null,
-      actor_role: String(auth.appUser.role ?? "user"),
-      action: "fixture_deadline_evidence_submitted",
-      entity_type: "match",
-      entity_id: match.id,
-      summary: "First-named player submitted evidence of attempts to arrange an overdue fixture.",
-      meta: { competition_id: match.competition_id, evidence_note: evidenceNote },
-    }).select("id,created_at").single();
-    if (insert.error) return NextResponse.json({ error: insert.error.message }, { status: 400 });
-    savedEvidence = insert.data;
-  }
-  return NextResponse.json({ ok: true, case: { id: savedEvidence?.id, status: "evidence_submitted", evidence_submitted_at: savedEvidence?.created_at ?? now } });
+  return NextResponse.json({
+    error: "Scheduling evidence is no longer used for deadline outcomes. Record the result or submit a valid reschedule within the four-week playing window.",
+  }, { status: 410 });
 }

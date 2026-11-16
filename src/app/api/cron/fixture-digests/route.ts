@@ -23,8 +23,7 @@ type DigestItem = {
   opponentName: string;
   weekBeginning: string;
   finalDeadline: Date;
-  awardAt: Date;
-  automaticAwardName: string;
+  voidAt: Date;
   fixtureUrl: string;
   firstNamed: boolean;
 };
@@ -58,9 +57,9 @@ function itemHtml(item: DigestItem, overdue: boolean) {
     <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${overdue ? "#b91c1c" : "#0369a1"}">${escapeEmailHtml(item.competitionName)}</div>
     <div style="margin-top:5px;font-size:17px;font-weight:700;color:#0f172a">vs ${escapeEmailHtml(item.opponentName)}</div>
     <div style="margin-top:6px;font-size:14px;color:#475569">Week beginning ${escapeEmailHtml(displayWeek(item.weekBeginning))}</div>
-    ${item.firstNamed ? '<div style="margin-top:6px;font-size:13px;font-weight:600;color:#92400e">You are the first-named player and are responsible for ensuring the fixture is arranged and recorded.</div>' : ""}
+    ${item.firstNamed ? '<div style="margin-top:6px;font-size:13px;font-weight:600;color:#92400e">You are the first-named player. Please help arrange the match and make sure the result or agreed reschedule is recorded.</div>' : ""}
     <div style="margin-top:6px;font-size:13px;color:${overdue ? "#991b1b" : "#475569"}">Final playing deadline: <strong>${escapeEmailHtml(displayDeadline(item.finalDeadline))}</strong></div>
-    <div style="margin-top:6px;font-size:13px;color:${overdue ? "#991b1b" : "#475569"}">If unresolved and no arranging evidence is recorded, the fixture will be awarded to <strong>${escapeEmailHtml(item.automaticAwardName)}</strong> after <strong>${escapeEmailHtml(displayDeadline(item.awardAt))}</strong>.</div>
+    <div style="margin-top:6px;font-size:13px;color:${overdue ? "#991b1b" : "#475569"}">If no result or valid reschedule is recorded, the fixture will be voided with no points to either player after <strong>${escapeEmailHtml(displayDeadline(item.voidAt))}</strong>.</div>
     <div style="margin-top:9px"><a href="${escapeEmailHtml(item.fixtureUrl)}" style="font-size:13px;font-weight:700;color:#047857">Open fixture</a></div>
   </div>`;
 }
@@ -86,15 +85,16 @@ export async function GET(request: NextRequest) {
   if (!matches.length) return NextResponse.json({ ok: true, sent: 0, skipped: 0 });
   const matchIds = matches.map((match) => match.id);
   const playerIds = [...new Set(matches.flatMap((match) => [match.player1_id, match.player2_id]))];
-  const [playersResult, entriesResult, linkedUsersResult, submissionResult, priorDigestResult] = await Promise.all([
+  const [playersResult, entriesResult, linkedUsersResult, submissionResult, rescheduleResult, priorDigestResult] = await Promise.all([
     client.from("players").select("id,display_name,full_name").in("id", playerIds),
     client.from("competition_entries").select("id,competition_id,player_id,public_signup_id,fixture_access_token").in("competition_id", [...competitions.keys()]).eq("status", "approved").in("player_id", playerIds),
     client.from("app_users").select("id,linked_player_id,email").in("linked_player_id", playerIds),
     client.from("result_submissions").select("match_id").in("match_id", matchIds).in("status", ["pending", "approved"]),
+    client.from("league_reschedule_requests").select("match_id").in("match_id", matchIds).eq("status", "pending"),
     client.from("audit_logs").select("entity_id").eq("entity_type", "player").eq("action", "fixture_weekly_digest_sent").gte("created_at", `${today}T00:00:00Z`),
   ]);
-  if (playersResult.error || entriesResult.error || linkedUsersResult.error || submissionResult.error || priorDigestResult.error) {
-    return NextResponse.json({ error: playersResult.error?.message ?? entriesResult.error?.message ?? linkedUsersResult.error?.message ?? submissionResult.error?.message ?? priorDigestResult.error?.message }, { status: 400 });
+  if (playersResult.error || entriesResult.error || linkedUsersResult.error || submissionResult.error || rescheduleResult.error || priorDigestResult.error) {
+    return NextResponse.json({ error: playersResult.error?.message ?? entriesResult.error?.message ?? linkedUsersResult.error?.message ?? submissionResult.error?.message ?? rescheduleResult.error?.message ?? priorDigestResult.error?.message }, { status: 400 });
   }
   const entries = entriesResult.data ?? [];
   const signupIds = entries.map((entry) => entry.public_signup_id).filter(Boolean) as string[];
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
   const entryByCompetitionPlayer = new Map(entries.map((entry) => [`${entry.competition_id}:${entry.player_id}`, entry]));
   const signupById = new Map((signupResult.data ?? []).map((signup) => [signup.id, signup]));
   const contactByEntry = new Map((contactsResult.data ?? []).map((contact) => [contact.competition_entry_id, contact]));
-  const protectedMatches = new Set((submissionResult.data ?? []).map((row) => row.match_id));
+  const protectedMatches = new Set([...(submissionResult.data ?? []).map((row) => row.match_id), ...(rescheduleResult.data ?? []).map((row) => row.match_id)]);
   const alreadySent = new Set((priorDigestResult.data ?? []).map((row) => row.entity_id));
   const now = new Date();
   let sent = 0;
@@ -125,8 +125,8 @@ export async function GET(request: NextRequest) {
       if (!competitionName) continue;
       const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competitionName);
       const finalDeadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competitionName);
-      const awardAt = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competitionName);
-      if (!originalDeadline || !finalDeadline || !awardAt) continue;
+      const voidAt = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competitionName);
+      if (!originalDeadline || !finalDeadline || !voidAt) continue;
       const entry = entryByCompetitionPlayer.get(`${match.competition_id}:${playerId}`);
       const signup = signupById.get(entry?.public_signup_id ?? "");
       const tokenValue = entry?.fixture_access_token || signup?.fixture_access_token || null;
@@ -136,8 +136,7 @@ export async function GET(request: NextRequest) {
         opponentName: names.get(match.player1_id === playerId ? match.player2_id : match.player1_id) || "Opponent",
         weekBeginning: match.scheduled_for,
         finalDeadline,
-        awardAt,
-        automaticAwardName: names.get(match.player2_id) || "the second-named player",
+        voidAt,
         fixtureUrl: tokenValue ? `${siteUrl}/entrant/${tokenValue}` : `${siteUrl}/matches/${match.id}`,
         firstNamed: match.player1_id === playerId,
       };
@@ -156,15 +155,15 @@ export async function GET(request: NextRequest) {
     const playerName = names.get(playerId) || "Player";
     const sections = [
       upcoming.length ? `<h2 style="margin:22px 0 10px;font-size:19px;color:#0f172a">Your fixtures for the next two weeks</h2>${upcoming.sort((a, b) => a.weekBeginning.localeCompare(b.weekBeginning)).map((item) => itemHtml(item, false)).join("")}` : "",
-      outstanding.length ? `<h2 style="margin:22px 0 10px;font-size:19px;color:#991b1b">Outstanding fixtures</h2><p style="margin:0 0 12px;color:#7f1d1d">These still need to be played or correctly rescheduled. Each fixture shows the final playing deadline and when the default walkover will be confirmed after the 24-hour evidence review.</p>${outstanding.sort((a, b) => a.finalDeadline.getTime() - b.finalDeadline.getTime()).map((item) => itemHtml(item, true)).join("")}` : "",
+      outstanding.length ? `<h2 style="margin:22px 0 10px;font-size:19px;color:#991b1b">Outstanding fixtures</h2><p style="margin:0 0 12px;color:#7f1d1d">These still need to be played or correctly rescheduled. Each fixture shows the final playing deadline and when it will be voided with no points if it remains unresolved.</p>${outstanding.sort((a, b) => a.finalDeadline.getTime() - b.finalDeadline.getTime()).map((item) => itemHtml(item, true)).join("")}` : "",
     ].join("");
     const textLines = [
       `Hi ${playerName.split(/\s+/)[0]},`,
       "",
       "Here is your Sunday Rack & Frame fixture update.",
       "",
-      ...upcoming.flatMap((item) => [`NEXT TWO WEEKS: ${item.competitionName} — vs ${item.opponentName} — week beginning ${displayWeek(item.weekBeginning)} — final playing deadline ${displayDeadline(item.finalDeadline)} — if unresolved and no arranging evidence is recorded, awarded to ${item.automaticAwardName} after ${displayDeadline(item.awardAt)}`, item.fixtureUrl]),
-      ...outstanding.flatMap((item) => [`OUTSTANDING: ${item.competitionName} — vs ${item.opponentName} — final playing deadline ${displayDeadline(item.finalDeadline)} — if unresolved and no arranging evidence is recorded, awarded to ${item.automaticAwardName} after ${displayDeadline(item.awardAt)}`, item.fixtureUrl]),
+      ...upcoming.flatMap((item) => [`NEXT TWO WEEKS: ${item.competitionName} — vs ${item.opponentName} — week beginning ${displayWeek(item.weekBeginning)} — final playing deadline ${displayDeadline(item.finalDeadline)} — if no result or valid reschedule is recorded, void with no points after ${displayDeadline(item.voidAt)}`, item.fixtureUrl]),
+      ...outstanding.flatMap((item) => [`OUTSTANDING: ${item.competitionName} — vs ${item.opponentName} — final playing deadline ${displayDeadline(item.finalDeadline)} — if no result or valid reschedule is recorded, void with no points after ${displayDeadline(item.voidAt)}`, item.fixtureUrl]),
       "",
       "Rack & Frame Club",
     ];

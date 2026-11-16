@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { awardDeadlineWalkover } from "@/lib/fixture-deadline-award";
+import { voidDeadlineFixture } from "@/lib/fixture-deadline-award";
 import { getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -39,21 +39,19 @@ export async function GET(request: NextRequest) {
   const matchIds = due.map((match) => match.id);
   const [submissionsResult, eventsResult, playersResult] = await Promise.all([
     auth.client.from("result_submissions").select("match_id").in("match_id", matchIds).in("status", ["pending", "approved"]),
-    auth.client.from("audit_logs").select("entity_id,action,created_at").eq("entity_type", "match").in("entity_id", matchIds).in("action", ["fixture_deadline_evidence_submitted", "fixture_deadline_walkover_awarded"]),
+    auth.client.from("audit_logs").select("entity_id,action,created_at").eq("entity_type", "match").in("entity_id", matchIds).in("action", ["fixture_deadline_walkover_awarded", "fixture_deadline_voided"]),
     auth.client.from("players").select("id,display_name,full_name").in("id", [...new Set(due.flatMap((match) => [match.player1_id, match.player2_id]).filter(Boolean) as string[])]),
   ]);
   if (submissionsResult.error || eventsResult.error || playersResult.error) return NextResponse.json({ error: submissionsResult.error?.message || eventsResult.error?.message || playersResult.error?.message }, { status: 400 });
   const protectedMatches = new Set((submissionsResult.data ?? []).map((row) => String(row.match_id)));
-  const awardedMatches = new Set((eventsResult.data ?? []).filter((row) => row.action === "fixture_deadline_walkover_awarded").map((row) => String(row.entity_id)));
-  const evidenceMatches = new Set((eventsResult.data ?? []).filter((row) => row.action === "fixture_deadline_evidence_submitted").map((row) => String(row.entity_id)));
+  const closedMatches = new Set((eventsResult.data ?? []).filter((row) => ["fixture_deadline_walkover_awarded", "fixture_deadline_voided"].includes(row.action)).map((row) => String(row.entity_id)));
   const names = new Map((playersResult.data ?? []).map((player) => [player.id, player.full_name?.trim() || player.display_name]));
-  return NextResponse.json({ fixtures: due.filter((match) => !protectedMatches.has(match.id) && !awardedMatches.has(match.id)).map((match) => ({
+  return NextResponse.json({ fixtures: due.filter((match) => !protectedMatches.has(match.id) && !closedMatches.has(match.id)).map((match) => ({
     id: match.id,
     competitionName: competitions.get(match.competition_id) || "League",
     playerOne: names.get(match.player1_id ?? "") || "First-named player",
     playerTwo: names.get(match.player2_id ?? "") || "Second-named player",
     reviewUntil: getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competitions.get(match.competition_id))?.toISOString() ?? null,
-    evidenceSubmitted: evidenceMatches.has(match.id),
   })) });
 }
 
@@ -70,16 +68,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: competitionResult.error?.message || "This fixture does not use the weekly deadline workflow." }, { status: 400 });
   }
   const reviewUntil = getLeagueFixtureWalkoverReviewUntil(matchResult.data.scheduled_for, competitionResult.data?.name);
-  if (!reviewUntil || reviewUntil > new Date()) return NextResponse.json({ error: "The fixture's 24-hour review period has not closed yet." }, { status: 409 });
-  const [evidence, submission] = await Promise.all([
-    auth.client.from("audit_logs").select("id").eq("entity_type", "match").eq("entity_id", matchId).eq("action", "fixture_deadline_evidence_submitted").limit(1).maybeSingle(),
+  if (!reviewUntil || reviewUntil > new Date()) return NextResponse.json({ error: "The fixture's final playing deadline has not passed yet." }, { status: 409 });
+  const [submission, reschedule] = await Promise.all([
     auth.client.from("result_submissions").select("id").eq("match_id", matchId).in("status", ["pending", "approved"]).limit(1).maybeSingle(),
+    auth.client.from("league_reschedule_requests").select("id").eq("match_id", matchId).eq("status", "pending").limit(1).maybeSingle(),
   ]);
-  if (evidence.error || submission.error) return NextResponse.json({ error: evidence.error?.message || submission.error?.message }, { status: 400 });
-  if (submission.data) return NextResponse.json({ error: "A result has already been submitted. Review it in Results & Approvals instead of awarding a walkover." }, { status: 409 });
-  if (evidence.data) return NextResponse.json({ error: "Arranging evidence has been submitted. Open the fixture and review the evidence before deciding the outcome." }, { status: 409 });
+  if (submission.error || reschedule.error) return NextResponse.json({ error: submission.error?.message || reschedule.error?.message }, { status: 400 });
+  if (submission.data) return NextResponse.json({ error: "A result has already been submitted. Review it in Results & Approvals instead of voiding the fixture." }, { status: 409 });
+  if (reschedule.data) return NextResponse.json({ error: "A reschedule request is recorded for this fixture and must be reviewed before it can be voided." }, { status: 409 });
   try {
-    const result = await awardDeadlineWalkover(auth.client, matchId, { user: auth.user, role: auth.role });
+    const result = await voidDeadlineFixture(auth.client, matchId, { user: auth.user, role: auth.role });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The deadline decision could not be saved." }, { status: 400 });

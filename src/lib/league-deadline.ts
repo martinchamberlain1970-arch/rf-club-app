@@ -49,14 +49,13 @@ export function getLeagueFixtureFinalDeadline(scheduledFor: string | null | unde
   return standardFinalDeadline;
 }
 
-/** The first-named player can lodge evidence from the Sunday before the final deadline. */
+/** Legacy claim-window helper retained for existing recorded deadline cases. */
 export function getLeagueFixtureClaimWindowOpens(scheduledFor: string | null | undefined, competitionName?: string | null) {
   const finalDeadline = getLeagueFixtureFinalDeadline(scheduledFor, competitionName);
   return finalDeadline ? new Date(finalDeadline.getTime() - 7 * 24 * 60 * 60 * 1000) : null;
 }
 
-/** A walkover remains provisional for 24 hours after the playing window closes. */
+/** Legacy-named helper: unresolved fixtures become void as soon as the final playing deadline passes. */
 export function getLeagueFixtureWalkoverReviewUntil(scheduledFor: string | null | undefined, competitionName?: string | null) {
-  const finalDeadline = getLeagueFixtureFinalDeadline(scheduledFor, competitionName);
-  return finalDeadline ? new Date(finalDeadline.getTime() + 24 * 60 * 60 * 1000) : null;
+  return getLeagueFixtureFinalDeadline(scheduledFor, competitionName);
 }

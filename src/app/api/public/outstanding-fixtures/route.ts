@@ -72,8 +72,8 @@ export async function GET() {
     if (!competition || submittedMatchIds.has(match.id) || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id || !match.scheduled_for) return [];
     const originalDeadline = getLeagueFixtureDeadline(match.scheduled_for, competition.name);
     const deadline = getLeagueFixtureFinalDeadline(match.scheduled_for, competition.name);
-    const awardAt = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competition.name);
-    if (!originalDeadline || !deadline || !awardAt) return [];
+    const voidAt = getLeagueFixtureWalkoverReviewUntil(match.scheduled_for, competition.name);
+    if (!originalDeadline || !deadline || !voidAt) return [];
     const reschedule = latestRescheduleByMatch.get(match.id) ?? null;
     const overdue = deadline.getTime() < now;
     if (originalDeadline.getTime() >= now && !reschedule) return [];
@@ -85,8 +85,7 @@ export async function GET() {
       playerTwo: playerNameById.get(match.player2_id) || "Player",
       scheduledFor: match.scheduled_for,
       deadline: deadline.toISOString(),
-      awardAt: awardAt.toISOString(),
-      automaticAwardName: playerNameById.get(match.player2_id) || "the second-named player",
+      voidAt: voidAt.toISOString(),
       week: match.round_no ?? null,
       matchNo: match.match_no ?? null,
       status: match.status,

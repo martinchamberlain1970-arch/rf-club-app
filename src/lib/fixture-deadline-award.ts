@@ -4,13 +4,14 @@ import { brandedEmail, escapeEmailHtml } from "@/lib/email-template";
 import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 import { sendPushToUserIds } from "@/lib/push-server";
 
-type AwardActor = { user: { id: string | null; email?: string | null }; role: string };
+type DeadlineActor = { user: { id: string | null; email?: string | null }; role: string };
 
 const systemFromAddress = () => process.env.SYSTEM_EMAIL_FROM_ADDRESS?.trim() || "information@rackandframe.app";
 
-export async function awardDeadlineWalkover(client: SupabaseClient, matchId: string, actor: AwardActor) {
+/** Close an unresolved weekly fixture with no winner and no points. */
+export async function voidDeadlineFixture(client: SupabaseClient, matchId: string, actor: DeadlineActor) {
   const matchResult = await client.from("matches")
-    .select("id,competition_id,scheduled_for,status,player1_id,player2_id,best_of,owner_user_id")
+    .select("id,competition_id,scheduled_for,status,player1_id,player2_id")
     .eq("id", matchId).maybeSingle();
   if (matchResult.error) throw new Error(matchResult.error.message);
   const match = matchResult.data;
@@ -18,7 +19,7 @@ export async function awardDeadlineWalkover(client: SupabaseClient, matchId: str
     throw new Error("This fixture is no longer available for a deadline decision.");
   }
 
-  const competitionResult = await client.from("competitions").select("id,name,sport_type").eq("id", match.competition_id).maybeSingle();
+  const competitionResult = await client.from("competitions").select("id,name").eq("id", match.competition_id).maybeSingle();
   if (competitionResult.error || !competitionResult.data) throw new Error(competitionResult.error?.message || "Competition not found.");
   const competition = competitionResult.data;
   const playerIds = [match.player1_id, match.player2_id];
@@ -31,58 +32,35 @@ export async function awardDeadlineWalkover(client: SupabaseClient, matchId: str
   const playerOneName = names.get(match.player1_id) || "First-named player";
   const playerTwoName = names.get(match.player2_id) || "Second-named player";
 
-  let ownerUserId = match.owner_user_id as string | null;
-  if (!ownerUserId) {
-    const linked = await client.from("app_users").select("id").in("linked_player_id", playerIds).limit(1).maybeSingle();
-    ownerUserId = linked.data?.id ?? null;
-  }
-  if (!ownerUserId) {
-    const manager = await client.from("app_users").select("id").in("role", ["owner", "admin"]).order("created_at", { ascending: true }).limit(1).maybeSingle();
-    ownerUserId = manager.data?.id ?? null;
-  }
-  if (!ownerUserId) throw new Error("No valid account is available to record the walkover frames.");
-
-  const awardedCount = competition.sport_type === "snooker" ? 1 : Math.max(1, Number(match.best_of ?? 1));
   const clearFrames = await client.from("frames").delete().eq("match_id", match.id);
   if (clearFrames.error) throw new Error(clearFrames.error.message);
-  const frameInsert = await client.from("frames").insert(Array.from({ length: awardedCount }, (_, index) => ({
-    match_id: match.id,
-    frame_number: index + 1,
-    owner_user_id: ownerUserId,
-    winner_player_id: match.player2_id,
-    break_and_run: false,
-    run_out_against_break: false,
-    is_walkover_award: true,
-    team1_points: 0,
-    team2_points: 0,
-    breaks_over_30_team1_values: [],
-    breaks_over_30_team2_values: [],
-    breaks_over_30_team1: 0,
-    breaks_over_30_team2: 0,
-    high_break_team1: 0,
-    high_break_team2: 0,
-  })));
-  if (frameInsert.error) throw new Error(frameInsert.error.message);
-  const matchUpdate = await client.from("matches").update({ status: "complete", winner_player_id: match.player2_id }).eq("id", match.id).in("status", ["pending", "in_progress"]).select("id").maybeSingle();
+  const rejectSubmissions = await client.from("result_submissions").update({
+    status: "rejected",
+    reviewed_by_user_id: actor.user.id,
+    reviewed_at: new Date().toISOString(),
+    note: "Fixture voided after the four-week playing window closed without a result or valid reschedule.",
+  }).eq("match_id", match.id).neq("status", "rejected");
+  if (rejectSubmissions.error) throw new Error(rejectSubmissions.error.message);
+  const matchUpdate = await client.from("matches").update({ status: "complete", winner_player_id: null }).eq("id", match.id).in("status", ["pending", "in_progress"]).select("id").maybeSingle();
   if (matchUpdate.error || !matchUpdate.data) throw new Error(matchUpdate.error?.message || "The fixture changed before the decision could be saved.");
 
   await client.from("audit_logs").insert({
     actor_user_id: actor.user.id,
     actor_email: actor.user.email ?? null,
     actor_role: actor.role,
-    action: "fixture_deadline_walkover_awarded",
+    action: "fixture_deadline_voided",
     entity_type: "match",
     entity_id: match.id,
-    summary: `The overdue fixture was awarded to ${playerTwoName} after the review period closed.`,
-    meta: { competition_id: match.competition_id, winner_player_id: match.player2_id, decision_source: actor.role === "system" ? "automatic" : "manager_queue" },
+    summary: "The unresolved fixture was voided after the four-week playing window closed. Neither player received points.",
+    meta: { competition_id: match.competition_id, decision_source: actor.role === "system" ? "automatic" : "manager_queue" },
   });
 
   const participantUsers = await client.from("app_users").select("id").in("linked_player_id", playerIds);
   if (!participantUsers.error) await sendPushToUserIds(client, (participantUsers.data ?? []).map((row) => row.id), {
-    title: "Fixture outcome confirmed",
-    body: `${competition.name}: ${playerTwoName} has been awarded the overdue fixture against ${playerOneName}.`,
+    title: "Fixture voided",
+    body: `${competition.name}: ${playerOneName} vs ${playerTwoName} was not completed or validly rescheduled within the playing window. No points were awarded.`,
     url: `/matches/${match.id}`,
-    tag: `fixture-awarded-${match.id}`,
+    tag: `fixture-voided-${match.id}`,
   });
 
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://rf-club-app.vercel.app").replace(/\/$/, "");
@@ -97,23 +75,22 @@ export async function awardDeadlineWalkover(client: SupabaseClient, matchId: str
     const email = candidate?.email?.trim().toLowerCase() || null;
     if (!email) { emailResults.push({ playerId, status: "no_email" }); continue; }
     if (!hasMailerConfig()) { emailResults.push({ playerId, status: "not_configured" }); continue; }
-    const isWinner = playerId === match.player2_id;
     const recipientName = names.get(playerId) || "Player";
     const firstName = recipientName.split(/\s+/)[0] || "Player";
-    const outcome = `${playerTwoName} has been awarded the overdue fixture against ${playerOneName} after the playing deadline and review period closed.`;
-    const subject = `Fixture outcome confirmed: ${playerOneName} vs ${playerTwoName}`;
-    const text = `Hi ${firstName},\n\n${outcome}\n\nCompetition: ${competition.name}\nOutcome: ${playerTwoName} awarded the win.\n\nView your fixtures: ${siteUrl}/my-fixtures\n\nThis is an automated message; replies are not monitored.\n\nRack & Frame Club`;
+    const outcome = `${playerOneName} vs ${playerTwoName} has been voided because no result or valid reschedule was recorded within the permitted playing window. Neither player receives points.`;
+    const subject = `Fixture voided: ${playerOneName} vs ${playerTwoName}`;
+    const text = `Hi ${firstName},\n\n${outcome}\n\nCompetition: ${competition.name}\nOutcome: void — no points awarded.\n\nView your fixtures: ${siteUrl}/my-fixtures\n\nThis is an automated message; replies are not monitored.\n\nRack & Frame Club`;
     const html = brandedEmail({
-      eyebrow: "Overdue fixture decision",
-      title: isWinner ? "The fixture has been awarded to you" : "Fixture outcome confirmed",
+      eyebrow: "Fixture deadline outcome",
+      title: "The fixture has been voided",
       intro: `Hi ${firstName}, ${outcome}`,
-      bodyHtml: `<div style="padding:16px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0"><div style="font-size:14px;color:#64748b">Competition</div><div style="margin-top:4px;font-weight:800;color:#0f172a">${escapeEmailHtml(competition.name)}</div><div style="margin-top:14px;font-size:14px;color:#64748b">Confirmed outcome</div><div style="margin-top:4px;font-weight:800;color:#0f172a">${escapeEmailHtml(playerTwoName)} awarded the win</div></div>`,
+      bodyHtml: `<div style="padding:16px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0"><div style="font-size:14px;color:#64748b">Competition</div><div style="margin-top:4px;font-weight:800;color:#0f172a">${escapeEmailHtml(competition.name)}</div><div style="margin-top:14px;font-size:14px;color:#64748b">Confirmed outcome</div><div style="margin-top:4px;font-weight:800;color:#0f172a">Void — no points awarded to either player</div></div>`,
       primaryButton: { label: "View my fixtures", url: `${siteUrl}/my-fixtures` },
       footerNote: "This outcome notification is sent automatically from Rack & Frame Information. Replies are not monitored.",
     });
     try {
       const sent = await sendEmail({ to: email, subject, text, html, fromAddress: systemFromAddress(), fromName: "Rack & Frame Information", replyTo: null });
-      await client.from("audit_logs").insert({ actor_user_id: actor.user.id, actor_email: actor.user.email ?? null, actor_role: actor.role, action: "fixture_deadline_outcome_email_sent", entity_type: "match", entity_id: match.id, summary: `Deadline outcome email sent to ${recipientName}.`, meta: { recipient: email, player_id: playerId, winner: isWinner, message_id: sent.messageId, provider: sent.provider } });
+      await client.from("audit_logs").insert({ actor_user_id: actor.user.id, actor_email: actor.user.email ?? null, actor_role: actor.role, action: "fixture_deadline_outcome_email_sent", entity_type: "match", entity_id: match.id, summary: `Deadline outcome email sent to ${recipientName}.`, meta: { recipient: email, player_id: playerId, outcome: "void", message_id: sent.messageId, provider: sent.provider } });
       emailResults.push({ playerId, status: "sent" });
     } catch (error) {
       await client.from("audit_logs").insert({ actor_user_id: actor.user.id, actor_email: actor.user.email ?? null, actor_role: actor.role, action: "fixture_deadline_outcome_email_failed", entity_type: "match", entity_id: match.id, summary: `Deadline outcome email to ${recipientName} failed.`, meta: { recipient: email, player_id: playerId, error: error instanceof Error ? error.message : "Email failed." } });
@@ -121,5 +98,5 @@ export async function awardDeadlineWalkover(client: SupabaseClient, matchId: str
     }
   }
 
-  return { matchId: match.id, winnerPlayerId: match.player2_id, winnerName: playerTwoName, emailResults };
+  return { matchId: match.id, outcome: "void" as const, emailResults };
 }

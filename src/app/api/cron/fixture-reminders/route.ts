@@ -89,7 +89,7 @@ async function sendFixtureReminder(
     ? `The original fixture week, which ended ${formatDeadline(originalDeadline)}, has passed, but the fixture remains inside its permitted four-week playing window.`
     : `This is the final week for this fixture. The playing window closes ${formatDeadline(finalDeadline)}.`;
   const actionText = phase === "final"
-    ? "Please arrange and play the fixture now, or ensure an agreed reschedule is correctly requested in Rack & Frame. If it remains unplayed after the final deadline, the normal outcome is a walkover to the second-named player following a 24-hour review period."
+    ? "Please arrange and play the fixture now, or ensure an agreed reschedule is correctly requested in Rack & Frame. If no result or valid reschedule is recorded by the final playing deadline, the fixture will be voided and neither player will receive points."
     : `Please arrange the fixture and record the result in Rack & Frame. If you need to move it, submit a reschedule request in the app. The final playing deadline is ${formatDeadline(finalDeadline)}.`;
 
   let sent = 0;
