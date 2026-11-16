@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil, hasLeagueFixtureTransitionGrace } from "@/lib/league-deadline";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -92,6 +92,7 @@ export async function GET() {
       matchNo: match.match_no ?? null,
       status: match.status,
       overdue,
+      graceApplied: hasLeagueFixtureTransitionGrace(deadlineScheduledFor, competition.name),
       originalScheduledFor: reschedule?.original_scheduled_for ?? null,
       rescheduledTo: reschedule?.requested_scheduled_for ?? null,
     }];

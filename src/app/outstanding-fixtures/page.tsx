@@ -6,7 +6,7 @@ import RequireAuth from "@/components/RequireAuth";
 import ScreenHeader from "@/components/ScreenHeader";
 import useAdminStatus from "@/components/useAdminStatus";
 import { logAudit } from "@/lib/audit";
-import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil } from "@/lib/league-deadline";
+import { buildLeagueFixtureAnchorMap, getLeagueFixtureDeadline, getLeagueFixtureFinalDeadline, getLeagueFixtureWalkoverReviewUntil, hasLeagueFixtureTransitionGrace } from "@/lib/league-deadline";
 import { resultSubmittedRescheduleNote } from "@/lib/reschedule-result-guard";
 import { supabase } from "@/lib/supabase";
 
@@ -56,6 +56,7 @@ type OutstandingFixture = {
   reschedule: RescheduleRow | null;
   overdue: boolean;
   decisionDue: boolean;
+  graceApplied: boolean;
 };
 
 function displayDate(value: string | null) {
@@ -181,6 +182,7 @@ export default function OutstandingFixturesPage() {
         reschedule,
         overdue,
         decisionDue: awardAt.getTime() < now.getTime(),
+        graceApplied: hasLeagueFixtureTransitionGrace(deadlineScheduledFor, competition.name),
       }];
     }).sort((a, b) => a.deadline.getTime() - b.deadline.getTime() || a.competition.name.localeCompare(b.competition.name));
   }, [competitionById, deadlineAnchorByMatch, latestRescheduleByMatch, matches, playerNameById, submittedMatchIds]);
@@ -214,6 +216,7 @@ export default function OutstandingFixturesPage() {
     const fixtureLines = sportFixtures.flatMap((fixture) => [
       `• ${fixture.playerOne} vs ${fixture.playerTwo} (${fixture.competition.name})`,
       `  Final playing deadline: ${displayDeadline(fixture.deadline)}`,
+      ...(fixture.graceApplied ? ["  Exceptional grace period applies until Sunday 22 November at 10:30pm."] : []),
       `  If no result or valid reschedule is recorded, the fixture will be voided with no points to either player after ${displayDeadline(fixture.awardAt)}.`,
     ]);
     const text = [
@@ -424,7 +427,9 @@ export default function OutstandingFixturesPage() {
                           ? "Rescheduled · within new window"
                           : fixture.overdue
                             ? "Overdue · no reschedule agreed"
-                            : "Within extended playing window";
+                            : fixture.graceApplied
+                              ? "Exceptional grace period · ends 22 November"
+                              : "Within extended playing window";
                     const contacts = contactsByMatch[fixture.match.id];
                     return (
                     <article key={fixture.match.id} className={`rounded-2xl border bg-white p-4 shadow-sm ${fixture.overdue && !pendingReschedule ? "border-rose-200" : pendingReschedule ? "border-violet-200" : "border-amber-200"}`}>
@@ -439,6 +444,7 @@ export default function OutstandingFixturesPage() {
                           <p className="mt-1 text-sm text-slate-600">Week {fixture.match.round_no ?? "—"} · Match {fixture.match.match_no ?? "—"} · Week beginning {displayDate(fixture.match.scheduled_for)}</p>
                           <p className={`mt-2 text-sm font-semibold ${fixture.overdue ? "text-rose-800" : "text-slate-700"}`}>Final playing deadline: {displayDeadline(fixture.deadline)}</p>
                           <p className="mt-1 text-sm font-semibold text-slate-700">Default outcome: void with no points to either player after {displayDeadline(fixture.awardAt)}, unless a result or valid reschedule is recorded.</p>
+                          {fixture.graceApplied ? <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-950">One-off grace period: this fixture remains playable until Sunday 22 November at 10:30pm. Normal enforcement begins Monday 23 November.</p> : null}
                           {fixture.reschedule ? <p className={`mt-2 rounded-xl border px-3 py-2 text-sm ${pendingReschedule ? "border-violet-200 bg-violet-50 text-violet-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>{pendingReschedule ? "Requested move" : "Moved"} from the week beginning <strong>{displayDate(fixture.reschedule.original_scheduled_for)}</strong> to <strong>{displayDate(fixture.reschedule.requested_scheduled_for)}</strong>{pendingReschedule ? "; this still needs approval." : "."}</p> : null}
                           <div className="mt-4 flex flex-wrap gap-2">
                             {decisionDue ? <button type="button" disabled={decisionBusyId === fixture.match.id} onClick={() => void voidExpiredFixture(fixture)} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-800 disabled:opacity-50">{decisionBusyId === fixture.match.id ? "Voiding & emailing…" : "Void fixture — no points"}</button> : null}
