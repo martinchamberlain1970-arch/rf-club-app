@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase";
 type NavigationItem = {
   href: string;
   label: string;
+  mark: string;
   adminOnly?: boolean;
   superOnly?: boolean;
 };
@@ -26,61 +27,61 @@ const navigationGroups: NavigationGroup[] = [
   {
     label: "Play",
     items: [
-      { href: "/my-fixtures", label: "My fixtures" },
-      { href: "/table-bookings", label: "Table bookings" },
-      { href: "/quick-match", label: "Quick match" },
+      { href: "/my-fixtures", label: "My fixtures", mark: "MF" },
+      { href: "/table-bookings", label: "Table bookings", mark: "TB" },
+      { href: "/quick-match", label: "Quick match", mark: "QM" },
     ],
   },
   {
     label: "Results & performance",
     items: [
-      { href: "/rankings", label: "Rankings" },
-      { href: "/pool-achievements", label: "Break & Run table" },
-      { href: "/handicaps", label: "Handicaps" },
-      { href: "/high-breaks", label: "High breaks" },
-      { href: "/stats", label: "Club statistics", adminOnly: true },
+      { href: "/rankings", label: "Rankings", mark: "RK" },
+      { href: "/pool-achievements", label: "Break & Run table", mark: "BR" },
+      { href: "/handicaps", label: "Handicaps", mark: "HC" },
+      { href: "/high-breaks", label: "High breaks", mark: "HB" },
+      { href: "/stats", label: "Club statistics", mark: "CS", adminOnly: true },
     ],
   },
   {
     label: "Competitions",
     items: [
-      { href: "/events", label: "Competition centre" },
-      { href: "/events/new", label: "Create competition", adminOnly: true },
-      { href: "/signups", label: "Competition entries", adminOnly: true },
-      { href: "/results", label: "Results & approvals", adminOnly: true },
-      { href: "/live", label: "Live overview", adminOnly: true },
-      { href: "/weekly-reviews", label: "Weekly reviews", superOnly: true },
+      { href: "/events", label: "Competition centre", mark: "CC" },
+      { href: "/events/new", label: "Create competition", mark: "NC", adminOnly: true },
+      { href: "/signups", label: "Competition entries", mark: "CE", adminOnly: true },
+      { href: "/results", label: "Results & approvals", mark: "RA", adminOnly: true },
+      { href: "/live", label: "Live overview", mark: "LV", adminOnly: true },
+      { href: "/weekly-reviews", label: "Weekly reviews", mark: "WR", superOnly: true },
     ],
   },
   {
     label: "Club management",
     items: [
-      { href: "/outstanding-fixtures", label: "Outstanding fixtures", adminOnly: true },
-      { href: "/players", label: "Players", adminOnly: true },
-      { href: "/locations", label: "Locations", superOnly: true },
-      { href: "/snooker-handicap-exceptions", label: "Handicap exceptions", superOnly: true },
-      { href: "/playing-window-exceptions", label: "Early-play exceptions", superOnly: true },
+      { href: "/outstanding-fixtures", label: "Outstanding fixtures", mark: "OF", adminOnly: true },
+      { href: "/players", label: "Players", mark: "PL", adminOnly: true },
+      { href: "/locations", label: "Locations", mark: "LO", superOnly: true },
+      { href: "/snooker-handicap-exceptions", label: "Handicap exceptions", mark: "HE", superOnly: true },
+      { href: "/playing-window-exceptions", label: "Early-play exceptions", mark: "EP", superOnly: true },
     ],
   },
   {
     label: "Account & guidance",
     items: [
-      { href: "/notifications", label: "Notifications" },
-      { href: "/install", label: "Install the app" },
-      { href: "/rules", label: "Rules" },
-      { href: "/help", label: "Help & user guide" },
-      { href: "/premium", label: "Feature access" },
-      { href: "/legal", label: "Legal & privacy" },
+      { href: "/notifications", label: "Notifications", mark: "NT" },
+      { href: "/install", label: "Install the app", mark: "IN" },
+      { href: "/rules", label: "Rules", mark: "RU" },
+      { href: "/help", label: "Help & user guide", mark: "HG" },
+      { href: "/premium", label: "Feature access", mark: "FA" },
+      { href: "/legal", label: "Legal & privacy", mark: "LP" },
     ],
   },
   {
     label: "System owner",
     items: [
-      { href: "/signup-requests", label: "Access requests", superOnly: true },
-      { href: "/emails", label: "System email activity", superOnly: true },
-      { href: "/audit", label: "Audit log", superOnly: true },
-      { href: "/usage", label: "Accounts & activity", superOnly: true },
-      { href: "/backup", label: "Data management", superOnly: true },
+      { href: "/signup-requests", label: "Access requests", mark: "AR", superOnly: true },
+      { href: "/emails", label: "System email activity", mark: "EM", superOnly: true },
+      { href: "/audit", label: "Audit log", mark: "AL", superOnly: true },
+      { href: "/usage", label: "Accounts & activity", mark: "UA", superOnly: true },
+      { href: "/backup", label: "Data management", mark: "DM", superOnly: true },
     ],
   },
 ];
@@ -165,7 +166,8 @@ function NavigationContent({
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4" aria-label="Main navigation">
         <Link href="/" onClick={(event) => onNavigate("/", event)} aria-current={pathname === "/" ? "page" : undefined} className={`mb-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold ${pathname === "/" ? "bg-cyan-300 text-[#0b1730]" : "text-slate-200 hover:bg-white/10"}`}>
-          <span aria-hidden="true">⌂</span> Dashboard
+          <span aria-hidden="true" className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-[10px] font-black ${pathname === "/" ? "bg-[#0b1730] text-cyan-200" : "bg-white/10 text-slate-300"}`}>HM</span>
+          Dashboard
         </Link>
         <div className="space-y-1">
           {groups.map((group) => {
@@ -181,7 +183,7 @@ function NavigationContent({
                 {expanded ? <div className="mb-2 space-y-0.5 border-l border-white/10 pl-2">
                   {group.items.map((item) => {
                     const active = itemMatchesPath(pathname, currentSearch, item.href);
-                    return <Link key={item.href} href={item.href} onClick={(event) => onNavigate(item.href, event)} aria-current={active ? "page" : undefined} className={`block rounded-lg px-3 py-2 text-sm transition ${active ? "bg-white/15 font-bold text-cyan-200 ring-1 ring-white/10" : "font-medium text-slate-300 hover:bg-white/10 hover:text-white"}`}>{item.label}</Link>;
+                    return <Link key={item.href} href={item.href} onClick={(event) => onNavigate(item.href, event)} aria-current={active ? "page" : undefined} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${active ? "bg-white/15 font-bold text-cyan-200 ring-1 ring-white/10" : "font-medium text-slate-300 hover:bg-white/10 hover:text-white"}`}><span aria-hidden="true" className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-[10px] font-black ${active ? "bg-cyan-300 text-[#0b1730]" : "bg-white/10 text-slate-300"}`}>{item.mark}</span><span>{item.label}</span></Link>;
                   })}
                 </div> : null}
               </section>
