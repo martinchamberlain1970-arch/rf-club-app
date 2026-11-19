@@ -27,7 +27,7 @@ const navigationGroups: NavigationGroup[] = [
     label: "Play",
     items: [
       { href: "/my-fixtures", label: "My fixtures" },
-      { href: "/table-bookings", label: "Book a table" },
+      { href: "/table-bookings", label: "Table bookings" },
       { href: "/quick-match", label: "Quick match" },
     ],
   },
@@ -55,7 +55,6 @@ const navigationGroups: NavigationGroup[] = [
   {
     label: "Club management",
     items: [
-      { href: "/table-bookings", label: "Table bookings", adminOnly: true },
       { href: "/outstanding-fixtures", label: "Outstanding fixtures", adminOnly: true },
       { href: "/players", label: "Players", adminOnly: true },
       { href: "/locations", label: "Locations", superOnly: true },
