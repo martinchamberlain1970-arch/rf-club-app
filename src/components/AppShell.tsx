@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShellContextProvider } from "@/components/AppShellContext";
 import ConfirmModal from "@/components/ConfirmModal";
+import NavIcon, { iconForHref, type NavIconName } from "@/components/NavIcon";
 import useAdminStatus from "@/components/useAdminStatus";
 import { logAudit } from "@/lib/audit";
 import { supabase } from "@/lib/supabase";
@@ -13,7 +14,6 @@ import { supabase } from "@/lib/supabase";
 type NavigationItem = {
   href: string;
   label: string;
-  mark: string;
   adminOnly?: boolean;
   superOnly?: boolean;
 };
@@ -27,61 +27,61 @@ const navigationGroups: NavigationGroup[] = [
   {
     label: "Play",
     items: [
-      { href: "/my-fixtures", label: "My fixtures", mark: "MF" },
-      { href: "/table-bookings", label: "Table bookings", mark: "TB" },
-      { href: "/quick-match", label: "Quick match", mark: "QM" },
+      { href: "/my-fixtures", label: "My fixtures" },
+      { href: "/table-bookings", label: "Table bookings" },
+      { href: "/quick-match", label: "Quick match" },
     ],
   },
   {
     label: "Results & performance",
     items: [
-      { href: "/rankings", label: "Rankings", mark: "RK" },
-      { href: "/pool-achievements", label: "Break & Run table", mark: "BR" },
-      { href: "/handicaps", label: "Handicaps", mark: "HC" },
-      { href: "/high-breaks", label: "High breaks", mark: "HB" },
-      { href: "/stats", label: "Club statistics", mark: "CS", adminOnly: true },
+      { href: "/rankings", label: "Rankings" },
+      { href: "/pool-achievements", label: "Break & Run table" },
+      { href: "/handicaps", label: "Handicaps" },
+      { href: "/high-breaks", label: "High breaks" },
+      { href: "/stats", label: "Club statistics", adminOnly: true },
     ],
   },
   {
     label: "Competitions",
     items: [
-      { href: "/events", label: "Competition centre", mark: "CC" },
-      { href: "/events/new", label: "Create competition", mark: "NC", adminOnly: true },
-      { href: "/signups", label: "Competition entries", mark: "CE", adminOnly: true },
-      { href: "/results", label: "Results & approvals", mark: "RA", adminOnly: true },
-      { href: "/live", label: "Live overview", mark: "LV", adminOnly: true },
-      { href: "/weekly-reviews", label: "Weekly reviews", mark: "WR", superOnly: true },
+      { href: "/events", label: "Competition centre" },
+      { href: "/events/new", label: "Create competition", adminOnly: true },
+      { href: "/signups", label: "Competition entries", adminOnly: true },
+      { href: "/results", label: "Results & approvals", adminOnly: true },
+      { href: "/live", label: "Live overview", adminOnly: true },
+      { href: "/weekly-reviews", label: "Weekly reviews", superOnly: true },
     ],
   },
   {
     label: "Club management",
     items: [
-      { href: "/outstanding-fixtures", label: "Outstanding fixtures", mark: "OF", adminOnly: true },
-      { href: "/players", label: "Players", mark: "PL", adminOnly: true },
-      { href: "/locations", label: "Locations", mark: "LO", superOnly: true },
-      { href: "/snooker-handicap-exceptions", label: "Handicap exceptions", mark: "HE", superOnly: true },
-      { href: "/playing-window-exceptions", label: "Early-play exceptions", mark: "EP", superOnly: true },
+      { href: "/outstanding-fixtures", label: "Outstanding fixtures", adminOnly: true },
+      { href: "/players", label: "Players", adminOnly: true },
+      { href: "/locations", label: "Locations", superOnly: true },
+      { href: "/snooker-handicap-exceptions", label: "Handicap exceptions", superOnly: true },
+      { href: "/playing-window-exceptions", label: "Early-play exceptions", superOnly: true },
     ],
   },
   {
     label: "Account & guidance",
     items: [
-      { href: "/notifications", label: "Notifications", mark: "NT" },
-      { href: "/install", label: "Install the app", mark: "IN" },
-      { href: "/rules", label: "Rules", mark: "RU" },
-      { href: "/help", label: "Help & user guide", mark: "HG" },
-      { href: "/premium", label: "Feature access", mark: "FA" },
-      { href: "/legal", label: "Legal & privacy", mark: "LP" },
+      { href: "/notifications", label: "Notifications" },
+      { href: "/install", label: "Install the app" },
+      { href: "/rules", label: "Rules" },
+      { href: "/help", label: "Help & user guide" },
+      { href: "/premium", label: "Feature access" },
+      { href: "/legal", label: "Legal & privacy" },
     ],
   },
   {
     label: "System owner",
     items: [
-      { href: "/signup-requests", label: "Access requests", mark: "AR", superOnly: true },
-      { href: "/emails", label: "System email activity", mark: "EM", superOnly: true },
-      { href: "/audit", label: "Audit log", mark: "AL", superOnly: true },
-      { href: "/usage", label: "Accounts & activity", mark: "UA", superOnly: true },
-      { href: "/backup", label: "Data management", mark: "DM", superOnly: true },
+      { href: "/signup-requests", label: "Access requests", superOnly: true },
+      { href: "/emails", label: "System email activity", superOnly: true },
+      { href: "/audit", label: "Audit log", superOnly: true },
+      { href: "/usage", label: "Accounts & activity", superOnly: true },
+      { href: "/backup", label: "Data management", superOnly: true },
     ],
   },
 ];
@@ -126,6 +126,15 @@ function pageDetails(pathname: string, currentSearch: string, groups: Navigation
   return { group: "Rack & Frame", label: "Club workspace" };
 }
 
+const groupIcons: Record<string, NavIconName> = {
+  Play: "play",
+  "Results & performance": "chart",
+  Competitions: "trophy",
+  "Club management": "settings",
+  "Account & guidance": "users",
+  "System owner": "shield",
+};
+
 function NavigationContent({
   groups,
   pathname,
@@ -153,7 +162,7 @@ function NavigationContent({
   }, [activeGroupLabel]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#0b1730] text-white">
+    <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-[#102a3b] via-[#0b1730] to-[#081323] text-white">
       <div className="border-b border-white/10 px-5 py-5">
         <Link href="/" onClick={(event) => onNavigate("/", event)} className="flex items-center gap-3">
           <Image src="/pwa/icon-192.png" alt="Rack & Frame" width={44} height={44} priority className="h-11 w-11 shrink-0 rounded-xl shadow-lg shadow-cyan-950/30 ring-1 ring-white/15" />
@@ -165,25 +174,27 @@ function NavigationContent({
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4" aria-label="Main navigation">
-        <Link href="/" onClick={(event) => onNavigate("/", event)} aria-current={pathname === "/" ? "page" : undefined} className={`mb-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold ${pathname === "/" ? "bg-cyan-300 text-[#0b1730]" : "text-slate-200 hover:bg-white/10"}`}>
-          <span aria-hidden="true" className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-[10px] font-black ${pathname === "/" ? "bg-[#0b1730] text-cyan-200" : "bg-white/10 text-slate-300"}`}>HM</span>
+        <Link href="/" onClick={(event) => onNavigate("/", event)} aria-current={pathname === "/" ? "page" : undefined} className={`mb-5 flex min-h-12 items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-bold ${pathname === "/" ? "bg-gradient-to-r from-teal-200 to-cyan-200 text-[#0b1730] shadow-lg shadow-teal-950/30" : "text-slate-200 hover:bg-white/10"}`}>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-black/10"><NavIcon name="home" /></span>
           Dashboard
         </Link>
-        <div className="space-y-1">
+        <div className="space-y-2">
           {groups.map((group) => {
             const expanded = expandedGroups.includes(group.label);
             const containsActive = group.label === activeGroupLabel;
             return (
               <section key={group.label} className="rounded-xl">
                 <h2>
-                  <button type="button" onClick={() => setExpandedGroups((current) => current.includes(group.label) ? current.filter((label) => label !== group.label) : [...current, group.label])} aria-expanded={expanded} className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.13em] transition ${containsActive ? "text-cyan-200" : "text-slate-400 hover:bg-white/10 hover:text-slate-200"}`}>
-                    <span>{group.label}</span><span aria-hidden="true" className="text-base leading-none">{expanded ? "−" : "+"}</span>
+                  <button type="button" onClick={() => setExpandedGroups((current) => current.includes(group.label) ? current.filter((label) => label !== group.label) : [...current, group.label])} aria-expanded={expanded} className={`flex min-h-14 w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${containsActive ? "text-cyan-200" : "text-slate-400 hover:bg-white/10 hover:text-slate-200"}`}>
+                    <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ring-1 ${containsActive ? "bg-teal-300/15 text-teal-200 ring-teal-200/20" : "bg-white/5 text-slate-300 ring-white/10"}`}><NavIcon name={groupIcons[group.label] ?? "settings"} /></span>
+                    <span className="flex-1">{group.label}</span>
+                    <NavIcon name="chevron" className={`h-4 w-4 shrink-0 transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`} />
                   </button>
                 </h2>
-                {expanded ? <div className="mb-2 space-y-0.5 border-l border-white/10 pl-2">
+                {expanded ? <div className="mb-3 ml-3 space-y-1 border-l border-white/10 pl-3">
                   {group.items.map((item) => {
                     const active = itemMatchesPath(pathname, currentSearch, item.href);
-                    return <Link key={item.href} href={item.href} onClick={(event) => onNavigate(item.href, event)} aria-current={active ? "page" : undefined} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${active ? "bg-white/15 font-bold text-cyan-200 ring-1 ring-white/10" : "font-medium text-slate-300 hover:bg-white/10 hover:text-white"}`}><span aria-hidden="true" className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-[10px] font-black ${active ? "bg-cyan-300 text-[#0b1730]" : "bg-white/10 text-slate-300"}`}>{item.mark}</span><span>{item.label}</span></Link>;
+                    return <Link key={item.href} href={item.href} onClick={(event) => onNavigate(item.href, event)} aria-current={active ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${active ? "bg-teal-300/15 font-bold text-teal-100 ring-1 ring-teal-200/20" : "font-medium text-slate-300 hover:bg-white/10 hover:text-white"}`}><NavIcon name={iconForHref(item.href)} className="h-[18px] w-[18px] shrink-0 opacity-80" /><span>{item.label}</span></Link>;
                   })}
                 </div> : null}
               </section>
@@ -195,7 +206,7 @@ function NavigationContent({
       <div className="border-t border-white/10 p-4">
         <p className="truncate text-sm font-bold text-white">{roleLabel}</p>
         <p className="mt-0.5 text-xs text-slate-400">Rack &amp; Frame Club</p>
-        <button type="button" onClick={onSignOut} className="mt-3 w-full rounded-lg border border-white/15 px-3 py-2 text-left text-xs font-bold text-slate-200 hover:border-rose-300/50 hover:bg-rose-400/10 hover:text-rose-100">Sign out</button>
+        <button type="button" onClick={onSignOut} className="mt-3 flex min-h-11 w-full items-center gap-3 rounded-xl border border-white/15 px-3 py-2 text-left text-xs font-bold text-slate-200 hover:border-rose-300/50 hover:bg-rose-400/10 hover:text-rose-100"><NavIcon name="logout" className="h-4 w-4" />Sign out</button>
       </div>
     </div>
   );
@@ -294,16 +305,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 lg:block"><NavigationContent {...navigationProps} /></aside>
         <div className="min-h-screen lg:pl-72">
           <header className="rf-app-header sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white px-3 shadow-sm sm:px-5">
-            <button type="button" onClick={() => setMobileOpen(true)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-800 hover:border-teal-300 hover:bg-teal-50" aria-label="Open navigation" title="Open menu">☰</button>
+            <button type="button" onClick={() => setMobileOpen(true)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-800 hover:border-teal-300 hover:bg-teal-50" aria-label="Open navigation" title="Open menu"><NavIcon name="menu" /></button>
             <button type="button" onClick={requestBack} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-teal-50" aria-label="Go back">←</button>
             <div className="min-w-0 flex-1"><p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-teal-700">Home / {details.group}</p><p className="truncate text-sm font-black text-slate-950 sm:text-base">{details.label}</p></div>
-            <Link href="/notifications" onClick={(event) => requestNavigation("/notifications", event)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-sm hover:border-teal-300 hover:bg-teal-50" aria-label="Notifications">🔔</Link>
+            <Link href="/notifications" onClick={(event) => requestNavigation("/notifications", event)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-sm hover:border-teal-300 hover:bg-teal-50" aria-label="Notifications"><NavIcon name="bell" /></Link>
             <div className="hidden text-right md:block"><p className="text-xs font-bold text-slate-900">{roleLabel}</p><p className="text-[11px] text-slate-500">Rack &amp; Frame Club</p></div>
           </header>
           <div>{children}</div>
         </div>
 
-        {mobileOpen ? <div className="rf-mobile-navigation fixed inset-0 z-[80] bg-[#0b1730]" role="dialog" aria-modal="true" aria-label="Rack & Frame navigation"><button type="button" onClick={() => setMobileOpen(false)} className="rf-navigation-close absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-lg border border-white/20 bg-white/10 text-xl text-white" aria-label="Close navigation">×</button><NavigationContent {...navigationProps} /></div> : null}
+        {mobileOpen ? <div className="rf-mobile-navigation fixed inset-0 z-[80] bg-[#0b1730]" role="dialog" aria-modal="true" aria-label="Rack & Frame navigation"><button type="button" onClick={() => setMobileOpen(false)} className="rf-navigation-close absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-lg border border-white/20 bg-white/10 text-xl text-white" aria-label="Close navigation"><NavIcon name="close" /></button><NavigationContent {...navigationProps} /></div> : null}
 
         <ConfirmModal open={Boolean(pendingAction)} title="Unsaved changes" description={guard.message} confirmLabel="Leave screen" cancelLabel="Stay" onConfirm={() => { if (pendingAction) completeNavigation(pendingAction); setPendingAction(null); }} onCancel={() => setPendingAction(null)} />
       </div>
