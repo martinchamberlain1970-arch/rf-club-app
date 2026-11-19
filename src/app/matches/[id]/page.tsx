@@ -3308,7 +3308,7 @@ export default function MatchPage() {
                       <p className="text-sm text-slate-700">
                         Score: {teams.team1Label} {s.team1_score} - {s.team2_score} {teams.team2Label}
                       </p>
-                      {isSnooker && s.status === "pending" && frames.length ? (
+                      {isSnooker && s.status === "pending" && frames.some((frame) => frame.winner_side !== 0 || frame.team1_points > 0 || frame.team2_points > 0) ? (
                         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <p className="text-sm font-semibold text-slate-900">Submitted frame detail</p>
                           <div className="mt-2 space-y-2">
@@ -3339,6 +3339,16 @@ export default function MatchPage() {
                               );
                             })}
                           </div>
+                        </div>
+                      ) : null}
+                      {isSnooker && s.status === "pending" && !frames.some((frame) => frame.winner_side !== 0 || frame.team1_points > 0 || frame.team2_points > 0) ? (
+                        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+                          <p className="font-semibold">
+                            Submitted winner: {s.team1_score > s.team2_score ? teams.team1Label : teams.team2Label}
+                          </p>
+                          <p className="mt-1 text-emerald-800">
+                            This result was submitted as a final frame score. Approving it will create the detailed frame record and save the winner automatically.
+                          </p>
                         </div>
                       ) : null}
                       {!isSnooker ? (
