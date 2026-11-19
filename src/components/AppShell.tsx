@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShellContextProvider } from "@/components/AppShellContext";
 import ConfirmModal from "@/components/ConfirmModal";
 import useAdminStatus from "@/components/useAdminStatus";
-import useExperienceMode, { type ExperienceMode } from "@/components/useExperienceMode";
 import { logAudit } from "@/lib/audit";
 import { supabase } from "@/lib/supabase";
 
@@ -23,12 +22,11 @@ type NavigationGroup = {
   items: NavigationItem[];
 };
 
-const playerNavigation: NavigationGroup[] = [
+const navigationGroups: NavigationGroup[] = [
   {
     label: "Play",
     items: [
       { href: "/my-fixtures", label: "My fixtures" },
-      { href: "/events", label: "Competitions" },
       { href: "/table-bookings", label: "Book a table" },
       { href: "/quick-match", label: "Quick match" },
     ],
@@ -44,6 +42,28 @@ const playerNavigation: NavigationGroup[] = [
     ],
   },
   {
+    label: "Competitions",
+    items: [
+      { href: "/events", label: "Competition centre" },
+      { href: "/events/new", label: "Create competition", adminOnly: true },
+      { href: "/signups", label: "Competition entries", adminOnly: true },
+      { href: "/results", label: "Results & approvals", adminOnly: true },
+      { href: "/live", label: "Live overview", adminOnly: true },
+      { href: "/weekly-reviews", label: "Weekly reviews", superOnly: true },
+    ],
+  },
+  {
+    label: "Club management",
+    items: [
+      { href: "/table-bookings", label: "Table bookings", adminOnly: true },
+      { href: "/outstanding-fixtures", label: "Outstanding fixtures", adminOnly: true },
+      { href: "/players", label: "Players", adminOnly: true },
+      { href: "/locations", label: "Locations", superOnly: true },
+      { href: "/snooker-handicap-exceptions", label: "Handicap exceptions", superOnly: true },
+      { href: "/playing-window-exceptions", label: "Early-play exceptions", superOnly: true },
+    ],
+  },
+  {
     label: "Account & guidance",
     items: [
       { href: "/notifications", label: "Notifications" },
@@ -54,53 +74,14 @@ const playerNavigation: NavigationGroup[] = [
       { href: "/legal", label: "Legal & privacy" },
     ],
   },
-];
-
-const manageNavigation: NavigationGroup[] = [
-  {
-    label: "Competitions",
-    items: [
-      { href: "/events", label: "Competition centre", adminOnly: true },
-      { href: "/events/new", label: "Create competition", adminOnly: true },
-      { href: "/signups", label: "Competition entries", adminOnly: true },
-      { href: "/results", label: "Results & approvals", adminOnly: true },
-      { href: "/live", label: "Live overview", adminOnly: true },
-      { href: "/weekly-reviews", label: "Weekly reviews", superOnly: true },
-    ],
-  },
-  {
-    label: "Club operations",
-    items: [
-      { href: "/table-bookings", label: "Table bookings", adminOnly: true },
-      { href: "/outstanding-fixtures", label: "Outstanding fixtures", adminOnly: true },
-      { href: "/players", label: "Players", adminOnly: true },
-      { href: "/rankings", label: "Rankings" },
-      { href: "/pool-achievements", label: "Break & Run table" },
-      { href: "/handicaps", label: "Handicaps" },
-      { href: "/high-breaks", label: "High breaks" },
-      { href: "/stats", label: "Club statistics", adminOnly: true },
-      { href: "/notifications", label: "Notifications" },
-    ],
-  },
   {
     label: "System owner",
     items: [
       { href: "/signup-requests", label: "Access requests", superOnly: true },
-      { href: "/snooker-handicap-exceptions", label: "Handicap exceptions", superOnly: true },
-      { href: "/playing-window-exceptions", label: "Early-play exceptions", superOnly: true },
-      { href: "/locations", label: "Locations", superOnly: true },
       { href: "/emails", label: "System email activity", superOnly: true },
       { href: "/audit", label: "Audit log", superOnly: true },
       { href: "/usage", label: "Accounts & activity", superOnly: true },
       { href: "/backup", label: "Data management", superOnly: true },
-    ],
-  },
-  {
-    label: "Guidance",
-    items: [
-      { href: "/help", label: "Help & user guide" },
-      { href: "/rules", label: "Rules" },
-      { href: "/legal", label: "Legal & privacy" },
     ],
   },
 ];
@@ -150,9 +131,6 @@ function NavigationContent({
   pathname,
   currentSearch,
   roleLabel,
-  mode,
-  canManage,
-  onModeChange,
   onNavigate,
   onSignOut,
 }: {
@@ -160,9 +138,6 @@ function NavigationContent({
   pathname: string;
   currentSearch: string;
   roleLabel: string;
-  mode: ExperienceMode;
-  canManage: boolean;
-  onModeChange: (mode: ExperienceMode) => void;
   onNavigate: (href: string, event: React.MouseEvent<HTMLAnchorElement>) => void;
   onSignOut: () => void;
 }) {
@@ -181,25 +156,12 @@ function NavigationContent({
     <div className="flex h-full min-h-0 flex-col bg-[#0b1730] text-white">
       <div className="border-b border-white/10 px-5 py-5">
         <Link href="/" onClick={(event) => onNavigate("/", event)} className="flex items-center gap-3">
-          <Image
-            src="/rf-logo.png"
-            alt="Rack & Frame logo"
-            width={48}
-            height={42}
-            priority
-            className="h-11 w-12 shrink-0 rounded-xl object-cover shadow-lg shadow-cyan-950/30"
-          />
+          <Image src="/pwa/icon-192.png" alt="Rack & Frame" width={44} height={44} priority className="h-11 w-11 shrink-0 rounded-xl shadow-lg shadow-cyan-950/30 ring-1 ring-white/15" />
           <span>
             <span className="block text-sm font-black tracking-wide">Rack &amp; Frame</span>
             <span className="block text-xs text-slate-400">Club Manager</span>
           </span>
         </Link>
-        {canManage ? (
-          <div className="mt-4 grid grid-cols-2 rounded-xl border border-white/15 bg-black/20 p-1" aria-label="Choose app view">
-            <button type="button" onClick={() => onModeChange("player")} className={`rounded-lg px-3 py-2 text-xs font-bold ${mode === "player" ? "bg-cyan-300 text-[#0b1730]" : "text-slate-300 hover:bg-white/10"}`}>Player</button>
-            <button type="button" onClick={() => onModeChange("manage")} className={`rounded-lg px-3 py-2 text-xs font-bold ${mode === "manage" ? "bg-amber-300 text-[#0b1730]" : "text-slate-300 hover:bg-white/10"}`}>Manage</button>
-          </div>
-        ) : null}
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4" aria-label="Main navigation">
@@ -245,16 +207,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const currentSearch = searchParams.toString();
   const admin = useAdminStatus();
   const canManage = admin.isAdmin || admin.isSuper;
-  const [mode, setMode] = useExperienceMode(canManage ? "manage" : "player");
-  const effectiveMode: ExperienceMode = canManage ? mode : "player";
   const [mobileOpen, setMobileOpen] = useState(false);
   const [guard, setGuard] = useState({ enabled: false, message: "You have unsaved changes. Leave this screen?" });
   const [pendingAction, setPendingAction] = useState<{ type: "href"; href: string } | { type: "back" } | null>(null);
   const enabled = !isBarePath(pathname) && Boolean(admin.userId);
 
   const visibleGroups = useMemo(() => {
-    const source = canManage && effectiveMode === "manage" ? manageNavigation : playerNavigation;
-    return source.map((group) => ({
+    return navigationGroups.map((group) => ({
       ...group,
       items: group.items.filter((item) => {
         if (item.superOnly && !admin.isSuper) return false;
@@ -262,7 +221,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         return true;
       }),
     })).filter((group) => group.items.length > 0);
-  }, [admin.isSuper, canManage, effectiveMode]);
+  }, [admin.isSuper, canManage]);
 
   const details = useMemo(() => pageDetails(pathname, currentSearch, visibleGroups), [currentSearch, pathname, visibleGroups]);
   const roleLabel = admin.isSuper ? "Super User" : admin.isAdmin ? "Club Administrator" : "Player";
@@ -326,7 +285,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!enabled) return <AppShellContextProvider value={contextValue}>{children}</AppShellContextProvider>;
 
-  const navigationProps = { groups: visibleGroups, pathname, currentSearch, roleLabel, mode: effectiveMode, canManage, onModeChange: setMode, onNavigate: requestNavigation, onSignOut: () => void onSignOut() };
+  const navigationProps = { groups: visibleGroups, pathname, currentSearch, roleLabel, onNavigate: requestNavigation, onSignOut: () => void onSignOut() };
 
   return (
     <AppShellContextProvider value={contextValue}>
@@ -337,9 +296,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <button type="button" onClick={() => setMobileOpen(true)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-800 lg:hidden" aria-label="Open navigation">☰</button>
             <button type="button" onClick={requestBack} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-teal-50" aria-label="Go back">←</button>
             <div className="min-w-0 flex-1"><p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-teal-700">Home / {details.group}</p><p className="truncate text-sm font-black text-slate-950 sm:text-base">{details.label}</p></div>
-            {canManage ? <div className="hidden rounded-lg border border-slate-200 bg-slate-50 p-1 sm:flex"><button type="button" onClick={() => setMode("player")} className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${effectiveMode === "player" ? "bg-cyan-200 text-slate-950" : "text-slate-500"}`}>Player</button><button type="button" onClick={() => setMode("manage")} className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${effectiveMode === "manage" ? "bg-amber-200 text-slate-950" : "text-slate-500"}`}>Manage</button></div> : null}
             <Link href="/notifications" onClick={(event) => requestNavigation("/notifications", event)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-sm hover:border-teal-300 hover:bg-teal-50" aria-label="Notifications">🔔</Link>
-            <div className="hidden text-right md:block"><p className="text-xs font-bold text-slate-900">{roleLabel}</p><p className="text-[11px] capitalize text-slate-500">{effectiveMode} view</p></div>
+            <div className="hidden text-right md:block"><p className="text-xs font-bold text-slate-900">{roleLabel}</p><p className="text-[11px] text-slate-500">Rack &amp; Frame Club</p></div>
           </header>
           <div>{children}</div>
         </div>
