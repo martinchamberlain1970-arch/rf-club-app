@@ -36,9 +36,10 @@ type RescheduleRow = {
   id: string;
   match_id: string;
   competition_id: string;
+  requester_player_id: string | null;
   original_scheduled_for: string;
   requested_scheduled_for: string;
-  status: "pending" | "approved";
+  status: "pending" | "approved" | "rejected";
   note: string | null;
   reviewed_at: string | null;
   created_at: string;
@@ -129,7 +130,7 @@ export default function OutstandingFixturesPage() {
         client.from("competitions").select("id,name,sport_type,competition_format,is_archived,is_completed,league_schedule_mode").eq("competition_format", "league").eq("is_archived", false).eq("is_completed", false).neq("league_schedule_mode", "one_day"),
         client.from("matches").select("id,competition_id,player1_id,player2_id,scheduled_for,status,round_no,match_no").eq("is_archived", false).in("status", ["pending", "in_progress"]),
         client.from("players").select("id,display_name,full_name").eq("is_archived", false),
-        client.from("league_reschedule_requests").select("id,match_id,competition_id,original_scheduled_for,requested_scheduled_for,status,note,reviewed_at,created_at").in("status", ["pending", "approved"]).order("created_at", { ascending: true }),
+        client.from("league_reschedule_requests").select("id,match_id,competition_id,requester_player_id,original_scheduled_for,requested_scheduled_for,status,note,reviewed_at,created_at").order("created_at", { ascending: true }),
         client.from("result_submissions").select("match_id").eq("status", "pending"),
         client.from("league_fixture_deadline_exceptions").select("match_id,extended_until,reason,is_active").eq("is_active", true),
       ]);
@@ -159,7 +160,18 @@ export default function OutstandingFixturesPage() {
   const playerNameById = useMemo(() => new Map(players.map((player) => [player.id, player.full_name?.trim() || player.display_name])), [players]);
   const latestRescheduleByMatch = useMemo(() => {
     const map = new Map<string, RescheduleRow>();
-    for (const request of reschedules) map.set(request.match_id, request);
+    for (const request of reschedules) {
+      if (request.status !== "rejected") map.set(request.match_id, request);
+    }
+    return map;
+  }, [reschedules]);
+  const rescheduleHistoryByMatch = useMemo(() => {
+    const map = new Map<string, RescheduleRow[]>();
+    for (const request of reschedules) {
+      const history = map.get(request.match_id) ?? [];
+      history.push(request);
+      map.set(request.match_id, history);
+    }
     return map;
   }, [reschedules]);
   const deadlineAnchorByMatch = useMemo(
@@ -515,6 +527,36 @@ export default function OutstandingFixturesPage() {
                           {fixture.deadlineException ? <p className="mt-2 rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-950"><strong>Exceptional deadline granted:</strong> {fixture.deadlineException.reason} This fixture remains open until {displayDeadline(fixture.deadline)}.</p> : null}
                           {fixture.graceApplied ? <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-950">One-off grace period: this fixture remains playable until Sunday 22 November at 10:30pm. Normal enforcement begins Monday 23 November.</p> : null}
                           {fixture.reschedule ? <p className={`mt-2 rounded-xl border px-3 py-2 text-sm ${pendingReschedule ? "border-violet-200 bg-violet-50 text-violet-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>{pendingReschedule ? "Requested move" : "Moved"} from the week beginning <strong>{displayDate(fixture.reschedule.original_scheduled_for)}</strong> to <strong>{displayDate(fixture.reschedule.requested_scheduled_for)}</strong>{pendingReschedule ? "; this still needs approval." : "."}</p> : null}
+                          {(() => {
+                            const history = rescheduleHistoryByMatch.get(fixture.match.id) ?? [];
+                            return (
+                              <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <summary className="cursor-pointer font-bold text-slate-900">
+                                  Reschedule history ({history.length})
+                                </summary>
+                                {history.length ? (
+                                  <div className="mt-3 space-y-2">
+                                    {history.map((request) => {
+                                      const requester = request.requester_player_id
+                                        ? playerNameById.get(request.requester_player_id) ?? "Unknown player"
+                                        : "Player account";
+                                      return (
+                                        <div key={request.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <strong className="text-slate-950">Requested by {requester}</strong>
+                                            <span className={`rounded-full px-2 py-1 text-xs font-bold uppercase ${request.status === "approved" ? "bg-emerald-100 text-emerald-800" : request.status === "rejected" ? "bg-rose-100 text-rose-800" : "bg-violet-100 text-violet-800"}`}>{request.status}</span>
+                                          </div>
+                                          <p className="mt-1">Move from <strong>{displayDate(request.original_scheduled_for)}</strong> to <strong>{displayDate(request.requested_scheduled_for)}</strong>.</p>
+                                          {request.note ? <p className="mt-1"><strong>Reason:</strong> {request.note}</p> : null}
+                                          <p className="mt-1 text-xs text-slate-500">Requested {new Date(request.created_at).toLocaleString("en-GB")}{request.reviewed_at ? ` · Reviewed ${new Date(request.reviewed_at).toLocaleString("en-GB")}` : ""}</p>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : <p className="mt-2 text-sm text-slate-600">No reschedule request has ever been recorded for this fixture.</p>}
+                              </details>
+                            );
+                          })()}
                           <div className="mt-4 flex flex-wrap gap-2">
                             {decisionDue ? <button type="button" disabled={decisionBusyId === fixture.match.id} onClick={() => void voidExpiredFixture(fixture)} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-800 disabled:opacity-50">{decisionBusyId === fixture.match.id ? "Voiding & emailing…" : "Void fixture — no points"}</button> : null}
                             {fixture.deadlineException ? <button type="button" disabled={exceptionBusy} onClick={() => void removeDeadlineException(fixture)} className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-900 disabled:opacity-50">Remove exception</button> : <button type="button" onClick={() => { setExceptionFixture(fixture); setExceptionUntil(""); setExceptionReason(""); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="rounded-xl border border-indigo-400 bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-900">Grant exception</button>}

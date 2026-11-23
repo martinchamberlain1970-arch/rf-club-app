@@ -3,6 +3,11 @@ import { getWelcomeCandidate } from "@/lib/competition-welcome";
 import { brandedEmail, escapeEmailHtml } from "@/lib/email-template";
 import { hasMailerConfig, sendEmail } from "@/lib/mailer";
 import { sendPushToUserIds } from "@/lib/push-server";
+import {
+  buildLeagueFixtureAnchorMap,
+  getLeagueFixtureEffectiveFinalDeadline,
+  hasLeagueFixtureTransitionGrace,
+} from "@/lib/league-deadline";
 
 type DeadlineActor = { user: { id: string | null; email?: string | null }; role: string };
 
@@ -15,7 +20,7 @@ export async function voidDeadlineFixture(client: SupabaseClient, matchId: strin
     .eq("id", matchId).maybeSingle();
   if (matchResult.error) throw new Error(matchResult.error.message);
   const match = matchResult.data;
-  if (!match || !["pending", "in_progress"].includes(match.status) || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id) {
+  if (!match || !["pending", "in_progress"].includes(match.status) || !match.player1_id || !match.player2_id || match.player1_id === match.player2_id || !match.scheduled_for) {
     throw new Error("This fixture is no longer available for a deadline decision.");
   }
 
@@ -23,14 +28,50 @@ export async function voidDeadlineFixture(client: SupabaseClient, matchId: strin
   if (competitionResult.error || !competitionResult.data) throw new Error(competitionResult.error?.message || "Competition not found.");
   const competition = competitionResult.data;
   const playerIds = [match.player1_id, match.player2_id];
-  const [playersResult, entriesResult] = await Promise.all([
+  const [playersResult, entriesResult, reschedulesResult, exceptionResult] = await Promise.all([
     client.from("players").select("id,display_name,full_name").in("id", playerIds),
     client.from("competition_entries").select("id,player_id").eq("competition_id", match.competition_id).eq("status", "approved").in("player_id", playerIds),
+    client.from("league_reschedule_requests").select("requester_player_id,original_scheduled_for,requested_scheduled_for,status,note,created_at,reviewed_at").eq("match_id", match.id).order("created_at", { ascending: true }),
+    client.from("league_fixture_deadline_exceptions").select("extended_until,reason,is_active").eq("match_id", match.id).eq("is_active", true).maybeSingle(),
   ]);
-  if (playersResult.error || entriesResult.error) throw new Error(playersResult.error?.message || entriesResult.error?.message || "Player details could not be loaded.");
+  if (playersResult.error || entriesResult.error || reschedulesResult.error || exceptionResult.error) {
+    throw new Error(playersResult.error?.message || entriesResult.error?.message || reschedulesResult.error?.message || exceptionResult.error?.message || "Fixture history could not be loaded.");
+  }
   const names = new Map((playersResult.data ?? []).map((player) => [player.id, player.full_name?.trim() || player.display_name]));
   const playerOneName = names.get(match.player1_id) || "First-named player";
   const playerTwoName = names.get(match.player2_id) || "Second-named player";
+  const rescheduleHistory = reschedulesResult.data ?? [];
+  const approvedReschedules = rescheduleHistory.filter((request) => request.status === "approved");
+  const deadlineScheduledFor = buildLeagueFixtureAnchorMap(approvedReschedules.map((request) => ({
+    match_id: match.id,
+    original_scheduled_for: request.original_scheduled_for,
+    created_at: request.created_at,
+  }))).get(match.id) ?? match.scheduled_for;
+  const finalDeadline = getLeagueFixtureEffectiveFinalDeadline(
+    deadlineScheduledFor,
+    competition.name,
+    exceptionResult.data?.extended_until ?? null
+  );
+  const graceApplied = hasLeagueFixtureTransitionGrace(deadlineScheduledFor, competition.name);
+  const formatDate = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-GB", {
+    timeZone: "Europe/London", weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+  const formatDeadline = (value: Date) => value.toLocaleString("en-GB", {
+    timeZone: "Europe/London", weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+  const originalWeek = formatDate(deadlineScheduledFor);
+  const rescheduleTextLines = rescheduleHistory.length
+    ? rescheduleHistory.map((request) => {
+      const requester = request.requester_player_id ? names.get(request.requester_player_id) || "a player" : "a player";
+      return `${requester} requested a move from ${formatDate(request.original_scheduled_for)} to ${formatDate(request.requested_scheduled_for)}. The request was ${request.status}.${request.note ? ` Reason recorded: ${request.note}` : ""}`;
+    })
+    : ["No reschedule request was recorded in Rack & Frame for this fixture."];
+  const rescheduleHtml = rescheduleHistory.length
+    ? rescheduleHistory.map((request) => {
+      const requester = request.requester_player_id ? names.get(request.requester_player_id) || "A player" : "A player";
+      return `<li style="margin:0 0 8px"><strong>${escapeEmailHtml(requester)}</strong> requested ${escapeEmailHtml(formatDate(request.original_scheduled_for))} to ${escapeEmailHtml(formatDate(request.requested_scheduled_for))}. Status: <strong>${escapeEmailHtml(request.status)}</strong>${request.note ? `<br><span style="color:#475569">Reason: ${escapeEmailHtml(request.note)}</span>` : ""}</li>`;
+    }).join("")
+    : "<li>No reschedule request was recorded in Rack & Frame for this fixture.</li>";
 
   const clearFrames = await client.from("frames").delete().eq("match_id", match.id);
   if (clearFrames.error) throw new Error(clearFrames.error.message);
@@ -77,14 +118,23 @@ export async function voidDeadlineFixture(client: SupabaseClient, matchId: strin
     if (!hasMailerConfig()) { emailResults.push({ playerId, status: "not_configured" }); continue; }
     const recipientName = names.get(playerId) || "Player";
     const firstName = recipientName.split(/\s+/)[0] || "Player";
-    const outcome = `${playerOneName} vs ${playerTwoName} has been voided because no result or valid reschedule was recorded within the permitted playing window. Neither player receives points.`;
+    const deadlineText = finalDeadline ? formatDeadline(finalDeadline) : "the published final deadline";
+    const outcome = `${playerOneName} vs ${playerTwoName} has been voided because no result was recorded by the final playing deadline and there was no pending reschedule left to review. Neither player receives points.`;
+    const backStory = [
+      `The fixture was originally due in the week beginning ${originalWeek}.`,
+      ...rescheduleTextLines,
+      ...(exceptionResult.data ? [`An exceptional extension was recorded until ${formatDate(exceptionResult.data.extended_until)}: ${exceptionResult.data.reason}.`] : []),
+      ...(graceApplied ? ["The fixture also received the one-off grace period introduced for older outstanding fixtures."] : []),
+      `The final playing deadline was ${deadlineText}.`,
+      "The deadline and consequence were published in the app, with fixture reminders and group communications issued before enforcement.",
+    ];
     const subject = `Fixture voided: ${playerOneName} vs ${playerTwoName}`;
-    const text = `Hi ${firstName},\n\n${outcome}\n\nCompetition: ${competition.name}\nOutcome: void — no points awarded.\n\nView your fixtures: ${siteUrl}/my-fixtures\n\nThis is an automated message; replies are not monitored.\n\nRack & Frame Club`;
+    const text = `Hi ${firstName},\n\n${outcome}\n\nCompetition: ${competition.name}\n\nFixture history:\n${backStory.map((line) => `- ${line}`).join("\n")}\n\nOutcome: void — no points awarded.\n\nView your fixtures: ${siteUrl}/my-fixtures\n\nThis is an automated message; replies are not monitored.\n\nRack & Frame Club`;
     const html = brandedEmail({
       eyebrow: "Fixture deadline outcome",
       title: "The fixture has been voided",
       intro: `Hi ${firstName}, ${outcome}`,
-      bodyHtml: `<div style="padding:16px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0"><div style="font-size:14px;color:#64748b">Competition</div><div style="margin-top:4px;font-weight:800;color:#0f172a">${escapeEmailHtml(competition.name)}</div><div style="margin-top:14px;font-size:14px;color:#64748b">Confirmed outcome</div><div style="margin-top:4px;font-weight:800;color:#0f172a">Void — no points awarded to either player</div></div>`,
+      bodyHtml: `<div style="padding:16px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0"><div style="font-size:14px;color:#64748b">Competition</div><div style="margin-top:4px;font-weight:800;color:#0f172a">${escapeEmailHtml(competition.name)}</div><div style="margin-top:14px;font-size:14px;color:#64748b">Confirmed outcome</div><div style="margin-top:4px;font-weight:800;color:#0f172a">Void — no points awarded to either player</div></div><div style="margin-top:18px"><div style="font-size:15px;font-weight:800;color:#0f172a">Why this fixture was voided</div><p style="margin:8px 0 0;color:#334155">Originally due in the week beginning <strong>${escapeEmailHtml(originalWeek)}</strong>. The final playing deadline was <strong>${escapeEmailHtml(deadlineText)}</strong>.</p><ul style="margin:12px 0 0;padding-left:20px;color:#334155">${rescheduleHtml}</ul>${exceptionResult.data ? `<p style="margin:12px 0 0;color:#334155"><strong>Exceptional extension:</strong> until ${escapeEmailHtml(formatDate(exceptionResult.data.extended_until))}. ${escapeEmailHtml(exceptionResult.data.reason)}</p>` : ""}${graceApplied ? '<p style="margin:12px 0 0;color:#334155">This fixture also received the one-off grace period for older outstanding fixtures.</p>' : ""}<p style="margin:12px 0 0;color:#334155">The deadline and consequence were published in the app, with fixture reminders and group communications issued before enforcement.</p></div>`,
       primaryButton: { label: "View my fixtures", url: `${siteUrl}/my-fixtures` },
       footerNote: "This outcome notification is sent automatically from Rack & Frame Information. Replies are not monitored.",
     });
