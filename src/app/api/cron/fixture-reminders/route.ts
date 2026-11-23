@@ -50,7 +50,8 @@ async function sendFixtureReminder(
   competitionName: string,
   phase: ReminderPhase,
   originalDeadline: Date,
-  finalDeadline: Date
+  finalDeadline: Date,
+  alreadySentPlayerIds: Set<string>
 ) {
   const participantIds = [match.player1_id, match.player2_id];
   const [playersResult, entriesResult, linkedUsersResult] = await Promise.all([
@@ -95,6 +96,7 @@ async function sendFixtureReminder(
   let sent = 0;
   let failed = 0;
   for (const playerId of participantIds) {
+    if (alreadySentPlayerIds.has(playerId)) continue;
     const playerName = names.get(playerId) || "Player";
     const opponentId = playerId === match.player1_id ? match.player2_id : match.player1_id;
     const opponentName = names.get(opponentId) || "your opponent";
@@ -118,10 +120,38 @@ async function sendFixtureReminder(
       footerNote: "This is an automated fixture reminder from Rack & Frame Club. Replies are not monitored.",
     });
     try {
-      await sendEmail({ to: email, subject, text, html, replyTo: null });
+      const emailResult = await sendEmail({ to: email, subject, text, html, replyTo: null });
       sent += 1;
-    } catch {
+      try {
+        await client.from("audit_logs").insert({
+          actor_user_id: null,
+          actor_email: null,
+          actor_role: "system",
+          action: "fixture_reminder_recipient_sent",
+          entity_type: "match",
+          entity_id: match.id,
+          summary: `Automatic ${phase} fixture reminder accepted for ${playerName}.`,
+          meta: { player_id: playerId, phase, provider: emailResult.provider, message_id: emailResult.messageId, final_deadline: finalDeadline.toISOString() },
+        });
+      } catch {
+        // The reminder was accepted by the provider; an audit failure must not reclassify it as an email failure.
+      }
+    } catch (error) {
       failed += 1;
+      try {
+        await client.from("audit_logs").insert({
+          actor_user_id: null,
+          actor_email: null,
+          actor_role: "system",
+          action: "fixture_reminder_recipient_failed",
+          entity_type: "match",
+          entity_id: match.id,
+          summary: `Automatic ${phase} fixture reminder failed for ${playerName}.`,
+          meta: { player_id: playerId, phase, error: error instanceof Error ? error.message : "Email failed.", final_deadline: finalDeadline.toISOString() },
+        });
+      } catch {
+        // Preserve the original email failure count even if audit logging is unavailable.
+      }
     }
   }
 
@@ -155,14 +185,26 @@ export async function GET(request: NextRequest) {
   const [submissionResult, rescheduleResult, auditResult, exceptionResult] = await Promise.all([
     client.from("result_submissions").select("match_id").in("match_id", matchIds).in("status", ["pending", "approved"]),
     client.from("league_reschedule_requests").select("match_id,status,original_scheduled_for,created_at").in("match_id", matchIds).in("status", ["pending", "approved"]).order("created_at", { ascending: true }),
-    client.from("audit_logs").select("entity_id,action").eq("entity_type", "match").in("entity_id", matchIds).in("action", [phaseAction("overdue"), phaseAction("final")]),
+    client.from("audit_logs").select("entity_id,action,meta").eq("entity_type", "match").in("entity_id", matchIds).in("action", [phaseAction("overdue"), phaseAction("final"), "fixture_reminder_recipient_sent"]),
     client.from("league_fixture_deadline_exceptions").select("match_id,extended_until,is_active").in("match_id", matchIds).eq("is_active", true),
   ]);
   if (submissionResult.error || rescheduleResult.error || auditResult.error || exceptionResult.error) return NextResponse.json({ error: submissionResult.error?.message ?? rescheduleResult.error?.message ?? auditResult.error?.message ?? exceptionResult.error?.message }, { status: 400 });
   const protectedMatches = new Set([...(submissionResult.data ?? []).map((row) => row.match_id), ...(rescheduleResult.data ?? []).filter((row) => row.status === "pending").map((row) => row.match_id)]);
   const deadlineAnchorByMatch = buildLeagueFixtureAnchorMap((rescheduleResult.data ?? []).filter((row) => row.status === "approved"));
   const deadlineExceptionByMatch = buildLeagueFixtureDeadlineExceptionMap(exceptionResult.data ?? []);
-  const sentActions = new Set((auditResult.data ?? []).map((row) => `${row.entity_id}:${row.action}`));
+  const legacySentActions = new Set((auditResult.data ?? [])
+    .filter((row) => row.action === phaseAction("overdue") || row.action === phaseAction("final"))
+    .map((row) => `${row.entity_id}:${row.action}`));
+  const sentRecipientsByMatchPhase = new Map<string, Set<string>>();
+  for (const row of auditResult.data ?? []) {
+    if (row.action !== "fixture_reminder_recipient_sent") continue;
+    const meta = row.meta as { player_id?: string; phase?: ReminderPhase } | null;
+    if (!meta?.player_id || !meta.phase) continue;
+    const key = `${row.entity_id}:${phaseAction(meta.phase)}`;
+    const recipients = sentRecipientsByMatchPhase.get(key) ?? new Set<string>();
+    recipients.add(meta.player_id);
+    sentRecipientsByMatchPhase.set(key, recipients);
+  }
   const processed: Array<{ matchId: string; phase: ReminderPhase }> = [];
   let sent = 0;
   let failed = 0;
@@ -176,10 +218,16 @@ export async function GET(request: NextRequest) {
     const exceptionUntil = deadlineExceptionByMatch.get(match.id) ?? null;
     const finalDeadline = getLeagueFixtureEffectiveFinalDeadline(deadlineMatch.scheduled_for, competitionName, exceptionUntil);
     const phase = choosePhase(now, { ...deadlineMatch, scheduled_for: deadlineMatch.scheduled_for }, competitionName, finalDeadline);
-    if (!phase || sentActions.has(`${match.id}:${phaseAction(phase)}`)) continue;
+    if (!phase) continue;
+    const reminderKey = `${match.id}:${phaseAction(phase)}`;
+    const alreadySentPlayerIds = sentRecipientsByMatchPhase.get(reminderKey) ?? new Set<string>();
+    // Old audit rows did not identify recipients. Preserve their de-duplication behaviour;
+    // new rows retry only the player whose delivery was missing or failed.
+    if (legacySentActions.has(reminderKey) && alreadySentPlayerIds.size === 0) continue;
+    if (alreadySentPlayerIds.has(match.player1_id) && alreadySentPlayerIds.has(match.player2_id)) continue;
     const originalDeadline = getLeagueFixtureDeadline(deadlineMatch.scheduled_for, competitionName);
     if (!originalDeadline || !finalDeadline) continue;
-    const result = await sendFixtureReminder(client, match, competitionName, phase, originalDeadline, finalDeadline);
+    const result = await sendFixtureReminder(client, match, competitionName, phase, originalDeadline, finalDeadline, alreadySentPlayerIds);
     sent += result.sent;
     failed += result.failed;
     if (result.sent > 0) {

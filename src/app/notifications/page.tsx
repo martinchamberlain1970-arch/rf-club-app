@@ -309,6 +309,42 @@ export default function NotificationsPage() {
       const out: NotificationItem[] = [];
       const appUserResult = await client.from("app_users").select("linked_player_id").eq("id", admin.userId).maybeSingle();
       const userPlayerId = (appUserResult.data?.linked_player_id as string | null | undefined) ?? null;
+      const sessionResult = await client.auth.getSession();
+      const accessToken = sessionResult.data.session?.access_token;
+      if (accessToken && userPlayerId) {
+        const deadlineResponse = await fetch("/api/notifications/fixture-deadlines", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          cache: "no-store",
+        });
+        const deadlineBody = await deadlineResponse.json().catch(() => ({}));
+        if (deadlineResponse.ok && Array.isArray(deadlineBody.fixtures)) {
+          deadlineBody.fixtures.forEach((fixture: {
+            id: string;
+            competitionName: string;
+            opponentName: string;
+            finalDeadline: string;
+            phase: "final_warning" | "deadline_passed";
+            createdAt: string;
+          }) => {
+            const deadline = new Date(fixture.finalDeadline).toLocaleString("en-GB", {
+              timeZone: "Europe/London",
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            out.push({
+              key: `fixture-deadline:${fixture.id}:${fixture.phase}`,
+              title: fixture.phase === "final_warning" ? "Final fixture warning" : "Fixture deadline passed",
+              detail: `${fixture.competitionName} vs ${fixture.opponentName} · ${fixture.phase === "final_warning" ? `play or record an approved reschedule by ${deadline}` : `the deadline was ${deadline}; this fixture is ready to be voided with no points`}`,
+              created_at: fixture.createdAt,
+              href: `/matches/${fixture.id}`,
+              status: "pending",
+            });
+          });
+        }
+      }
       const openCompsRes = await client
         .from("competitions")
         .select("id,name,created_at,signup_deadline")
