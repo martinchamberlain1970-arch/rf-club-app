@@ -539,7 +539,7 @@ export default function OutstandingFixturesPage() {
                                     {history.map((request) => {
                                       const requester = request.requester_player_id
                                         ? playerNameById.get(request.requester_player_id) ?? "Unknown player"
-                                        : "Player account";
+                                        : "Super User / system";
                                       return (
                                         <div key={request.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
                                           <div className="flex flex-wrap items-center justify-between gap-2">
