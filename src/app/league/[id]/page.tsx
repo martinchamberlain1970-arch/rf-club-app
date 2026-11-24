@@ -7,9 +7,9 @@ import { formatMatchHandicapStart } from "@/lib/match-handicap";
 import { getCalendarCurrentLeagueWeek } from "@/lib/league-current-week";
 import LeaguePlayerSummaryModal from "@/components/LeaguePlayerSummaryModal";
 
-type Fixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1Id: string | null; player2Id: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
+type Fixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1Id: string | null; player2Id: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null; voidedByWithdrawal?: boolean };
 type TableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
-type LeagueData = { competition: { id: string; name: string; venue: string | null; sport_type: string; league_schedule_mode: string | null; league_finals_size: number | null; handicap_enabled: boolean }; fixtures: Fixture[]; table: TableRow[]; updatedAt: string };
+type LeagueData = { competition: { id: string; name: string; venue: string | null; sport_type: string; league_schedule_mode: string | null; league_finals_size: number | null; handicap_enabled: boolean }; fixtures: Fixture[]; withdrawalResults?: Fixture[]; table: TableRow[]; updatedAt: string };
 
 const displayDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : null;
 
@@ -30,12 +30,12 @@ export default function PublicLeaguePage() {
       .catch((cause) => setError(cause instanceof Error ? cause.message : "League could not be loaded."));
   }, [params.id]);
 
-  const weeks = useMemo(() => [...new Set((data?.fixtures ?? []).map((fixture) => fixture.week))].sort((a, b) => a - b), [data]);
-  const currentWeek = useMemo(() => getCalendarCurrentLeagueWeek(data?.fixtures ?? [], weeks), [data, weeks]);
+  const weeks = useMemo(() => [...new Set([...(data?.fixtures ?? []), ...(data?.withdrawalResults ?? [])].map((fixture) => fixture.week))].sort((a, b) => a - b), [data]);
+  const currentWeek = useMemo(() => getCalendarCurrentLeagueWeek(data?.fixtures ?? []), [data]);
   const visibleFixtures = useMemo(() => {
     if (!data) return [];
     const week = selectedWeek === "current" ? currentWeek : Number(selectedWeek);
-    return data.fixtures.filter((fixture) => fixture.week === week);
+    return [...data.fixtures, ...(data.withdrawalResults ?? [])].filter((fixture) => fixture.week === week).sort((a, b) => a.matchNo - b.matchNo);
   }, [data, selectedWeek, currentWeek]);
 
   if (error) return <main className="min-h-screen bg-slate-950 p-5 text-white"><div className="mx-auto max-w-3xl rounded-2xl bg-white p-6 text-slate-900">{error}</div></main>;
@@ -72,11 +72,11 @@ export default function PublicLeaguePage() {
                 <div className="flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500"><span>Week {fixture.week} · Match {fixture.matchNo}</span><span>{displayDate(fixture.scheduledFor)}</span></div>
                 <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
                   <p className="font-bold">{fixture.player1}</p>
-                  <div className="min-w-20 rounded-xl bg-slate-900 px-3 py-2 font-black text-white">{fixture.score ? (fixture.score.void ? "VOID" : `${fixture.score.player1} – ${fixture.score.player2}`) : "v"}</div>
+                  <div className="min-w-20 rounded-xl bg-slate-900 px-3 py-2 font-black text-white">{fixture.score ? (fixture.score.void && !fixture.voidedByWithdrawal ? "VOID" : `${fixture.score.player1} – ${fixture.score.player2}`) : "v"}</div>
                   <p className="font-bold">{fixture.player2}</p>
                 </div>
                 {!fixture.isReschedulePlaceholder && fixture.player2 !== "BYE" && data.competition.sport_type === "snooker" && data.competition.handicap_enabled ? <p className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-center text-sm font-bold text-sky-950">{formatMatchHandicapStart(fixture.player1, fixture.player2, fixture.team1HandicapStart, fixture.team2HandicapStart)}</p> : null}
-                {fixture.isReschedulePlaceholder ? (
+                {fixture.voidedByWithdrawal ? <p className="mt-2 text-center text-sm font-bold text-amber-900">Void — player withdrew. Does not count towards the league table.</p> : fixture.isReschedulePlaceholder ? (
                   <p className="mt-3 text-center text-sm font-bold text-amber-900">Rescheduled to {displayDate(fixture.rescheduledTo)} — results are entered against the fixture in its new week.</p>
                 ) : (
                   <p className="mt-2 text-center text-xs text-slate-500">Play all {fixture.bestOf} {unit} · {fixture.status.replace("_", " ")}{fixture.rescheduledFrom ? ` · Rescheduled from ${displayDate(fixture.rescheduledFrom)}` : ""}</p>
@@ -104,7 +104,7 @@ export default function PublicLeaguePage() {
           </div>
           <p className="mt-3 text-xs text-slate-500">Updated {new Date(data.updatedAt).toLocaleString("en-GB")} · Refresh this page for the latest approved results.</p>
         </section>
-        {selectedPlayerId ? <LeaguePlayerSummaryModal player={{ id: selectedPlayerId, name: data.table.find((row) => row.playerId === selectedPlayerId)?.playerName ?? "Player" }} competitionName={data.competition.name} fixtures={data.fixtures} onClose={() => setSelectedPlayerId(null)} /> : null}
+        {selectedPlayerId ? <LeaguePlayerSummaryModal player={{ id: selectedPlayerId, name: data.table.find((row) => row.playerId === selectedPlayerId)?.playerName ?? "Player" }} competitionName={data.competition.name} fixtures={[...data.fixtures, ...(data.withdrawalResults ?? [])]} onClose={() => setSelectedPlayerId(null)} /> : null}
       </div>
     </main>
   );

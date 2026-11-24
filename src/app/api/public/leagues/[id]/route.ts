@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isLegionMastersLeague } from "@/lib/legion-masters";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -21,24 +22,38 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "This public league page is not available." }, { status: 404 });
   }
 
-  const [entriesResult, matchesResult] = await Promise.all([
+  const matchColumns = "id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start";
+  const [entriesResult, matchesResult, withdrawalsResult] = await Promise.all([
     client.from("competition_entries").select("player_id").eq("competition_id", id).eq("status", "approved"),
     client
       .from("matches")
-      .select("id,round_no,match_no,best_of,status,player1_id,player2_id,winner_player_id,opening_break_player_id,scheduled_for,team1_handicap_start,team2_handicap_start")
+      .select(matchColumns)
       .eq("competition_id", id)
       .eq("is_archived", false)
       .order("round_no")
       .order("match_no"),
+    isLegionMastersLeague(competition.name)
+      ? client.from("audit_logs").select("meta").eq("action", "competition_entrant_withdrawn_without_rebalance").eq("entity_type", "competition_entry").filter("meta->>competition_id", "eq", id)
+      : Promise.resolve({ data: [], error: null }),
   ]);
-  if (entriesResult.error || matchesResult.error) {
-    return NextResponse.json({ error: entriesResult.error?.message || matchesResult.error?.message }, { status: 400 });
+  if (entriesResult.error || matchesResult.error || withdrawalsResult.error) {
+    return NextResponse.json({ error: entriesResult.error?.message || matchesResult.error?.message || "Withdrawal history could not be loaded." }, { status: 400 });
   }
+  const withdrawnMatchIds = [...new Set((withdrawalsResult.data ?? []).flatMap(({ meta }) => {
+    const ids = meta?.annulled_completed_match_ids;
+    return Array.isArray(ids) ? ids.filter((value): value is string => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)) : [];
+  }))];
+  const archivedResults = withdrawnMatchIds.length
+    ? await client.from("matches").select(matchColumns).eq("competition_id", id).eq("is_archived", true).eq("status", "complete").in("id", withdrawnMatchIds)
+    : { data: [], error: null };
+  if (archivedResults.error) return NextResponse.json({ error: "Withdrawal results could not be loaded." }, { status: 400 });
   const playerIds = [...new Set((entriesResult.data ?? []).map((entry) => entry.player_id).filter(Boolean))];
-  const matchIds = (matchesResult.data ?? []).map((match) => match.id);
+  const withdrawnResults = archivedResults.data ?? [];
+  const displayPlayerIds = [...new Set([...playerIds, ...withdrawnResults.flatMap((match) => [match.player1_id, match.player2_id]).filter(Boolean)])];
+  const matchIds = [...(matchesResult.data ?? []), ...withdrawnResults].map((match) => match.id);
   const [playersResult, framesResult, reschedulesResult] = await Promise.all([
-    playerIds.length
-      ? client.from("players").select("id,display_name,full_name").in("id", playerIds)
+    displayPlayerIds.length
+      ? client.from("players").select("id,display_name,full_name").in("id", displayPlayerIds)
       : Promise.resolve({ data: [], error: null }),
     matchIds.length
       ? client.from("frames").select("match_id,winner_player_id,is_walkover_award,team1_points,team2_points").in("match_id", matchIds)
@@ -121,7 +136,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     if (!match.scheduled_for || approvedRescheduleByMatch.has(match.id)) continue;
     if (!weekByScheduledDate.has(match.scheduled_for)) weekByScheduledDate.set(match.scheduled_for, match.round_no ?? 1);
   }
-  const activeFixtures = leagueMatches.map((match) => {
+  const toFixture = (match: (typeof leagueMatches)[number], voidedByWithdrawal = false) => {
     const frames = framesByMatch.get(match.id) ?? [];
     const player1Score = competition.sport_type === "snooker"
       ? frames.reduce((total, frame) => total + Number(frame.team1_points ?? 0), 0)
@@ -153,12 +168,16 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       openingBreaker: isBye ? null : nameById.get(match.opening_break_player_id ?? "") || null,
       team1HandicapStart: Number(match.team1_handicap_start ?? 0),
       team2HandicapStart: Number(match.team2_handicap_start ?? 0),
-      score: match.status === "complete" && !isBye ? { player1: player1Score, player2: player2Score, void: !match.winner_player_id } : null,
+      score: match.status === "complete" && !isBye ? { player1: player1Score, player2: player2Score, void: voidedByWithdrawal || !match.winner_player_id } : null,
+      voidedByWithdrawal,
       isReschedulePlaceholder: false,
       rescheduledFrom: reschedule?.original_scheduled_for ?? null,
       rescheduledTo: reschedule?.requested_scheduled_for ?? null,
     };
-  });
+  };
+  const activeFixtures = leagueMatches.map((match) => toFixture(match));
+  // History is read-only: these rows are never input to standings or the playing calendar.
+  const withdrawalResults = withdrawnResults.map((match) => toFixture(match, true));
   const reschedulePlaceholders = activeFixtures
     .filter((fixture) => fixture.rescheduledFrom && fixture.rescheduledTo)
     .map((fixture) => ({
@@ -173,5 +192,5 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }));
   const fixtures = [...activeFixtures, ...reschedulePlaceholders]
     .sort((a, b) => a.week - b.week || a.matchNo - b.matchNo || Number(a.isReschedulePlaceholder) - Number(b.isReschedulePlaceholder));
-  return NextResponse.json({ competition, fixtures, table, updatedAt: new Date().toISOString() }, { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" } });
+  return NextResponse.json({ competition, fixtures, withdrawalResults, table, updatedAt: new Date().toISOString() }, { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" } });
 }

@@ -14,6 +14,7 @@ export type LeaguePlayerFixture = {
   player2: string;
   score: { player1: number; player2: number; void: boolean } | null;
   isReschedulePlaceholder: boolean;
+  voidedByWithdrawal?: boolean;
   rescheduledFrom: string | null;
 };
 
@@ -83,8 +84,8 @@ export default function LeaguePlayerSummaryModal({ player, competitionName, fixt
                   {fixture.rescheduledFrom ? <p className="mt-1 text-xs font-semibold text-teal-700">Rescheduled fixture</p> : null}
                 </div>
                 {fixture.score ? <div className="text-right">
-                  <p className="rounded-xl bg-slate-900 px-3 py-2 text-lg font-black text-white">{fixture.score.void ? "VOID" : `${playerScore} – ${opponentScore}`}</p>
-                  {outcome ? <p className={`mt-1 text-xs font-bold ${outcome === "Won" ? "text-emerald-700" : outcome === "Lost" ? "text-rose-700" : "text-slate-600"}`}>{outcome}</p> : null}
+                  <p className="rounded-xl bg-slate-900 px-3 py-2 text-lg font-black text-white">{fixture.score.void && !fixture.voidedByWithdrawal ? "VOID" : `${playerScore} – ${opponentScore}`}</p>
+                  {outcome ? <p className={`mt-1 text-xs font-bold ${outcome === "Won" ? "text-emerald-700" : outcome === "Lost" ? "text-rose-700" : "text-slate-600"}`}>{fixture.voidedByWithdrawal ? "Void — player withdrew" : outcome}</p> : null}
                 </div> : <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">{fixture.status === "in_progress" ? "Live" : "To play"}</span>}
               </div>
             </article>;

@@ -53,8 +53,8 @@ type PlayerRow = {
 
 type FrameRow = { match_id: string; winner_player_id: string | null };
 type LeagueTableRow = { playerId: string; playerName: string; played: number; won: number; lost: number; voided: number; points: number; pointsFor: number; pointsAgainst: number; pointsDifference: number };
-type LeagueFixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1Id: string | null; player2Id: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null };
-type LeagueData = { competition: CompetitionRow; fixtures: LeagueFixture[]; table: LeagueTableRow[]; updatedAt: string };
+type LeagueFixture = { id: string; sourceMatchId: string; week: number; originalWeek: number; matchNo: number; bestOf: number; status: string; scheduledFor: string | null; player1Id: string | null; player2Id: string | null; player1: string; player2: string; openingBreaker: string | null; team1HandicapStart: number; team2HandicapStart: number; score: { player1: number; player2: number; void: boolean } | null; isReschedulePlaceholder: boolean; rescheduledFrom: string | null; rescheduledTo: string | null; voidedByWithdrawal?: boolean };
+type LeagueData = { competition: CompetitionRow; fixtures: LeagueFixture[]; withdrawalResults?: LeagueFixture[]; table: LeagueTableRow[]; updatedAt: string };
 
 function startOfWeek(date: Date) {
   const d = new Date(date);
@@ -322,11 +322,11 @@ export default function MyFixturesPage() {
   ), [competitions, leagueData]);
   const activeLeagueId = leagueCompetitions.some((competition) => competition.id === selectedLeagueId) ? selectedLeagueId : leagueCompetitions[0]?.id || "";
   const activeLeague = activeLeagueId ? leagueData[activeLeagueId] : null;
-  const activeLeagueWeeks = useMemo(() => [...new Set((activeLeague?.fixtures ?? []).map((fixture) => fixture.week))].sort((a, b) => a - b), [activeLeague]);
+  const activeLeagueWeeks = useMemo(() => [...new Set([...(activeLeague?.fixtures ?? []), ...(activeLeague?.withdrawalResults ?? [])].map((fixture) => fixture.week))].sort((a, b) => a - b), [activeLeague]);
   const activeLeagueCurrentWeek = useMemo(() => getCalendarCurrentLeagueWeek(activeLeague?.fixtures ?? [], activeLeagueWeeks), [activeLeague, activeLeagueWeeks]);
   const visibleCompetitionWeek = selectedResultsWeek === "current" ? activeLeagueCurrentWeek : Number(selectedResultsWeek);
-  const competitionWeekFixtures = useMemo(() => (activeLeague?.fixtures ?? []).filter((fixture) => fixture.week === visibleCompetitionWeek && fixture.status !== "bye"), [activeLeague, visibleCompetitionWeek]);
-  const playableCompetitionWeekFixtures = useMemo(() => competitionWeekFixtures.filter((fixture) => !fixture.isReschedulePlaceholder), [competitionWeekFixtures]);
+  const competitionWeekFixtures = useMemo(() => [...(activeLeague?.fixtures ?? []), ...(activeLeague?.withdrawalResults ?? [])].filter((fixture) => fixture.week === visibleCompetitionWeek && fixture.status !== "bye").sort((a, b) => a.matchNo - b.matchNo), [activeLeague, visibleCompetitionWeek]);
+  const playableCompetitionWeekFixtures = useMemo(() => competitionWeekFixtures.filter((fixture) => !fixture.isReschedulePlaceholder && !fixture.voidedByWithdrawal), [competitionWeekFixtures]);
   const competitionWeekResults = useMemo(() => playableCompetitionWeekFixtures.filter((fixture) => fixture.status === "complete" && fixture.score), [playableCompetitionWeekFixtures]);
 
   const renderFixtureCards = (rows: typeof allFixtureRows, emptyMessage: string) => rows.length ? (
@@ -506,7 +506,8 @@ export default function MyFixturesPage() {
                     <div className="mt-4 space-y-3">
                       {competitionWeekFixtures.map((fixture) => <article key={fixture.id} className={`rounded-2xl border p-4 ${fixture.isReschedulePlaceholder ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
                         <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Week {fixture.week} · Match {fixture.matchNo}</p><div className="flex items-center gap-2">{fixture.scheduledFor ? <p className="text-xs text-slate-500">{new Date(`${fixture.scheduledFor.slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}<span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${fixture.isReschedulePlaceholder ? "border-amber-300 bg-amber-100 text-amber-900" : fixture.status === "complete" ? "border-blue-200 bg-blue-50 text-blue-800" : fixture.status === "in_progress" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{fixture.isReschedulePlaceholder ? "Rescheduled" : fixture.status === "complete" ? "Result" : fixture.status === "in_progress" ? "Live" : "To play"}</span></div></div>
-                        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span className="font-semibold">{fixture.player1}</span><strong className={`min-w-16 rounded-lg px-2 py-1.5 ${fixture.score ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{fixture.score?.void ? "VOID" : fixture.score ? `${fixture.score.player1} – ${fixture.score.player2}` : "v"}</strong><span className="font-semibold">{fixture.player2}</span></div>
+                        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center text-sm text-slate-800"><span className="font-semibold">{fixture.player1}</span><strong className={`min-w-16 rounded-lg px-2 py-1.5 ${fixture.score ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{fixture.score?.void && !fixture.voidedByWithdrawal ? "VOID" : fixture.score ? `${fixture.score.player1} – ${fixture.score.player2}` : "v"}</strong><span className="font-semibold">{fixture.player2}</span></div>
+                        {fixture.voidedByWithdrawal ? <p className="mt-2 text-center text-sm font-bold text-amber-900">Void — player withdrew. Does not count towards the league table.</p> : null}
                         {!fixture.isReschedulePlaceholder && activeLeague.competition.sport_type === "snooker" && activeLeague.competition.handicap_enabled ? <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-center text-sm font-bold text-sky-950">{formatMatchHandicapStart(fixture.player1, fixture.player2, fixture.team1HandicapStart, fixture.team2HandicapStart)}</p> : null}
                         {fixture.isReschedulePlaceholder ? <p className="mt-2 text-center text-sm font-semibold text-amber-900">Rescheduled to {fixture.rescheduledTo ? new Date(`${fixture.rescheduledTo}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "the new fixture week"}.</p> : null}
                         {!fixture.isReschedulePlaceholder && fixture.rescheduledFrom ? <p className="mt-2 text-center text-xs font-semibold text-teal-800">Rescheduled from {new Date(`${fixture.rescheduledFrom}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</p> : null}
@@ -531,7 +532,7 @@ export default function MyFixturesPage() {
                     </div>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-500">Updated {new Date(activeLeague.updatedAt).toLocaleString("en-GB")}</p><Link href={`/league/${activeLeagueId}`} className="rounded-lg border border-teal-300 px-3 py-2 text-sm font-bold text-teal-800">Open full league centre</Link></div>
                   </> : <p className="mt-4 text-sm text-slate-600">You are not currently listed in an active Legion Masters competition with a published table.</p>}
-                  {activeLeague && leaguePlayerId ? <LeaguePlayerSummaryModal player={{ id: leaguePlayerId, name: activeLeague.table.find((row) => row.playerId === leaguePlayerId)?.playerName ?? "Player" }} competitionName={activeLeague.competition.name} fixtures={activeLeague.fixtures} onClose={() => setLeaguePlayerId(null)} /> : null}
+                  {activeLeague && leaguePlayerId ? <LeaguePlayerSummaryModal player={{ id: leaguePlayerId, name: activeLeague.table.find((row) => row.playerId === leaguePlayerId)?.playerName ?? "Player" }} competitionName={activeLeague.competition.name} fixtures={[...activeLeague.fixtures, ...(activeLeague.withdrawalResults ?? [])]} onClose={() => setLeaguePlayerId(null)} /> : null}
                 </section>}
         </RequireAuth>
       </div>
